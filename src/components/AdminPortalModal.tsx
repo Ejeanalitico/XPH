@@ -31,6 +31,7 @@ import {
   Upload as UploadIcon,
   Edit as EditIcon,
   RefreshCw as RefreshCwIcon,
+  Table as TableIcon,
 } from 'lucide-react';
 
 import {
@@ -788,23 +789,36 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                 </h3>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                <a
+                  href={localStorage.getItem('xph_spreadsheet_url') || 'https://drive.google.com/drive/folders/1UyN3m72kG4liDumQYxlO03cKtJJpYG62'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 sm:px-3.5 py-2 rounded-xl bg-[#D4AF37]/10 border border-[#D4AF37]/40 text-[#D4AF37] hover:bg-[#D4AF37]/20 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                  title="Abrir base de datos y tablas de registro en Google Sheets"
+                >
+                  <TableIcon className="w-4 h-4 shrink-0" />
+                  <span className="hidden md:inline">Base de Datos (Google Sheets)</span>
+                  <span className="md:hidden">Sheets</span>
+                </a>
+
                 <button
                   onClick={() => {
                     onClose();
                     onShowToast('Vista en Tiempo Real', 'Explora los cambios realizados en toda la página.', 'info');
                   }}
-                  className="px-3.5 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 text-xs font-bold flex items-center gap-2 transition-all cursor-pointer"
+                  className="px-3 sm:px-3.5 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
                 >
-                  <EyeIcon className="w-4 h-4" />
-                  <span>Ver Sitio en Tiempo Real</span>
+                  <EyeIcon className="w-4 h-4 shrink-0" />
+                  <span className="hidden sm:inline">Ver Sitio en Tiempo Real</span>
+                  <span className="sm:hidden">Ver Sitio</span>
                 </button>
 
                 <button
                   onClick={handleLogout}
                   className="px-3 py-2 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 hover:bg-rose-500/20 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
                 >
-                  <LogOutIcon className="w-3.5 h-3.5" />
+                  <LogOutIcon className="w-3.5 h-3.5 shrink-0" />
                   <span>Salir</span>
                 </button>
               </div>

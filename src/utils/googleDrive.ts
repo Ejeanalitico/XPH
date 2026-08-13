@@ -210,9 +210,14 @@ export async function uploadImageToGoogleDrive(
 }
 
 /**
- * Saves all site configuration (packages, prices, footer, testimonials, quotes, gallery) to Cloud via Apps Script
+ * Saves all site configuration (packages, prices, footer, testimonials, quotes, gallery) to Google Sheets & Cloud via Apps Script
  */
-export async function saveSiteDataToCloud(siteData: Record<string, any>, scriptUrl?: string): Promise<boolean> {
+export async function saveSiteDataToCloud(
+  siteData: Record<string, any>,
+  auditType: string = 'ACTUALIZACION_GENERAL',
+  auditDetails: string = 'Cambios guardados desde el panel Admin',
+  scriptUrl?: string
+): Promise<boolean> {
   const targetScriptUrl =
     scriptUrl ||
     (import.meta as any).env?.VITE_GOOGLE_APPS_SCRIPT_URL ||
@@ -226,6 +231,8 @@ export async function saveSiteDataToCloud(siteData: Record<string, any>, scriptU
     const body = new URLSearchParams({
       action: 'saveConfig',
       configData: cleanData,
+      auditType,
+      auditDetails,
     });
 
     // Send with mode: 'no-cors' so browser executes POST through 302 redirect without CORS failure
@@ -243,7 +250,7 @@ export async function saveSiteDataToCloud(siteData: Record<string, any>, scriptU
 }
 
 /**
- * Loads shared site configuration from Cloud via Apps Script (real-time, cache-busted)
+ * Loads shared site configuration and Google Sheets database link from Cloud via Apps Script (real-time, cache-busted)
  */
 export async function loadSiteDataFromCloud(scriptUrl?: string): Promise<Record<string, any> | null> {
   const targetScriptUrl =
@@ -263,10 +270,15 @@ export async function loadSiteDataFromCloud(scriptUrl?: string): Promise<Record<
     });
     if (!response.ok) return null;
     const data = await response.json();
-    if (data.status === 'success' && data.config) {
-      const parsed = typeof data.config === 'string' ? JSON.parse(data.config) : data.config;
-      if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
-        return parsed;
+    if (data.status === 'success') {
+      if (data.spreadsheetUrl) {
+        localStorage.setItem('xph_spreadsheet_url', data.spreadsheetUrl);
+      }
+      if (data.config) {
+        const parsed = typeof data.config === 'string' ? JSON.parse(data.config) : data.config;
+        if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+          return parsed;
+        }
       }
     }
   } catch (err) {

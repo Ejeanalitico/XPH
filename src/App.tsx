@@ -447,7 +447,7 @@ export default function App() {
   };
 
   // Helper to sync cloud config
-  const syncToCloud = (overrides?: Record<string, any>) => {
+  const syncToCloud = (overrides?: Record<string, any>, auditType = 'ACTUALIZACION_GENERAL', auditDetails = 'Modificación guardada desde panel Admin') => {
     const dataToSync = {
       packages: packagesState,
       addons: addonsState,
@@ -458,43 +458,43 @@ export default function App() {
       galleryImages: galleryImages.filter((img) => !img.url.startsWith('data:image/')),
       ...overrides,
     };
-    saveSiteDataToCloud(dataToSync);
+    saveSiteDataToCloud(dataToSync, auditType, auditDetails);
   };
 
   const handleUpdatePackages = (newPackages: Record<EventType, PackageOption[]>) => {
     setPackagesState(newPackages);
     try { localStorage.setItem('xph_packages', JSON.stringify(newPackages)); } catch (_) {}
-    syncToCloud({ packages: newPackages });
+    syncToCloud({ packages: newPackages }, 'ACTUALIZACION_PAQUETES', 'Catálogo de paquetes y precios actualizado');
   };
 
   const handleUpdateAddons = (newAddons: AddOnOption[]) => {
     setAddonsState(newAddons);
     try { localStorage.setItem('xph_addons', JSON.stringify(newAddons)); } catch (_) {}
-    syncToCloud({ addons: newAddons });
+    syncToCloud({ addons: newAddons }, 'ACTUALIZACION_ADDONS', 'Catálogo de servicios adicionales actualizado');
   };
 
   const handleUpdateFooterContact = (newFooter: FooterContact) => {
     setFooterContact(newFooter);
     try { localStorage.setItem('xph_footer_contact', JSON.stringify(newFooter)); } catch (_) {}
-    syncToCloud({ footerContact: newFooter });
+    syncToCloud({ footerContact: newFooter }, 'ACTUALIZACION_CONTACTO', `Teléfono: ${newFooter.phone} | Email: ${newFooter.email}`);
   };
 
   const handleUpdateTestimonials = (newTestimonials: Testimonial[]) => {
     setTestimonials(newTestimonials);
     try { localStorage.setItem('xph_testimonials', JSON.stringify(newTestimonials)); } catch (_) {}
-    syncToCloud({ testimonials: newTestimonials });
+    syncToCloud({ testimonials: newTestimonials }, 'ACTUALIZACION_TESTIMONIOS', `Total testimonios activos: ${newTestimonials.length}`);
   };
 
   const handleUpdateQuotes = (newQuotes: QuoteRecord[]) => {
     setQuotesState(newQuotes);
     try { localStorage.setItem('xph_quotes', JSON.stringify(newQuotes)); } catch (_) {}
-    syncToCloud({ quotes: newQuotes });
+    syncToCloud({ quotes: newQuotes }, 'ACTUALIZACION_COTIZACIONES', `Total cotizaciones registradas: ${newQuotes.length}`);
   };
 
   const handleUpdateAdminCredentials = (newCreds: AdminCredentials) => {
     setAdminCredentials(newCreds);
     try { localStorage.setItem('xph_admin_credentials', JSON.stringify(newCreds)); } catch (_) {}
-    syncToCloud({ adminCredentials: newCreds });
+    syncToCloud({ adminCredentials: newCreds }, 'ACTUALIZACION_CREDENCIALES', `Email administrador actualizado a: ${newCreds.email}`);
   };
 
   // Handlers for Gallery Images Admin
@@ -503,17 +503,22 @@ export default function App() {
       const next = [image, ...prev];
       const toSave = next.filter((img) => !img.url.startsWith('data:image/'));
       try { localStorage.setItem('xph_gallery_images', JSON.stringify(toSave)); } catch (_) {}
-      syncToCloud({ galleryImages: toSave });
+      syncToCloud({ galleryImages: toSave }, 'FOTO_AGREGADA', `Foto "${image.title}" (${image.category}) agregada al portafolio`);
       return next;
     });
   };
 
   const handleDeleteGalleryImage = (id: string) => {
     setGalleryImages((prev) => {
+      const deletedItem = prev.find((img) => img.id === id);
       const next = prev.filter((img) => img.id !== id);
       const toSave = next.filter((img) => !img.url.startsWith('data:image/'));
       try { localStorage.setItem('xph_gallery_images', JSON.stringify(toSave)); } catch (_) {}
-      syncToCloud({ galleryImages: toSave });
+      syncToCloud(
+        { galleryImages: toSave },
+        'FOTO_ELIMINADA',
+        `Foto "${deletedItem?.title || id}" eliminada de la galería`
+      );
       return next;
     });
   };
