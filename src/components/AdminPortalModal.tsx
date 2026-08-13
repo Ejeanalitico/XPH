@@ -1,0 +1,1221 @@
+import React, { useState, useEffect } from 'react';
+import { copyToClipboard } from '../utils/clipboard';
+import {
+  X as XIcon,
+  ShieldCheck as ShieldCheckIcon,
+  DollarSign as DollarSignIcon,
+  FileText as FileTextIcon,
+  Lock as LockIcon,
+  Save as SaveIcon,
+  Trash2 as Trash2Icon,
+  Plus as PlusIcon,
+  Search as SearchIcon,
+  Eye as EyeIcon,
+  ArrowRight as ArrowRightIcon,
+  LogOut as LogOutIcon,
+  Image as ImageIcon,
+  MapPin as MapPinIcon,
+  MessageSquare as MessageSquareIcon,
+  Link as LinkIcon,
+  CheckCircle as CheckCircleIcon,
+  Copy as CopyIcon,
+  ExternalLink as ExternalLinkIcon,
+  Upload as UploadIcon,
+  Edit as EditIcon,
+} from 'lucide-react';
+
+import {
+  EventType,
+  PackageOption,
+  AddOnOption,
+  QuoteRecord,
+  AdminCredentials,
+  GalleryImage,
+  FooterContact,
+  Testimonial,
+} from '../types';
+
+interface AdminPortalModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onShowToast: (title: string, description?: string, type?: 'success' | 'info' | 'warning') => void;
+  adminCredentials: AdminCredentials;
+  onUpdateAdminCredentials: (creds: AdminCredentials) => void;
+  packages: Record<EventType, PackageOption[]>;
+  onUpdatePackages: (packages: Record<EventType, PackageOption[]>) => void;
+  addons: AddOnOption[];
+  onUpdateAddons: (addons: AddOnOption[]) => void;
+  quotes: QuoteRecord[];
+  onUpdateQuotes: (updater: (prev: QuoteRecord[]) => QuoteRecord[]) => void;
+  galleryImages: GalleryImage[];
+  onAddGalleryImage: (image: GalleryImage) => void;
+  onDeleteGalleryImage: (id: string) => void;
+  footerContact: FooterContact;
+  onUpdateFooterContact: (contact: FooterContact) => void;
+  testimonials: Testimonial[];
+  onUpdateTestimonials: (testimonials: Testimonial[]) => void;
+}
+
+export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
+  isOpen,
+  onClose,
+  onShowToast,
+  adminCredentials,
+  onUpdateAdminCredentials,
+  packages,
+  onUpdatePackages,
+  addons,
+  onUpdateAddons,
+  quotes,
+  onUpdateQuotes,
+  galleryImages,
+  onAddGalleryImage,
+  onDeleteGalleryImage,
+  footerContact,
+  onUpdateFooterContact,
+  testimonials,
+  onUpdateTestimonials,
+}) => {
+  // Login State
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  // Active Sub-Tab
+  const [activeTab, setActiveTab] = useState<'quotes' | 'prices' | 'gallery' | 'footer' | 'testimonials' | 'security'>('quotes');
+
+  // Quotes Filter
+  const [quoteStatusFilter, setQuoteStatusFilter] = useState<'Todos' | 'Pendiente' | 'Cita Presencial Agendada' | 'Contratado'>('Todos');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedQuote, setSelectedQuote] = useState<QuoteRecord | null>(null);
+
+  // Editable Packages & Addons local state
+  const [editingPackages, setEditingPackages] = useState<Record<EventType, PackageOption[]>>(packages);
+  const [editingAddons, setEditingAddons] = useState<AddOnOption[]>(addons);
+
+  // Footer Contact Local State
+  const [editingFooter, setEditingFooter] = useState<FooterContact>(footerContact);
+
+  // Security Form local state
+  const [newAdminEmail, setNewAdminEmail] = useState(adminCredentials.email);
+  const [newAdminPassword, setNewAdminPassword] = useState('');
+  const [confirmAdminPassword, setConfirmAdminPassword] = useState('');
+
+  // Gallery New Photo Form
+  const [newPhotoTitle, setNewPhotoTitle] = useState('');
+  const [newPhotoCategory, setNewPhotoCategory] = useState<'bodas' | 'xv-anos' | 'bautizos' | 'retratos' | 'empresarial' | 'previa'>('bodas');
+  const [newPhotoUrl, setNewPhotoUrl] = useState('');
+  const [newPhotoLocation, setNewPhotoLocation] = useState('Polanco, CDMX');
+
+  // Sync state when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setEditingPackages(JSON.parse(JSON.stringify(packages)));
+      setEditingAddons(JSON.parse(JSON.stringify(addons)));
+      setEditingFooter({ ...footerContact });
+      setNewAdminEmail(adminCredentials.email);
+    }
+  }, [isOpen, packages, addons, footerContact, adminCredentials]);
+
+  if (!isOpen) return null;
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (
+      email.trim().toLowerCase() === adminCredentials.email.trim().toLowerCase() &&
+      password === adminCredentials.pass
+    ) {
+      setIsLoggedIn(true);
+      onShowToast('Sesión de Admin Iniciada', 'Bienvenido al panel de administración de Xavi.Ph.', 'success');
+    } else {
+      onShowToast(
+        'Credenciales Inválidas',
+        `Verifica tu usuario (${adminCredentials.email}) y contraseña.`,
+        'warning'
+      );
+    }
+  };
+
+  const handleLogout = () => {
+    setIsLoggedIn(false);
+    setEmail('');
+    setPassword('');
+    onShowToast('Sesión Cerrada', 'Has salido del panel de administración.');
+  };
+
+  // Quotes management
+  const handleUpdateQuoteStatus = (id: string, newStatus: 'Pendiente' | 'Cita Presencial Agendada' | 'Contratado') => {
+    onUpdateQuotes((prev) =>
+      prev.map((q) => (q.id === id ? { ...q, status: newStatus } : q))
+    );
+    if (selectedQuote && selectedQuote.id === id) {
+      setSelectedQuote((prev) => (prev ? { ...prev, status: newStatus } : null));
+    }
+    onShowToast('Estado Actualizado', `La cotización fue marcada como "${newStatus}".`, 'success');
+  };
+
+  const handleDeleteQuote = (id: string) => {
+    onUpdateQuotes((prev) => prev.filter((q) => q.id !== id));
+    if (selectedQuote && selectedQuote.id === id) {
+      setSelectedQuote(null);
+    }
+    onShowToast('Registro Eliminado', 'La cotización seleccionada fue removida.', 'info');
+  };
+
+  // Save Packages and Addons
+  const handleSavePrices = () => {
+    onUpdatePackages(editingPackages);
+    onUpdateAddons(editingAddons);
+    onShowToast(
+      'Cambios Guardados en Vivo',
+      'Los paquetes, adiciones, inclusiones y exclusiones se actualizaron en toda la plataforma.',
+      'success'
+    );
+  };
+
+  // Package Field Handlers
+  const handlePackageFieldChange = (category: EventType, pkgId: string, field: keyof PackageOption, value: any) => {
+    setEditingPackages((prev) => {
+      const list = prev[category] || [];
+      const updatedList = list.map((p) => (p.id === pkgId ? { ...p, [field]: value } : p));
+      return { ...prev, [category]: updatedList };
+    });
+  };
+
+  const handlePackageFeatureAdd = (category: EventType, pkgId: string) => {
+    setEditingPackages((prev) => {
+      const list = prev[category] || [];
+      const updatedList = list.map((p) =>
+        p.id === pkgId ? { ...p, features: [...p.features, 'Nuevo beneficio incluido'] } : p
+      );
+      return { ...prev, [category]: updatedList };
+    });
+  };
+
+  const handlePackageFeatureChange = (category: EventType, pkgId: string, index: number, value: string) => {
+    setEditingPackages((prev) => {
+      const list = prev[category] || [];
+      const updatedList = list.map((p) => {
+        if (p.id !== pkgId) return p;
+        const newFeats = [...p.features];
+        newFeats[index] = value;
+        return { ...p, features: newFeats };
+      });
+      return { ...prev, [category]: updatedList };
+    });
+  };
+
+  const handlePackageFeatureDelete = (category: EventType, pkgId: string, index: number) => {
+    setEditingPackages((prev) => {
+      const list = prev[category] || [];
+      const updatedList = list.map((p) => {
+        if (p.id !== pkgId) return p;
+        const newFeats = p.features.filter((_, i) => i !== index);
+        return { ...p, features: newFeats };
+      });
+      return { ...prev, [category]: updatedList };
+    });
+  };
+
+  const handlePackageNotIncludesAdd = (category: EventType, pkgId: string) => {
+    setEditingPackages((prev) => {
+      const list = prev[category] || [];
+      const updatedList = list.map((p) => {
+        if (p.id !== pkgId) return p;
+        const currentNot = p.notIncludes || [];
+        return { ...p, notIncludes: [...currentNot, 'Servicio no incluido'] };
+      });
+      return { ...prev, [category]: updatedList };
+    });
+  };
+
+  const handlePackageNotIncludesChange = (category: EventType, pkgId: string, index: number, value: string) => {
+    setEditingPackages((prev) => {
+      const list = prev[category] || [];
+      const updatedList = list.map((p) => {
+        if (p.id !== pkgId) return p;
+        const currentNot = [...(p.notIncludes || [])];
+        currentNot[index] = value;
+        return { ...p, notIncludes: currentNot };
+      });
+      return { ...prev, [category]: updatedList };
+    });
+  };
+
+  const handlePackageNotIncludesDelete = (category: EventType, pkgId: string, index: number) => {
+    setEditingPackages((prev) => {
+      const list = prev[category] || [];
+      const updatedList = list.map((p) => {
+        if (p.id !== pkgId) return p;
+        const currentNot = (p.notIncludes || []).filter((_, i) => i !== index);
+        return { ...p, notIncludes: currentNot };
+      });
+      return { ...prev, [category]: updatedList };
+    });
+  };
+
+  const handleAddPackage = (category: EventType) => {
+    const newId = `pkg_${category}_${Date.now()}`;
+    const newPkg: PackageOption = {
+      id: newId,
+      name: 'NUEVO PAQUETE EDITORIAL',
+      price: 15000,
+      description: 'Descripción del paquete de cobertura.',
+      features: ['Cobertura fotográfica profesional', 'Galería web privada HD'],
+      notIncludes: ['Horas extra no contempladas'],
+    };
+    setEditingPackages((prev) => ({
+      ...prev,
+      [category]: [...(prev[category] || []), newPkg],
+    }));
+    onShowToast('Paquete Creado', `Se añadió un nuevo paquete a la categoría ${categoryLabels[category]}.`, 'info');
+  };
+
+  const handleDeletePackage = (category: EventType, pkgId: string) => {
+    setEditingPackages((prev) => ({
+      ...prev,
+      [category]: (prev[category] || []).filter((p) => p.id !== pkgId),
+    }));
+    onShowToast('Paquete Eliminado', 'El paquete seleccionado fue removido.', 'info');
+  };
+
+  // AddOn Handlers
+  const handleAddonFieldChange = (addonId: string, field: keyof AddOnOption, value: any) => {
+    setEditingAddons((prev) =>
+      prev.map((a) => (a.id === addonId ? { ...a, [field]: value } : a))
+    );
+  };
+
+  const handleAddonIncludesAdd = (addonId: string) => {
+    setEditingAddons((prev) =>
+      prev.map((a) => {
+        if (a.id !== addonId) return a;
+        const currentInc = a.includes || [];
+        return { ...a, includes: [...currentInc, 'Detalle de servicio incluido'] };
+      })
+    );
+  };
+
+  const handleAddonIncludesChange = (addonId: string, index: number, value: string) => {
+    setEditingAddons((prev) =>
+      prev.map((a) => {
+        if (a.id !== addonId) return a;
+        const currentInc = [...(a.includes || [])];
+        currentInc[index] = value;
+        return { ...a, includes: currentInc };
+      })
+    );
+  };
+
+  const handleAddonIncludesDelete = (addonId: string, index: number) => {
+    setEditingAddons((prev) =>
+      prev.map((a) => {
+        if (a.id !== addonId) return a;
+        const currentInc = (a.includes || []).filter((_, i) => i !== index);
+        return { ...a, includes: currentInc };
+      })
+    );
+  };
+
+  const handleAddAddon = () => {
+    const newId = `addon_${Date.now()}`;
+    const newAddon: AddOnOption = {
+      id: newId,
+      name: 'Nuevo Servicio Adicional',
+      price: 2500,
+      description: 'Descripción del servicio adicional.',
+      type: 'checkbox',
+      includes: ['Detalle incluido en este servicio'],
+    };
+    setEditingAddons((prev) => [...prev, newAddon]);
+    onShowToast('Adicional Agregado', 'Se añadió un servicio adicional al catálogo.', 'info');
+  };
+
+  const handleDeleteAddon = (addonId: string) => {
+    setEditingAddons((prev) => prev.filter((a) => a.id !== addonId));
+    onShowToast('Adicional Eliminado', 'El servicio adicional fue removido.', 'info');
+  };
+
+  // Photo Upload Handler
+  const handleAddPhotoSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPhotoTitle || !newPhotoUrl) {
+      onShowToast('Datos requeridos', 'Ingresa título y URL de la imagen.');
+      return;
+    }
+
+    const newImg: GalleryImage = {
+      id: `img-${Date.now()}`,
+      title: newPhotoTitle,
+      category: newPhotoCategory,
+      url: newPhotoUrl,
+      location: newPhotoLocation || 'Polanco, CDMX',
+      camera: 'Sony Alpha 1',
+      lens: 'FE 85mm f/1.4 GM',
+    };
+
+    onAddGalleryImage(newImg);
+    onShowToast('Fotografía Publicada', 'La imagen ha sido agregada a la galería en tiempo real.', 'success');
+    setNewPhotoTitle('');
+    setNewPhotoUrl('');
+  };
+
+  // Footer Save
+  const handleSaveFooter = (e: React.FormEvent) => {
+    e.preventDefault();
+    onUpdateFooterContact(editingFooter);
+    onShowToast('Pie de Página Actualizado', 'La información de contacto en CDMX se guardó en vivo.', 'success');
+  };
+
+  // Testimonial Toggle Verification
+  const handleToggleVerifyTestimonial = (id: string) => {
+    const updated = testimonials.map((t) => (t.id === id ? { ...t, verified: !t.verified } : t));
+    onUpdateTestimonials(updated);
+    onShowToast('Testimonio Actualizado', 'Estado de verificación cambiado.', 'info');
+  };
+
+  const handleDeleteTestimonial = (id: string) => {
+    const updated = testimonials.filter((t) => t.id !== id);
+    onUpdateTestimonials(updated);
+    onShowToast('Testimonio Removido', 'El comentario fue eliminado.', 'info');
+  };
+
+  const handleCopyReviewLink = async () => {
+    const link = `${window.location.origin}${window.location.pathname}#testimonios`;
+    const success = await copyToClipboard(link);
+    if (success) {
+      onShowToast('¡Enlace Copiado!', 'Envía este enlace a tus clientes para que dejen su testimonio: ' + link, 'success');
+    } else {
+      onShowToast('Enlace de Testimonios', link, 'info');
+    }
+  };
+
+  // Security Save
+  const handleSaveSecurity = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAdminEmail.trim()) {
+      onShowToast('Correo Requerido', 'Ingresa un correo electrónico válido.', 'warning');
+      return;
+    }
+    if (newAdminPassword && newAdminPassword !== confirmAdminPassword) {
+      onShowToast('Contraseñas No Coinciden', 'Asegúrate de que ambas contraseñas sean idénticas.', 'warning');
+      return;
+    }
+
+    const updatedPass = newAdminPassword.trim() !== '' ? newAdminPassword : adminCredentials.pass;
+    onUpdateAdminCredentials({
+      email: newAdminEmail.trim(),
+      pass: updatedPass,
+    });
+
+    setNewAdminPassword('');
+    setConfirmAdminPassword('');
+    onShowToast('Credenciales Actualizadas', 'Los cambios de acceso se han guardado exitosamente.', 'success');
+  };
+
+  // Filtered Quotes
+  const filteredQuotes = quotes.filter((q) => {
+    const matchesStatus =
+      quoteStatusFilter === 'Todos' ? true : q.status === quoteStatusFilter;
+    const matchesQuery =
+      q.clientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      q.clientEmail.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      q.eventCity.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      q.packageName.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesStatus && matchesQuery;
+  });
+
+  const categoryLabels: Record<EventType, string> = {
+    bodas: 'Bodas CDMX',
+    'xv-anos': 'Quinceañeras (XV)',
+    bautizos: 'Bautizos & Familia',
+    retratos: 'Retratos & Editorial',
+    empresarial: 'Empresarial & Branding',
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4">
+      <div className="relative w-full max-w-5xl bg-[#161C28] rounded-2xl border border-white/15 p-5 sm:p-8 space-y-6 shadow-2xl max-h-[92vh] overflow-y-auto">
+        
+        {/* Close Button */}
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 p-2.5 rounded-full bg-white/10 text-gray-300 hover:text-white hover:bg-white/20 transition-all cursor-pointer z-10"
+        >
+          <XIcon className="w-5 h-5" />
+        </button>
+
+        {!isLoggedIn ? (
+          /* LOGIN FORM */
+          <div className="max-w-md mx-auto text-center space-y-6 py-8">
+            <div className="w-16 h-16 rounded-2xl bg-[#D4AF37]/10 border border-[#D4AF37]/30 flex items-center justify-center text-[#D4AF37] mx-auto">
+              <ShieldCheckIcon className="w-8 h-8" />
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-2xl font-bold font-serif-luxury text-white">
+                Acceso Fotógrafo / Administrador
+              </h3>
+              <p className="text-xs text-gray-300">
+                Panel administrativo para gestión de cotizaciones, tarifas, galería y pie de página en tiempo real.
+              </p>
+            </div>
+
+            <form onSubmit={handleLogin} className="space-y-4 text-left">
+              <div>
+                <label className="text-xs font-semibold text-gray-300 block mb-1">
+                  Correo
+                </label>
+                <input
+                  type="email"
+                  placeholder="Correo"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl bg-[#0B0F17] border border-white/15 text-white focus:outline-none focus:border-[#D4AF37] text-xs font-mono"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-300 block mb-1">
+                  Contraseña
+                </label>
+                <input
+                  type="password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl bg-[#0B0F17] border border-white/15 text-white focus:outline-none focus:border-[#D4AF37] text-xs font-mono"
+                  required
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-3.5 rounded-xl gold-gradient-bg text-black font-extrabold text-xs shadow-lg shadow-[#D4AF37]/20 hover:scale-[1.02] transition-all cursor-pointer flex items-center justify-center gap-2"
+              >
+                <span>Ingresar al Panel de Control</span>
+                <ArrowRightIcon className="w-4 h-4" />
+              </button>
+            </form>
+          </div>
+        ) : (
+          /* AUTHENTICATED BACKOFFICE */
+          <div className="space-y-6">
+            
+            {/* Header Status Bar & Live Preview Button */}
+            <div className="border-b border-white/10 pb-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] uppercase tracking-widest text-[#D4AF37] font-mono font-bold">
+                    PANEL ADMINISTRATIVO XAVI.PH CDMX
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-mono font-semibold">
+                    ● En Tiempo Real
+                  </span>
+                </div>
+                <h3 className="text-xl sm:text-2xl font-bold font-serif-luxury text-white">
+                  Control de Servicios & Edición en Vivo
+                </h3>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    onClose();
+                    onShowToast('Vista en Tiempo Real', 'Explora los cambios realizados en toda la página.', 'info');
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 text-xs font-bold flex items-center gap-2 transition-all cursor-pointer"
+                >
+                  <EyeIcon className="w-4 h-4" />
+                  <span>Ver Sitio en Tiempo Real</span>
+                </button>
+
+                <button
+                  onClick={handleLogout}
+                  className="px-3 py-2 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 hover:bg-rose-500/20 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+                >
+                  <LogOutIcon className="w-3.5 h-3.5" />
+                  <span>Salir</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Navigation Tabs */}
+            <div className="flex items-center gap-2 border-b border-white/10 pb-2 overflow-x-auto">
+              <button
+                onClick={() => setActiveTab('quotes')}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+                  activeTab === 'quotes'
+                    ? 'gold-gradient-bg text-black shadow-md'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                <FileTextIcon className="w-3.5 h-3.5" />
+                <span>Cotizaciones ({quotes.length})</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('prices')}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+                  activeTab === 'prices'
+                    ? 'gold-gradient-bg text-black shadow-md'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                <DollarSignIcon className="w-3.5 h-3.5" />
+                <span>Paquetes & Adicionales</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('gallery')}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+                  activeTab === 'gallery'
+                    ? 'gold-gradient-bg text-black shadow-md'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                <ImageIcon className="w-3.5 h-3.5" />
+                <span>Galería de Fotos ({galleryImages.length})</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('testimonials')}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+                  activeTab === 'testimonials'
+                    ? 'gold-gradient-bg text-black shadow-md'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                <MessageSquareIcon className="w-3.5 h-3.5" />
+                <span>Testimonios & Enlace ({testimonials.length})</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('footer')}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+                  activeTab === 'footer'
+                    ? 'gold-gradient-bg text-black shadow-md'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                <MapPinIcon className="w-3.5 h-3.5" />
+                <span>Contacto Pie de Página</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('security')}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+                  activeTab === 'security'
+                    ? 'gold-gradient-bg text-black shadow-md'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                <LockIcon className="w-3.5 h-3.5" />
+                <span>Seguridad</span>
+              </button>
+            </div>
+
+            {/* TAB 1: COTIZACIONES */}
+            {activeTab === 'quotes' && (
+              <div className="space-y-6">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                    {(['Todos', 'Pendiente', 'Cita Presencial Agendada', 'Contratado'] as const).map(
+                      (st) => (
+                        <button
+                          key={st}
+                          onClick={() => setQuoteStatusFilter(st)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                            quoteStatusFilter === st
+                              ? 'bg-[#D4AF37] text-black font-bold'
+                              : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
+                          }`}
+                        >
+                          {st}
+                        </button>
+                      )
+                    )}
+                  </div>
+
+                  <div className="relative">
+                    <SearchIcon className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder="Buscar cotización..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full sm:w-64 pl-9 pr-4 py-1.5 rounded-xl bg-[#0B0F17] border border-white/15 text-white text-xs focus:outline-none focus:border-[#D4AF37]"
+                    />
+                  </div>
+                </div>
+
+                {filteredQuotes.length === 0 ? (
+                  <div className="text-center py-12 bg-[#0B0F17] rounded-xl border border-white/10 space-y-2">
+                    <FileTextIcon className="w-8 h-8 text-gray-500 mx-auto" />
+                    <p className="text-sm font-semibold text-gray-300">
+                      No hay registros en este filtro.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border border-white/10 bg-[#0B0F17]">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="border-b border-white/10 text-gray-400 uppercase text-[10px] tracking-wider font-mono bg-white/5">
+                          <th className="p-3">Cliente</th>
+                          <th className="p-3">Evento & Paquete</th>
+                          <th className="p-3">Fecha & Ciudad</th>
+                          <th className="p-3">Total</th>
+                          <th className="p-3">Estado</th>
+                          <th className="p-3 text-right">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5">
+                        {filteredQuotes.map((q) => {
+                          const badgeColor =
+                            q.status === 'Contratado'
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                              : q.status === 'Cita Presencial Agendada'
+                              ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                              : 'bg-blue-500/10 text-blue-400 border-blue-500/30';
+
+                          return (
+                            <tr key={q.id} className="hover:bg-white/5 transition-colors">
+                              <td className="p-3">
+                                <p className="font-bold text-white">{q.clientName}</p>
+                                <p className="text-[10px] text-gray-400">{q.clientEmail}</p>
+                                <p className="text-[10px] text-gray-400">{q.clientPhone}</p>
+                              </td>
+
+                              <td className="p-3">
+                                <p className="font-semibold text-[#D4AF37]">
+                                  {categoryLabels[q.eventType]}
+                                </p>
+                                <p className="text-gray-300">{q.packageName}</p>
+                              </td>
+
+                              <td className="p-3">
+                                <p className="font-mono text-white">{q.eventDate || 'Por definir'}</p>
+                                <p className="text-[10px] text-gray-400">{q.eventCity || 'CDMX'}</p>
+                              </td>
+
+                              <td className="p-3 font-mono">
+                                <p className="font-bold text-white">${q.total.toLocaleString('es-MX')} MXN</p>
+                              </td>
+
+                              <td className="p-3">
+                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-semibold border ${badgeColor}`}>
+                                  {q.status}
+                                </span>
+                              </td>
+
+                              <td className="p-3 text-right space-x-2 whitespace-nowrap">
+                                <button
+                                  onClick={() => setSelectedQuote(q)}
+                                  className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white cursor-pointer"
+                                  title="Ver Detalles"
+                                >
+                                  <EyeIcon className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteQuote(q.id)}
+                                  className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 cursor-pointer"
+                                  title="Eliminar"
+                                >
+                                  <Trash2Icon className="w-3.5 h-3.5" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB 2: PAQUETES, INCLUYE/NO INCLUYE & ADICIONALES */}
+            {activeTab === 'prices' && (
+              <div className="space-y-8">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-[#0B0F17] p-5 rounded-2xl border border-white/10 gap-4">
+                  <div>
+                    <h4 className="text-base font-bold text-white flex items-center gap-2 font-serif-luxury">
+                      <DollarSignIcon className="w-5 h-5 text-[#D4AF37]" />
+                      <span>Editar Paquetes (Incluye / No Incluye) & Adicionales</span>
+                    </h4>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Modifica qué incluye y qué no incluye cada paquete. Agrega más de cada uno si es necesario.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={handleSavePrices}
+                    className="px-6 py-3 rounded-xl gold-gradient-bg text-black font-extrabold text-xs shadow-lg shadow-[#D4AF37]/20 hover:scale-105 transition-all cursor-pointer flex items-center gap-2 shrink-0"
+                  >
+                    <SaveIcon className="w-4 h-4" />
+                    <span>Guardar Cambios en Vivo</span>
+                  </button>
+                </div>
+
+                {/* Event Type Packages */}
+                {(['bodas', 'xv-anos', 'bautizos', 'retratos', 'empresarial'] as EventType[]).map((catKey) => {
+                  const catPackages = editingPackages[catKey] || [];
+                  return (
+                    <div key={catKey} className="p-6 rounded-2xl bg-[#0B0F17] border border-white/10 space-y-6">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-3">
+                        <h4 className="text-base font-bold text-[#D4AF37] uppercase tracking-wider font-mono">
+                          {categoryLabels[catKey]} ({catPackages.length} paquetes)
+                        </h4>
+
+                        <button
+                          onClick={() => handleAddPackage(catKey)}
+                          className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold flex items-center gap-2 transition-all cursor-pointer"
+                        >
+                          <PlusIcon className="w-3.5 h-3.5 text-[#D4AF37]" />
+                          <span>+ Agregar Paquete a {categoryLabels[catKey]}</span>
+                        </button>
+                      </div>
+
+                      <div className="grid lg:grid-cols-2 gap-6">
+                        {catPackages.map((pkg) => (
+                          <div key={pkg.id} className="p-5 rounded-xl bg-white/5 border border-white/10 space-y-4">
+                            <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-3">
+                              <div className="space-y-1 flex-1">
+                                <label className="text-[10px] font-mono text-gray-400 uppercase block">Nombre del Paquete:</label>
+                                <input
+                                  type="text"
+                                  value={pkg.name}
+                                  onChange={(e) => handlePackageFieldChange(catKey, pkg.id, 'name', e.target.value)}
+                                  className="w-full px-3 py-1.5 rounded-lg bg-[#161C28] border border-white/15 text-white font-bold text-xs"
+                                />
+                              </div>
+                              <button
+                                onClick={() => handleDeletePackage(catKey, pkg.id)}
+                                className="p-2 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 shrink-0 mt-4"
+                              >
+                                <Trash2Icon className="w-4 h-4" />
+                              </button>
+                            </div>
+
+                            <div className="grid sm:grid-cols-2 gap-3">
+                              <div>
+                                <label className="text-[10px] font-mono text-gray-400 uppercase block mb-1">Precio Base (MXN):</label>
+                                <input
+                                  type="number"
+                                  value={pkg.price}
+                                  onChange={(e) => handlePackageFieldChange(catKey, pkg.id, 'price', Number(e.target.value) || 0)}
+                                  className="w-full px-3 py-1.5 rounded-lg bg-[#161C28] border border-white/15 text-white font-mono font-bold text-xs"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-mono text-gray-400 uppercase block mb-1">Insignia Badge:</label>
+                                <input
+                                  type="text"
+                                  value={pkg.badge || ''}
+                                  onChange={(e) => handlePackageFieldChange(catKey, pkg.id, 'badge', e.target.value)}
+                                  className="w-full px-3 py-1.5 rounded-lg bg-[#161C28] border border-white/15 text-white text-xs"
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="text-[10px] font-mono text-gray-400 uppercase block mb-1">Descripción:</label>
+                              <textarea
+                                rows={2}
+                                value={pkg.description}
+                                onChange={(e) => handlePackageFieldChange(catKey, pkg.id, 'description', e.target.value)}
+                                className="w-full p-2.5 rounded-lg bg-[#161C28] border border-white/15 text-white text-xs"
+                              />
+                            </div>
+
+                            {/* Features (Qué INCLUYE) */}
+                            <div className="space-y-2 pt-2 border-t border-white/10">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[11px] font-mono font-bold text-[#D4AF37] uppercase">✓ Qué INCLUYE:</span>
+                                <button
+                                  onClick={() => handlePackageFeatureAdd(catKey, pkg.id)}
+                                  className="text-[10px] text-[#D4AF37] hover:underline font-bold flex items-center gap-1 cursor-pointer"
+                                >
+                                  <PlusIcon className="w-3 h-3" />
+                                  <span>Agregar Incluye</span>
+                                </button>
+                              </div>
+                              <div className="space-y-2">
+                                {pkg.features.map((feat, idx) => (
+                                  <div key={idx} className="flex items-center gap-2">
+                                    <input
+                                      type="text"
+                                      value={feat}
+                                      onChange={(e) => handlePackageFeatureChange(catKey, pkg.id, idx, e.target.value)}
+                                      className="flex-1 px-3 py-1 rounded-lg bg-[#161C28] border border-white/10 text-white text-xs"
+                                    />
+                                    <button
+                                      onClick={() => handlePackageFeatureDelete(catKey, pkg.id, idx)}
+                                      className="p-1 rounded bg-rose-500/10 text-rose-400 hover:bg-rose-500/20"
+                                    >
+                                      <XIcon className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Exclusions (Qué NO INCLUYE) */}
+                            <div className="space-y-2 pt-2 border-t border-white/10">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[11px] font-mono font-bold text-rose-400 uppercase">✕ Qué NO INCLUYE:</span>
+                                <button
+                                  onClick={() => handlePackageNotIncludesAdd(catKey, pkg.id)}
+                                  className="text-[10px] text-rose-400 hover:underline font-bold flex items-center gap-1 cursor-pointer"
+                                >
+                                  <PlusIcon className="w-3 h-3" />
+                                  <span>Agregar No Incluye</span>
+                                </button>
+                              </div>
+                              <div className="space-y-2">
+                                {(pkg.notIncludes || []).map((notInc, idx) => (
+                                  <div key={idx} className="flex items-center gap-2">
+                                    <input
+                                      type="text"
+                                      value={notInc}
+                                      onChange={(e) => handlePackageNotIncludesChange(catKey, pkg.id, idx, e.target.value)}
+                                      className="flex-1 px-3 py-1 rounded-lg bg-[#161C28] border border-white/10 text-white text-xs"
+                                    />
+                                    <button
+                                      onClick={() => handlePackageNotIncludesDelete(catKey, pkg.id, idx)}
+                                      className="p-1 rounded bg-rose-500/10 text-rose-400 hover:bg-rose-500/20"
+                                    >
+                                      <XIcon className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Addons Catalog Editor */}
+                <div className="p-6 rounded-2xl bg-[#0B0F17] border border-white/10 space-y-6">
+                  <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                    <h4 className="text-base font-bold text-[#D4AF37] uppercase font-mono">Servicios Adicionales (Add-Ons)</h4>
+                    <button
+                      onClick={handleAddAddon}
+                      className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold flex items-center gap-2"
+                    >
+                      <PlusIcon className="w-3.5 h-3.5 text-[#D4AF37]" />
+                      <span>+ Agregar Servicio Adicional</span>
+                    </button>
+                  </div>
+
+                  <div className="grid lg:grid-cols-2 gap-6">
+                    {editingAddons.map((addon) => (
+                      <div key={addon.id} className="p-5 rounded-xl bg-white/5 border border-white/10 space-y-3">
+                        <div className="flex justify-between items-center">
+                          <input
+                            type="text"
+                            value={addon.name}
+                            onChange={(e) => handleAddonFieldChange(addon.id, 'name', e.target.value)}
+                            className="font-bold text-white bg-[#161C28] px-3 py-1 rounded-lg text-xs border border-white/15 w-2/3"
+                          />
+                          <button onClick={() => handleDeleteAddon(addon.id)} className="p-1.5 bg-rose-500/10 text-rose-400 rounded-lg">
+                            <Trash2Icon className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <div className="flex gap-3">
+                          <input
+                            type="number"
+                            value={addon.price}
+                            onChange={(e) => handleAddonFieldChange(addon.id, 'price', Number(e.target.value) || 0)}
+                            className="font-mono text-white bg-[#161C28] px-3 py-1 rounded-lg text-xs border border-white/15 w-1/2"
+                          />
+                          <span className="text-xs text-gray-400 my-auto">MXN</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+              </div>
+            )}
+
+            {/* TAB 3: GALERÍA & SUBIR FOTOS */}
+            {activeTab === 'gallery' && (
+              <div className="space-y-6">
+                <div className="p-6 rounded-2xl bg-[#0B0F17] border border-white/10 space-y-4">
+                  <h4 className="text-base font-bold text-white font-serif-luxury flex items-center gap-2">
+                    <UploadIcon className="w-5 h-5 text-[#D4AF37]" />
+                    <span>Agregar Nueva Fotografía a la Galería (CDMX)</span>
+                  </h4>
+
+                  <form onSubmit={handleAddPhotoSubmit} className="grid sm:grid-cols-2 gap-4 text-xs">
+                    <div>
+                      <label className="text-gray-300 block mb-1">Título de la Fotografía *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ej. Boda Editorial en Polanco"
+                        value={newPhotoTitle}
+                        onChange={(e) => setNewPhotoTitle(e.target.value)}
+                        className="w-full px-4 py-2.5 rounded-xl bg-[#161C28] border border-white/15 text-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-gray-300 block mb-1">Categoría</label>
+                      <select
+                        value={newPhotoCategory}
+                        onChange={(e) => setNewPhotoCategory(e.target.value as any)}
+                        className="w-full px-3 py-2.5 rounded-xl bg-[#161C28] border border-white/15 text-white"
+                      >
+                        <option value="bodas">Bodas CDMX</option>
+                        <option value="xv-anos">XV Años</option>
+                        <option value="bautizos">Bautizos & Familia</option>
+                        <option value="retratos">Retratos & Moda</option>
+                        <option value="empresarial">Empresarial & Branding</option>
+                        <option value="previa">Sesión Previa</option>
+                      </select>
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="text-gray-300 block mb-1">URL de la Imagen *</label>
+                      <input
+                        type="url"
+                        required
+                        placeholder="https://images.unsplash.com/photo-..."
+                        value={newPhotoUrl}
+                        onChange={(e) => setNewPhotoUrl(e.target.value)}
+                        className="w-full px-4 py-2.5 rounded-xl bg-[#161C28] border border-white/15 text-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-gray-300 block mb-1">Ubicación / Locación (CDMX)</label>
+                      <input
+                        type="text"
+                        placeholder="Ej. Hacienda de los Morales, CDMX"
+                        value={newPhotoLocation}
+                        onChange={(e) => setNewPhotoLocation(e.target.value)}
+                        className="w-full px-4 py-2.5 rounded-xl bg-[#161C28] border border-white/15 text-white"
+                      />
+                    </div>
+
+                    <div className="flex items-end">
+                      <button
+                        type="submit"
+                        className="w-full py-2.5 rounded-xl gold-gradient-bg text-black font-extrabold flex items-center justify-center gap-2"
+                      >
+                        <PlusIcon className="w-4 h-4" />
+                        <span>Publicar Fotografía</span>
+                      </button>
+                    </div>
+                  </form>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  {galleryImages.map((img) => (
+                    <div key={img.id} className="relative group rounded-xl overflow-hidden border border-white/10 bg-[#0B0F17]">
+                      <img src={img.url} alt={img.title} className="w-full h-32 object-cover" />
+                      <div className="p-2 space-y-1">
+                        <p className="text-xs font-bold text-white truncate">{img.title}</p>
+                        <span className="text-[10px] text-[#D4AF37] uppercase block">{img.category}</span>
+                      </div>
+                      <button
+                        onClick={() => onDeleteGalleryImage(img.id)}
+                        className="absolute top-2 right-2 p-1.5 rounded-full bg-rose-600/80 text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                        title="Eliminar foto"
+                      >
+                        <Trash2Icon className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* TAB 4: TESTIMONIOS & ENLACE DE CLIENTES */}
+            {activeTab === 'testimonials' && (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between bg-[#0B0F17] p-5 rounded-2xl border border-white/10">
+                  <div>
+                    <h4 className="text-base font-bold text-white font-serif-luxury">Gestor de Comentarios & Generador de Enlace</h4>
+                    <p className="text-xs text-gray-400 mt-1">Comparte este enlace a tus clientes para que califiquen el servicio.</p>
+                  </div>
+                  <button
+                    onClick={handleCopyReviewLink}
+                    className="px-5 py-2.5 rounded-xl gold-gradient-bg text-black font-extrabold text-xs flex items-center gap-2 cursor-pointer"
+                  >
+                    <CopyIcon className="w-4 h-4" />
+                    <span>Copiar Enlace de Reseña</span>
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {testimonials.map((t) => (
+                    <div key={t.id} className="p-4 rounded-xl bg-[#0B0F17] border border-white/10 flex items-center justify-between gap-4 text-xs">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-white">{t.clientName}</span>
+                          <span className="text-[#D4AF37]">★ {t.rating}/5</span>
+                          {t.verified && <span className="text-emerald-400 text-[10px] bg-emerald-500/10 px-2 py-0.5 rounded font-mono">Verificado</span>}
+                        </div>
+                        <p className="text-gray-300 italic mt-1 font-serif-luxury">"{t.comment}"</p>
+                      </div>
+
+                      <div className="flex gap-2 shrink-0">
+                        <button
+                          onClick={() => handleToggleVerifyTestimonial(t.id)}
+                          className="px-3 py-1.5 rounded-lg bg-white/10 text-white hover:bg-white/20 text-xs font-semibold"
+                        >
+                          {t.verified ? 'Desverificar' : 'Verificar'}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteTestimonial(t.id)}
+                          className="p-1.5 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500/20"
+                        >
+                          <Trash2Icon className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* TAB 5: CONTACTO EN PIE DE PÁGINA (FOOTER) */}
+            {activeTab === 'footer' && (
+              <div className="p-6 rounded-2xl bg-[#0B0F17] border border-white/10 space-y-4">
+                <h4 className="text-base font-bold text-white font-serif-luxury flex items-center gap-2">
+                  <MapPinIcon className="w-5 h-5 text-[#D4AF37]" />
+                  <span>Editar Información del Pie de Página (CDMX)</span>
+                </h4>
+
+                <form onSubmit={handleSaveFooter} className="space-y-4 text-xs">
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-gray-300 block mb-1">Teléfono Principal</label>
+                      <input
+                        type="text"
+                        value={editingFooter.phone}
+                        onChange={(e) => setEditingFooter({ ...editingFooter, phone: e.target.value })}
+                        className="w-full px-4 py-2.5 rounded-xl bg-[#161C28] border border-white/15 text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-gray-300 block mb-1">Correo de Contacto</label>
+                      <input
+                        type="email"
+                        value={editingFooter.email}
+                        onChange={(e) => setEditingFooter({ ...editingFooter, email: e.target.value })}
+                        className="w-full px-4 py-2.5 rounded-xl bg-[#161C28] border border-white/15 text-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-gray-300 block mb-1">Dirección & Cobertura en CDMX</label>
+                    <input
+                      type="text"
+                      value={editingFooter.address}
+                      onChange={(e) => setEditingFooter({ ...editingFooter, address: e.target.value })}
+                      className="w-full px-4 py-2.5 rounded-xl bg-[#161C28] border border-white/15 text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-gray-300 block mb-1">Horario de Atención</label>
+                    <input
+                      type="text"
+                      value={editingFooter.schedule}
+                      onChange={(e) => setEditingFooter({ ...editingFooter, schedule: e.target.value })}
+                      className="w-full px-4 py-2.5 rounded-xl bg-[#161C28] border border-white/15 text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-gray-300 block mb-1">Texto Breve Sobre el Estudio</label>
+                    <textarea
+                      rows={3}
+                      value={editingFooter.aboutText}
+                      onChange={(e) => setEditingFooter({ ...editingFooter, aboutText: e.target.value })}
+                      className="w-full px-4 py-2.5 rounded-xl bg-[#161C28] border border-white/15 text-white"
+                    />
+                  </div>
+
+                  <div className="pt-2 flex justify-end">
+                    <button
+                      type="submit"
+                      className="px-6 py-2.5 rounded-xl gold-gradient-bg text-black font-extrabold flex items-center gap-2 shadow-lg shadow-[#D4AF37]/20"
+                    >
+                      <SaveIcon className="w-4 h-4" />
+                      <span>Guardar Pie de Página</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {/* TAB 6: SEGURIDAD */}
+            {activeTab === 'security' && (
+              <div className="p-6 rounded-2xl bg-[#0B0F17] border border-white/10 space-y-4">
+                <h4 className="text-base font-bold text-white font-serif-luxury flex items-center gap-2">
+                  <LockIcon className="w-5 h-5 text-[#D4AF37]" />
+                  <span>Seguridad & Credenciales de Administrador</span>
+                </h4>
+
+                <form onSubmit={handleSaveSecurity} className="space-y-4 text-xs max-w-md">
+                  <div>
+                    <label className="text-gray-300 block mb-1">Correo Electrónico de Admin</label>
+                    <input
+                      type="email"
+                      value={newAdminEmail}
+                      onChange={(e) => setNewAdminEmail(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl bg-[#161C28] border border-white/15 text-white font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-gray-300 block mb-1">Nueva Contraseña (Opcional)</label>
+                    <input
+                      type="password"
+                      placeholder="Dejar en blanco para conservar actual"
+                      value={newAdminPassword}
+                      onChange={(e) => setNewAdminPassword(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl bg-[#161C28] border border-white/15 text-white font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-gray-300 block mb-1">Confirmar Nueva Contraseña</label>
+                    <input
+                      type="password"
+                      placeholder="Confirmar contraseña"
+                      value={confirmAdminPassword}
+                      onChange={(e) => setConfirmAdminPassword(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl bg-[#161C28] border border-white/15 text-white font-mono"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="px-6 py-2.5 rounded-xl gold-gradient-bg text-black font-extrabold flex items-center gap-2"
+                  >
+                    <SaveIcon className="w-4 h-4" />
+                    <span>Actualizar Credenciales</span>
+                  </button>
+                </form>
+              </div>
+            )}
+
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+};
