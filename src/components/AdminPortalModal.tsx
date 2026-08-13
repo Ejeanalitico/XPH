@@ -155,6 +155,8 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     details: [],
   });
 
+  const [isSyncingSheetsGallery, setIsSyncingSheetsGallery] = useState(false);
+
   const handleApiKeyChange = (val: string) => {
     setDriveApiKey(val);
     localStorage.setItem('xph_drive_api_key', val);
@@ -576,8 +578,6 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   };
 
   // Force Gallery Sync with Google Sheets
-  const [isSyncingSheetsGallery, setIsSyncingSheetsGallery] = useState(false);
-
   const handleForceSyncGalleryToSheets = async () => {
     setIsSyncingSheetsGallery(true);
     setSaveProgressModal({
