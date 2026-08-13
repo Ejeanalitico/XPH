@@ -1,3 +1,31 @@
+/**
+ * =========================================================================
+ * GOOGLE APPS SCRIPT — XPH CLOUD DATABASE & DRIVE STORAGE BACKEND
+ * =========================================================================
+ * Carpeta Destino en Google Drive: 1UyN3m72kG4liDumQYxlO03cKtJJpYG62
+ * =========================================================================
+ */
+
+var FOLDER_ID = "1UyN3m72kG4liDumQYxlO03cKtJJpYG62";
+
+/**
+ * Obtiene o crea el archivo de base de datos JSON en la carpeta de Google Drive
+ */
+function getDatabaseFile() {
+  var folder = DriveApp.getFolderById(FOLDER_ID);
+  var files = folder.getFilesByName("xph_database.json");
+  if (files.hasNext()) {
+    return files.next();
+  } else {
+    var file = folder.createFile("xph_database.json", "{}", MimeType.PLAIN_TEXT);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    return file;
+  }
+}
+
+/**
+ * Endpoint POST: Subida de fotografías a Drive Y guardado de configuración del sitio
+ */
 function doPost(e) {
   try {
     var rawBase64 = '';
@@ -6,7 +34,7 @@ function doPost(e) {
     var action = '';
     var configData = '';
 
-    // Accept BOTH JSON body AND form-encoded params (URLSearchParams)
+    // 1. Parsear datos entrantes (JSON o URLSearchParams)
     if (e.postData && e.postData.type === 'application/json') {
       var data = JSON.parse(e.postData.contents);
       action     = data.action || '';
@@ -33,16 +61,18 @@ function doPost(e) {
       filename   = e.parameter['filename'] || filename;
     }
 
-    // ACTION: SAVE SITE CONFIGURATION (Prices, Packages, Footer, Gallery, Quotes)
-    if (action === 'saveConfig' || configData) {
-      PropertiesService.getScriptProperties().setProperty('xph_site_data', configData);
+    // ACCIÓN A: GUARDAR CONFIGURACIÓN / PAQUETES / PRECIOS / GALERÍA EN DRIVE
+    if (action === 'saveConfig' || (configData && configData.length > 0)) {
+      var dbFile = getDatabaseFile();
+      dbFile.setContent(configData);
+      dbFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
       return ContentService.createTextOutput(JSON.stringify({
         status: 'success',
-        message: 'Configuración guardada en la nube con éxito'
+        message: 'Base de datos sincronizada en Google Drive con éxito'
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    // ACTION: PHOTO UPLOAD TO DRIVE
+    // ACCIÓN B: SUBIR FOTOGRAFÍA A GOOGLE DRIVE
     if (!rawBase64) {
       throw new Error('No se recibieron datos de imagen ni configuración.');
     }
@@ -53,19 +83,14 @@ function doPost(e) {
     var bytes = Utilities.base64Decode(rawBase64);
     var blob  = Utilities.newBlob(bytes, mimeType, filename);
 
-    var file, fileId;
-    try {
-      file   = Drive.Files.create({ name: filename, mimeType: mimeType }, blob);
-      fileId = file.id;
-    } catch (advErr) {
-      file   = DriveApp.createFile(blob);
-      fileId = file.getId();
-    }
+    var targetFolder = DriveApp.getFolderById(FOLDER_ID);
+    var file = targetFolder.createFile(blob);
+    var fileId = file.getId();
 
-    // Make file publicly readable
+    // Hacer archivo público para visualización web
     try {
-      DriveApp.getFileById(fileId).setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    } catch(_) {}
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } catch (_) {}
 
     var directUrl = 'https://lh3.googleusercontent.com/d/' + fileId;
     var driveUrl  = 'https://drive.google.com/file/d/' + fileId + '/view';
@@ -86,24 +111,29 @@ function doPost(e) {
   }
 }
 
+/**
+ * Endpoint GET: Lectura en tiempo real de la base de datos (para cel, tablet, PC de clientes)
+ */
 function doGet(e) {
   try {
-    var action = (e && e.parameter) ? e.parameter.action : '';
-    if (action === 'loadConfig' || action === 'getConfig') {
-      var savedConfig = PropertiesService.getScriptProperties().getProperty('xph_site_data');
-      return ContentService.createTextOutput(JSON.stringify({
-        status: 'success',
-        config: savedConfig ? JSON.parse(savedConfig) : null
-      })).setMimeType(ContentService.MimeType.JSON);
+    var dbFile = getDatabaseFile();
+    var content = dbFile.getBlob().getDataAsString();
+    var parsed = {};
+    try {
+      parsed = JSON.parse(content);
+    } catch (_) {
+      parsed = {};
     }
 
     return ContentService.createTextOutput(JSON.stringify({
-      status:  'online',
-      service: 'XPH Cloud Sync & Google Drive Direct Storage API'
+      status:  'success',
+      config:  parsed,
+      service: 'XPH Cloud Sync & Google Drive Database API'
     })).setMimeType(ContentService.MimeType.JSON);
+
   } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({
-      status: 'error',
+      status:  'error',
       message: err.toString()
     })).setMimeType(ContentService.MimeType.JSON);
   }

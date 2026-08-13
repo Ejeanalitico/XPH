@@ -234,7 +234,7 @@ export async function saveSiteDataToCloud(siteData: Record<string, any>, scriptU
 }
 
 /**
- * Loads shared site configuration from Cloud via Apps Script
+ * Loads shared site configuration from Cloud via Apps Script (real-time, cache-busted)
  */
 export async function loadSiteDataFromCloud(scriptUrl?: string): Promise<Record<string, any> | null> {
   const targetScriptUrl =
@@ -246,7 +246,8 @@ export async function loadSiteDataFromCloud(scriptUrl?: string): Promise<Record<
   if (!targetScriptUrl) return null;
 
   try {
-    const response = await fetch(`${targetScriptUrl}?action=loadConfig`);
+    const timestamp = Date.now();
+    const response = await fetch(`${targetScriptUrl}?action=loadConfig&_t=${timestamp}`);
     if (!response.ok) return null;
     const data = await response.json();
     if (data.status === 'success' && data.config) {
