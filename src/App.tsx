@@ -198,7 +198,7 @@ export default function App() {
     signatureDataUrl: '',
     paymentMethod: 'stripe',
     total: 24500,
-    depositAmount: 7350,
+    depositAmount: 9800,
   });
 
   // Favorites state
@@ -342,7 +342,7 @@ export default function App() {
           eventType: eventTypeKey,
           selectedPackageId: defaultPackage.id,
           total,
-          depositAmount: Math.round(total * 0.3),
+          depositAmount: Math.round(total * 0.4),
         };
       });
     }
@@ -441,7 +441,7 @@ export default function App() {
 📦 Paquete Seleccionado: ${selectedPkg.name} ($${selectedPkg.price.toLocaleString('es-MX')} MXN)
 🗓️ Fecha Estimada: ${bookingState.date || 'Por definir'}
 ✨ Add-ons Activos: ${activeAddonsNames.length > 0 ? activeAddonsNames.join(', ') : 'Ninguno'}
-💰 Total Cotizado: $${bookingState.total.toLocaleString('es-MX')} MXN (Anticipo 30%: $${bookingState.depositAmount.toLocaleString('es-MX')} MXN)
+💰 Total Cotizado: $${bookingState.total.toLocaleString('es-MX')} MXN (Anticipo 40%: $${bookingState.depositAmount.toLocaleString('es-MX')} MXN)
 
 🤝 Solicito agendar una Visita Presencial / Cita Personalizada para conocer el equipo, ver muestras de álbumes físicos y coordinar la logística. ¡Gracias!`;
 

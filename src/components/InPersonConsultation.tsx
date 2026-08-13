@@ -134,7 +134,7 @@ export const InPersonConsultation: React.FC<InPersonConsultationProps> = ({
               </h3>
 
               <p className="text-gray-400 text-xs sm:text-sm leading-relaxed mb-4">
-                Formalizamos la reserva mediante un <strong className="text-white">contrato firmado formal con firmas autógrafas</strong> y la confirmación del 30% de anticipo. Tu fecha queda jurídicamente respaldada y bloqueada en nuestro calendario.
+                Formalizamos la reserva mediante un <strong className="text-white">contrato firmado formal con firmas autógrafas</strong> y la confirmación del 40% de anticipo. Tu fecha queda jurídicamente respaldada y bloqueada en nuestro calendario.
               </p>
             </div>
 

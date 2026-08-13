@@ -406,7 +406,7 @@ export const BookingWizard: React.FC<BookingWizardProps> = ({
                         ${bookingState.total.toLocaleString('es-MX')} MXN
                       </span>
                       <span className="text-[10px] text-emerald-400 block font-semibold">
-                        Anticipo requerido (30%): ${bookingState.depositAmount.toLocaleString('es-MX')} MXN
+                        Anticipo requerido (40%): ${bookingState.depositAmount.toLocaleString('es-MX')} MXN
                       </span>
                     </div>
                   </div>
@@ -508,7 +508,7 @@ export const BookingWizard: React.FC<BookingWizardProps> = ({
                 <h4 className="font-bold text-white uppercase text-center text-xs">CONTRATO DE PRESTACIÓN DE SERVICIOS FOTOGRÁFICOS (CDMX) CON FIRMA AUTÓGRAFA</h4>
                 <p><strong>PRIMERA: OBJETO DEL CONTRATO.</strong> "EL FOTÓGRAFO" (Xavi.Ph, con cobertura en CDMX, EdoMex, Morelos, Puebla, Querétaro, Tlaxcala, Pachuca y toda la República) se compromete a prestar el servicio de cobertura fotográfica para el evento del cliente ({bookingState.clientName || 'EL CLIENTE'}) programado para el día {bookingState.date || 'a definir'}. Este contrato es un instrumento legal formal con firma autógrafa digital o física.</p>
                 <p><strong>SEGUNDA: GARANTÍA DE ENTREGA Y FORMATO.</strong> Las fotografías serán entregadas en formato HD a través de la plataforma de galería web privada en un plazo no mayor al estipulado en el paquete seleccionado. Todas las imágenes entregadas cuentan con edición de color y luces artesanal.</p>
-                <p><strong>TERCERA: ESQUEMA DE PAGOS.</strong> Se requiere un anticipo equivalente al 30% (${bookingState.depositAmount.toLocaleString('es-MX')} MXN) para la reserva en firme y bloqueo de agenda. El 70% restante será saldado previo o en el momento de la entrega final del material.</p>
+                <p><strong>TERCERA: ESQUEMA DE PAGOS.</strong> Se requiere un anticipo equivalente al 40% (${bookingState.depositAmount.toLocaleString('es-MX')} MXN) para la reserva en firme y bloqueo de agenda. El 60% restante será saldado previo o en el momento de la entrega final del material.</p>
                 <p><strong>CUARTA: COBERTURA Y JURISDICCIÓN.</strong> Para cualquier controversia, las partes se someten a los tribunales competentes de la Ciudad de México.</p>
               </div>
 
@@ -587,7 +587,7 @@ export const BookingWizard: React.FC<BookingWizardProps> = ({
               {/* Payment Summary Box */}
               <div className="p-4 sm:p-5 rounded-xl bg-gradient-to-r from-[#161C28] to-[#0B0F17] border border-[#D4AF37]/30 grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <span className="text-[10px] text-gray-400 uppercase font-mono block">Anticipo Requerido (30%)</span>
+                  <span className="text-[10px] text-gray-400 uppercase font-mono block">Anticipo Requerido (40%)</span>
                   <span className="text-2xl font-black text-emerald-400 font-mono">
                     ${bookingState.depositAmount.toLocaleString('es-MX')} MXN
                   </span>
@@ -595,7 +595,7 @@ export const BookingWizard: React.FC<BookingWizardProps> = ({
                 </div>
 
                 <div className="space-y-1 sm:text-right border-t sm:border-t-0 sm:border-l border-white/10 pt-2 sm:pt-0 sm:pl-4">
-                  <span className="text-[10px] text-gray-400 uppercase font-mono block">Saldo Restante (70%)</span>
+                  <span className="text-[10px] text-gray-400 uppercase font-mono block">Saldo Restante (60%)</span>
                   <span className="text-xl font-bold text-gray-200 font-mono">
                     ${(bookingState.total - bookingState.depositAmount).toLocaleString('es-MX')} MXN
                   </span>

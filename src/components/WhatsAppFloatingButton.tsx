@@ -39,7 +39,7 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
 📦 Paquete Seleccionado: ${selectedPackage.name} ($${selectedPackage.price.toLocaleString('es-MX')} MXN)
 🗓️ Fecha Estimada: ${bookingState.date || 'Por definir'}
 ✨ Add-ons Activos: ${activeAddonsNames.length > 0 ? activeAddonsNames.join(', ') : 'Ninguno'}
-💰 Total Cotizado: $${bookingState.total.toLocaleString('es-MX')} MXN (Anticipo 30%: $${bookingState.depositAmount.toLocaleString('es-MX')} MXN)
+💰 Total Cotizado: $${bookingState.total.toLocaleString('es-MX')} MXN (Anticipo 40%: $${bookingState.depositAmount.toLocaleString('es-MX')} MXN)
 
 🤝 Solicito agendar una Visita Presencial / Cita Personalizada para conocer el equipo, ver muestras de álbumes físicos y coordinar la logística. ¡Gracias!`;
 

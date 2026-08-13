@@ -60,7 +60,7 @@ export const PricingQuoteEngine: React.FC<PricingQuoteEngineProps> = ({
         eventType: type,
         selectedPackageId: newPackage.id,
         total,
-        depositAmount: Math.round(total * 0.3),
+        depositAmount: Math.round(total * 0.4),
       };
     });
   };
@@ -80,7 +80,7 @@ export const PricingQuoteEngine: React.FC<PricingQuoteEngineProps> = ({
         ...prev,
         selectedPackageId: packageId,
         total,
-        depositAmount: Math.round(total * 0.3),
+        depositAmount: Math.round(total * 0.4),
       };
     });
   };
@@ -105,7 +105,7 @@ export const PricingQuoteEngine: React.FC<PricingQuoteEngineProps> = ({
         ...prev,
         selectedAddons: nextAddons,
         total,
-        depositAmount: Math.round(total * 0.3),
+        depositAmount: Math.round(total * 0.4),
       };
     });
   };
@@ -126,7 +126,7 @@ export const PricingQuoteEngine: React.FC<PricingQuoteEngineProps> = ({
         ...prev,
         extraHours: nextHours,
         total,
-        depositAmount: Math.round(total * 0.3),
+        depositAmount: Math.round(total * 0.4),
       };
     });
   };
@@ -227,7 +227,7 @@ export const PricingQuoteEngine: React.FC<PricingQuoteEngineProps> = ({
                       <span className="text-xs text-gray-400">MXN</span>
                     </div>
                     <span className="text-[11px] text-emerald-400 block mt-1">
-                      Anticipo 30%: ${(pkg.price * 0.3).toLocaleString('es-MX')} MXN
+                      Anticipo 40%: ${(pkg.price * 0.4).toLocaleString('es-MX')} MXN
                     </span>
                   </div>
 
@@ -423,13 +423,13 @@ export const PricingQuoteEngine: React.FC<PricingQuoteEngineProps> = ({
                   ${bookingState.total.toLocaleString('es-MX')}
                 </span>
                 <span className="text-[11px] text-emerald-400 font-mono hidden sm:inline">
-                  (Anticipo 30%: ${bookingState.depositAmount.toLocaleString('es-MX')})
+                  (Anticipo 40%: ${bookingState.depositAmount.toLocaleString('es-MX')})
                 </span>
               </div>
             </div>
 
             <div className="sm:hidden text-right">
-              <span className="text-[9px] text-emerald-400 uppercase font-mono block">Anticipo 30%</span>
+              <span className="text-[9px] text-emerald-400 uppercase font-mono block">Anticipo 40%</span>
               <span className="text-xs font-bold text-emerald-400 font-mono">
                 ${bookingState.depositAmount.toLocaleString('es-MX')}
               </span>
