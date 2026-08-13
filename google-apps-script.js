@@ -59,35 +59,54 @@ function doPost(e) {
     var action = '';
     var configData = '';
 
-    // Parsear payload (JSON body o Form-encoded)
-    if (e.postData && e.postData.type === 'application/json') {
-      var data = JSON.parse(e.postData.contents);
-      action     = data.action || '';
-      configData = data.configData || '';
-      rawBase64  = data.base64 || '';
-      mimeType   = data.mimeType || mimeType;
-      filename   = data.filename || filename;
-    } else if (e.postData && e.postData.contents) {
-      var params = {};
-      e.postData.contents.split('&').forEach(function(part) {
-        var kv = part.split('=');
-        params[decodeURIComponent(kv[0])] = decodeURIComponent((kv[1] || '').replace(/\+/g, ' '));
-      });
-      action     = params['action'] || '';
-      configData = params['configData'] || '';
-      rawBase64  = params['base64'] || '';
-      mimeType   = params['mimeType'] || mimeType;
-      filename   = params['filename'] || filename;
-    } else if (e.parameter) {
-      action     = e.parameter['action'] || '';
-      configData = e.parameter['configData'] || '';
-      rawBase64  = e.parameter['base64'] || '';
+    // 1. Parsear datos entrantes de forma universal (JSON string, form-encoded o URL params)
+    if (e && e.postData && e.postData.contents) {
+      var raw = e.postData.contents;
+      var parsedAsJson = false;
+
+      // Intento A: JSON parse directo
+      try {
+        var jsonData = JSON.parse(raw);
+        if (typeof jsonData === 'object' && jsonData !== null) {
+          action     = jsonData.action || '';
+          configData = jsonData.configData || '';
+          rawBase64  = jsonData.base64 || '';
+          mimeType   = jsonData.mimeType || mimeType;
+          filename   = jsonData.filename || filename;
+          parsedAsJson = true;
+        }
+      } catch (_) {}
+
+      // Intento B: Form-encoded parse
+      if (!parsedAsJson) {
+        var params = {};
+        raw.split('&').forEach(function(part) {
+          var kv = part.split('=');
+          if (kv.length >= 2) {
+            params[decodeURIComponent(kv[0])] = decodeURIComponent(kv.slice(1).join('=').replace(/\+/g, ' '));
+          }
+        });
+        action     = params['action'] || action;
+        configData = params['configData'] || configData;
+        rawBase64  = params['base64'] || rawBase64;
+        mimeType   = params['mimeType'] || mimeType;
+        filename   = params['filename'] || filename;
+      }
+    }
+
+    if (e && e.parameter) {
+      action     = e.parameter['action'] || action;
+      configData = e.parameter['configData'] || configData;
+      rawBase64  = e.parameter['base64'] || rawBase64;
       mimeType   = e.parameter['mimeType'] || mimeType;
       filename   = e.parameter['filename'] || filename;
     }
 
     // ACCIÓN 1: GUARDAR CONFIGURACIÓN DEL SITIO (Paquetes, Precios, Fotos, Testimonios)
     if (action === 'saveConfig' || (configData && configData.length > 0)) {
+      if (typeof configData === 'object') {
+        configData = JSON.stringify(configData);
+      }
       saveToProperties(configData);
       
       // Intentar guardar copia en archivo de Drive si DriveApp está disponible
@@ -107,7 +126,7 @@ function doPost(e) {
 
     // ACCIÓN 2: SUBIR FOTOGRAFÍA A GOOGLE DRIVE
     if (!rawBase64) {
-      throw new Error('No se recibieron datos de imagen.');
+      throw new Error('No se recibieron datos de imagen ni configuración.');
     }
 
     if (rawBase64.indexOf(',') > -1) rawBase64 = rawBase64.split(',')[1];

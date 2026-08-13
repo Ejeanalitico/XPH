@@ -157,40 +157,47 @@ export async function uploadImageToGoogleDrive(
 
   if (targetScriptUrl) {
     try {
-      // Use XMLHttpRequest to have full control over the request
-      const result = await new Promise<any>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', targetScriptUrl, true);
-        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-        xhr.timeout = 60000; // 60 seconds
-        xhr.onload = () => {
-          try {
-            const data = JSON.parse(xhr.responseText);
-            resolve(data);
-          } catch {
-            reject(new Error('Respuesta inválida del servidor de Google'));
-          }
-        };
-        xhr.onerror = () => reject(new Error('Error de red al conectar con Google Apps Script'));
-        xhr.ontimeout = () => reject(new Error('Tiempo de espera agotado. Intenta con una imagen más pequeña.'));
-
-        const body = new URLSearchParams({
-          filename: filename || `foto_xph_${Date.now()}.jpg`,
-          mimeType,
-          base64: base64String,
-        });
-        xhr.send(body.toString());
+      const cleanFilename = filename || `foto_xph_${Date.now()}.jpg`;
+      const payload = JSON.stringify({
+        action: 'uploadPhoto',
+        filename: cleanFilename,
+        mimeType,
+        base64: base64String,
       });
 
+      const response = await fetch(targetScriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: payload,
+      });
+
+      const result = await response.json();
       console.log('[XPH Drive Upload] Response:', result);
 
       if (result.status === 'success' && result.fileId) {
         return { fileId: result.fileId, url: result.url, isDrive: true };
       } else {
-        throw new Error(result.message || 'Google Drive rechazó el archivo');
+        throw new Error(result.message || 'Google Drive no devolvió ID de archivo');
       }
     } catch (err: any) {
       console.error('[XPH Drive Upload] Error:', err);
+      // Fallback via URLSearchParams if text/plain fails
+      try {
+        const body = new URLSearchParams({
+          filename: filename || `foto_xph_${Date.now()}.jpg`,
+          mimeType,
+          base64: base64String,
+        });
+        const res = await fetch(targetScriptUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: body.toString(),
+        });
+        const data = await res.json();
+        if (data.status === 'success' && data.fileId) {
+          return { fileId: data.fileId, url: data.url, isDrive: true };
+        }
+      } catch (_) {}
       throw new Error(`Error al subir a Google Drive: ${err.message}`);
     }
   }
@@ -215,20 +222,22 @@ export async function saveSiteDataToCloud(siteData: Record<string, any>, scriptU
   if (!targetScriptUrl) return false;
 
   try {
-    const cleanData = JSON.stringify(siteData);
+    const cleanData = typeof siteData === 'string' ? siteData : JSON.stringify(siteData);
     const body = new URLSearchParams({
       action: 'saveConfig',
       configData: cleanData,
     });
 
+    // Send with mode: 'no-cors' so browser executes POST through 302 redirect without CORS failure
     await fetch(targetScriptUrl, {
       method: 'POST',
+      mode: 'no-cors',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: body.toString(),
     });
     return true;
   } catch (err) {
-    console.warn('[XPH Cloud Sync] Background save failed, local cache preserved:', err);
+    console.warn('[XPH Cloud Sync] Background save error:', err);
     return false;
   }
 }
@@ -247,14 +256,21 @@ export async function loadSiteDataFromCloud(scriptUrl?: string): Promise<Record<
 
   try {
     const timestamp = Date.now();
-    const response = await fetch(`${targetScriptUrl}?action=loadConfig&_t=${timestamp}`);
+    const response = await fetch(`${targetScriptUrl}?action=loadConfig&_t=${timestamp}`, {
+      method: 'GET',
+      redirect: 'follow',
+      headers: { 'Accept': 'application/json' },
+    });
     if (!response.ok) return null;
     const data = await response.json();
     if (data.status === 'success' && data.config) {
-      return typeof data.config === 'string' ? JSON.parse(data.config) : data.config;
+      const parsed = typeof data.config === 'string' ? JSON.parse(data.config) : data.config;
+      if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+        return parsed;
+      }
     }
   } catch (err) {
-    console.log('[XPH Cloud Sync] Using local storage cache.');
+    console.log('[XPH Cloud Sync] Using local cache / default assets.');
   }
   return null;
 }
