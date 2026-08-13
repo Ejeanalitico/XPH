@@ -4,28 +4,35 @@
  * =========================================================================
  * Carpeta Destino en Google Drive: 1UyN3m72kG4liDumQYxlO03cKtJJpYG62
  * =========================================================================
+ * IMPORTANTE AL CONFIGURAR LA IMPLEMENTACIÓN:
+ * 1. "Ejecutar como" (Execute as): "Yo (tu cuenta de Google)"
+ * 2. "Quién tiene acceso" (Who has access): "Cualquier persona" (Anyone)
+ * =========================================================================
  */
 
 var FOLDER_ID = "1UyN3m72kG4liDumQYxlO03cKtJJpYG62";
 
-/**
- * Obtiene o crea el archivo de base de datos JSON en la carpeta de Google Drive
- */
 function getDatabaseFile() {
-  var folder = DriveApp.getFolderById(FOLDER_ID);
-  var files = folder.getFilesByName("xph_database.json");
-  if (files.hasNext()) {
-    return files.next();
-  } else {
-    var file = folder.createFile("xph_database.json", "{}", MimeType.PLAIN_TEXT);
-    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    return file;
+  try {
+    var folder;
+    try {
+      folder = DriveApp.getFolderById(FOLDER_ID);
+    } catch (_) {
+      folder = DriveApp.getRootFolder();
+    }
+    var files = folder.getFilesByName("xph_database.json");
+    if (files.hasNext()) {
+      return files.next();
+    } else {
+      var file = folder.createFile("xph_database.json", "{}", MimeType.PLAIN_TEXT);
+      try { file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (_) {}
+      return file;
+    }
+  } catch (e) {
+    return null;
   }
 }
 
-/**
- * Endpoint POST: Subida de fotografías a Drive Y guardado de configuración del sitio
- */
 function doPost(e) {
   try {
     var rawBase64 = '';
@@ -34,7 +41,7 @@ function doPost(e) {
     var action = '';
     var configData = '';
 
-    // 1. Parsear datos entrantes (JSON o URLSearchParams)
+    // 1. Parsear datos entrantes
     if (e.postData && e.postData.type === 'application/json') {
       var data = JSON.parse(e.postData.contents);
       action     = data.action || '';
@@ -61,21 +68,31 @@ function doPost(e) {
       filename   = e.parameter['filename'] || filename;
     }
 
-    // ACCIÓN A: GUARDAR CONFIGURACIÓN / PAQUETES / PRECIOS / GALERÍA EN DRIVE
+    // ACCIÓN A: GUARDAR CONFIGURACIÓN / PRECIOS / PAQUETES / GALERÍA
     if (action === 'saveConfig' || (configData && configData.length > 0)) {
-      var dbFile = getDatabaseFile();
-      dbFile.setContent(configData);
-      dbFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      var savedInDrive = false;
+      try {
+        var dbFile = getDatabaseFile();
+        if (dbFile) {
+          dbFile.setContent(configData);
+          try { dbFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (_) {}
+          savedInDrive = true;
+        }
+      } catch (_) {}
+
+      try {
+        PropertiesService.getScriptProperties().setProperty('xph_site_data', configData);
+      } catch (_) {}
+
       return ContentService.createTextOutput(JSON.stringify({
         status: 'success',
-        message: 'Base de datos sincronizada en Google Drive con éxito'
+        savedInDrive: savedInDrive,
+        message: 'Base de datos sincronizada con éxito'
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
     // ACCIÓN B: SUBIR FOTOGRAFÍA A GOOGLE DRIVE
-    if (!rawBase64) {
-      throw new Error('No se recibieron datos de imagen ni configuración.');
-    }
+    if (!rawBase64) throw new Error('No se recibieron datos.');
 
     if (rawBase64.indexOf(',') > -1) rawBase64 = rawBase64.split(',')[1];
     rawBase64 = rawBase64.replace(/\s/g, '');
@@ -83,14 +100,16 @@ function doPost(e) {
     var bytes = Utilities.base64Decode(rawBase64);
     var blob  = Utilities.newBlob(bytes, mimeType, filename);
 
-    var targetFolder = DriveApp.getFolderById(FOLDER_ID);
-    var file = targetFolder.createFile(blob);
-    var fileId = file.getId();
-
-    // Hacer archivo público para visualización web
+    var file;
     try {
-      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    } catch (_) {}
+      var folder = DriveApp.getFolderById(FOLDER_ID);
+      file = folder.createFile(blob);
+    } catch (_) {
+      file = DriveApp.createFile(blob);
+    }
+
+    var fileId = file.getId();
+    try { file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (_) {}
 
     var directUrl = 'https://lh3.googleusercontent.com/d/' + fileId;
     var driveUrl  = 'https://drive.google.com/file/d/' + fileId + '/view';
@@ -111,19 +130,25 @@ function doPost(e) {
   }
 }
 
-/**
- * Endpoint GET: Lectura en tiempo real de la base de datos (para cel, tablet, PC de clientes)
- */
 function doGet(e) {
   try {
-    var dbFile = getDatabaseFile();
-    var content = dbFile.getBlob().getDataAsString();
-    var parsed = {};
+    var content = '';
     try {
-      parsed = JSON.parse(content);
-    } catch (_) {
-      parsed = {};
+      var dbFile = getDatabaseFile();
+      if (dbFile) {
+        content = dbFile.getBlob().getDataAsString();
+      }
+    } catch (_) {}
+
+    if (!content || content === '{}') {
+      try {
+        var prop = PropertiesService.getScriptProperties().getProperty('xph_site_data');
+        if (prop) content = prop;
+      } catch (_) {}
     }
+
+    var parsed = {};
+    try { parsed = JSON.parse(content || '{}'); } catch (_) { parsed = {}; }
 
     return ContentService.createTextOutput(JSON.stringify({
       status:  'success',
