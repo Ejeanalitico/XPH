@@ -11,64 +11,86 @@ var FOLDER_ID = "1UyN3m72kG4liDumQYxlO03cKtJJpYG62";
 var SPREADSHEET_NAME = "XPH_DATABASE_PRODUCCION";
 
 /**
+ * Función de inicialización y prueba manual (Ejecuta esta función una vez para autorizar)
+ */
+function initDatabase() {
+  var ss = getDatabaseSpreadsheet();
+  if (ss) {
+    Logger.log('Base de datos creada y configurada con éxito: ' + ss.getUrl());
+    return ss.getUrl();
+  }
+}
+
+/**
  * Obtiene o crea la hoja de cálculo de base de datos con las 5 tablas estructuradas
  */
 function getDatabaseSpreadsheet() {
-  var folder;
   try {
-    folder = DriveApp.getFolderById(FOLDER_ID);
-  } catch (_) {
-    folder = DriveApp.getRootFolder();
+    var folder;
+    try {
+      folder = DriveApp.getFolderById(FOLDER_ID);
+    } catch (_) {
+      folder = DriveApp.getRootFolder();
+    }
+
+    var files = folder.getFilesByName(SPREADSHEET_NAME);
+    var ss = null;
+
+    if (files.hasNext()) {
+      ss = SpreadsheetApp.open(files.next());
+    } else {
+      ss = SpreadsheetApp.create(SPREADSHEET_NAME);
+      var file = DriveApp.getFileById(ss.getId());
+      folder.addFile(file);
+      try { DriveApp.getRootFolder().removeFile(file); } catch (_) {}
+      try { file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (_) {}
+    }
+
+    if (ss) {
+      initSpreadsheetSheets(ss);
+    }
+    return ss;
+  } catch (e) {
+    Logger.log('Spreadsheet notice (requires one-time manual execution): ' + e);
+    return null;
   }
-
-  var files = folder.getFilesByName(SPREADSHEET_NAME);
-  var ss;
-
-  if (files.hasNext()) {
-    ss = SpreadsheetApp.open(files.next());
-  } else {
-    ss = SpreadsheetApp.create(SPREADSHEET_NAME);
-    var file = DriveApp.getFileById(ss.getId());
-    folder.addFile(file);
-    try { DriveApp.getRootFolder().removeFile(file); } catch (_) {}
-    try { file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (_) {}
-  }
-
-  initSpreadsheetSheets(ss);
-  return ss;
 }
 
 /**
  * Inicializa y da formato a las 5 tablas/pestañas de la base de datos
  */
 function initSpreadsheetSheets(ss) {
-  var sheetsMap = {
-    'Config_Activa': ['Clave', 'Valor_JSON', 'Ultima_Actualizacion'],
-    'Historial_Auditoria': ['Fecha_Hora', 'Accion', 'Detalles_Cambio', 'ID_Elemento', 'Usuario', 'Estado'],
-    'Galeria_Fotos': ['ID_Foto', 'Titulo', 'Categoria', 'URL_Google_Drive', 'Ubicacion', 'Fecha_Carga', 'Estado'],
-    'Cotizaciones_Citas': ['ID_Cotizacion', 'Fecha_Registro', 'Cliente', 'Email', 'WhatsApp', 'Evento', 'Paquete', 'Total_MXN', 'Anticipo_40_MXN', 'Saldo_60_MXN', 'Fecha_Evento', 'Ciudad', 'Estado_Cotizacion', 'Notas'],
-    'Paquetes_Precios': ['Categoria', 'ID_Paquete', 'Nombre', 'Precio_MXN', 'Anticipo_40_MXN', 'Horas_Cobertura', 'Fotos_Entregables', 'Incluye', 'Ultima_Modificacion']
-  };
+  if (!ss) return;
+  try {
+    var sheetsMap = {
+      'Config_Activa': ['Clave', 'Valor_JSON', 'Ultima_Actualizacion'],
+      'Historial_Auditoria': ['Fecha_Hora', 'Accion', 'Detalles_Cambio', 'ID_Elemento', 'Usuario', 'Estado'],
+      'Galeria_Fotos': ['ID_Foto', 'Titulo', 'Categoria', 'URL_Google_Drive', 'Ubicacion', 'Fecha_Carga', 'Estado'],
+      'Cotizaciones_Citas': ['ID_Cotizacion', 'Fecha_Registro', 'Cliente', 'Email', 'WhatsApp', 'Evento', 'Paquete', 'Total_MXN', 'Anticipo_40_MXN', 'Saldo_60_MXN', 'Fecha_Evento', 'Ciudad', 'Estado_Cotizacion', 'Notas'],
+      'Paquetes_Precios': ['Categoria', 'ID_Paquete', 'Nombre', 'Precio_MXN', 'Anticipo_40_MXN', 'Horas_Cobertura', 'Fotos_Entregables', 'Incluye', 'Ultima_Modificacion']
+    };
 
-  for (var sheetName in sheetsMap) {
-    var sheet = ss.getSheetByName(sheetName);
-    if (!sheet) {
-      sheet = ss.insertSheet(sheetName);
-      var headers = sheetsMap[sheetName];
-      sheet.appendRow(headers);
-      sheet.getRange(1, 1, 1, headers.length)
-        .setBackground('#161C28')
-        .setFontColor('#D4AF37')
-        .setFontWeight('bold')
-        .setFontFamily('Arial');
-      sheet.setFrozenRows(1);
+    for (var sheetName in sheetsMap) {
+      var sheet = ss.getSheetByName(sheetName);
+      if (!sheet) {
+        sheet = ss.insertSheet(sheetName);
+        var headers = sheetsMap[sheetName];
+        sheet.appendRow(headers);
+        sheet.getRange(1, 1, 1, headers.length)
+          .setBackground('#161C28')
+          .setFontColor('#D4AF37')
+          .setFontWeight('bold')
+          .setFontFamily('Arial');
+        sheet.setFrozenRows(1);
+      }
     }
-  }
 
-  // Eliminar la hoja por defecto 'Hoja 1' si existen otras
-  var defaultSheet = ss.getSheetByName('Hoja 1') || ss.getSheetByName('Sheet1');
-  if (defaultSheet && ss.getSheets().length > 1) {
-    try { ss.deleteSheet(defaultSheet); } catch (_) {}
+    var defaultSheet = ss.getSheetByName('Hoja 1') || ss.getSheetByName('Sheet1');
+    if (defaultSheet && ss.getSheets().length > 1) {
+      try { ss.deleteSheet(defaultSheet); } catch (_) {}
+    }
+  } catch (e) {
+    Logger.log('Error init sheets: ' + e);
   }
 }
 
@@ -76,6 +98,7 @@ function initSpreadsheetSheets(ss) {
  * Registra una acción en la tabla Historial_Auditoria
  */
 function logAudit(ss, action, details, elementId, user) {
+  if (!ss) return;
   try {
     var sheet = ss.getSheetByName('Historial_Auditoria');
     if (sheet) {
@@ -97,11 +120,11 @@ function logAudit(ss, action, details, elementId, user) {
  * Sincroniza la tabla Galeria_Fotos en Google Sheets
  */
 function syncGalleryTable(ss, galleryImages) {
+  if (!ss) return;
   try {
     var sheet = ss.getSheetByName('Galeria_Fotos');
     if (!sheet) return;
 
-    // Limpiar filas anteriores manteniendo encabezados
     var lastRow = sheet.getLastRow();
     if (lastRow > 1) {
       sheet.deleteRows(2, lastRow - 1);
@@ -133,6 +156,7 @@ function syncGalleryTable(ss, galleryImages) {
  * Sincroniza la tabla Paquetes_Precios en Google Sheets
  */
 function syncPackagesTable(ss, packages) {
+  if (!ss) return;
   try {
     var sheet = ss.getSheetByName('Paquetes_Precios');
     if (!sheet) return;
@@ -177,6 +201,7 @@ function syncPackagesTable(ss, packages) {
  * Sincroniza la tabla Cotizaciones_Citas en Google Sheets
  */
 function syncQuotesTable(ss, quotes) {
+  if (!ss) return;
   try {
     var sheet = ss.getSheetByName('Cotizaciones_Citas');
     if (!sheet) return;
@@ -219,31 +244,36 @@ function syncQuotesTable(ss, quotes) {
  * Guarda la última versión activa en la pestaña Config_Activa y en Properties
  */
 function saveActiveConfig(ss, configJsonString) {
-  // 1. Guardar en Google Sheets (Config_Activa)
-  try {
-    var sheet = ss.getSheetByName('Config_Activa');
-    if (sheet) {
-      var lastRow = sheet.getLastRow();
-      if (lastRow > 1) {
-        sheet.deleteRows(2, lastRow - 1);
+  if (ss) {
+    try {
+      var sheet = ss.getSheetByName('Config_Activa');
+      if (sheet) {
+        var lastRow = sheet.getLastRow();
+        if (lastRow > 1) {
+          sheet.deleteRows(2, lastRow - 1);
+        }
+        sheet.appendRow(['database_json_payload', configJsonString, new Date().toISOString()]);
       }
-      sheet.appendRow(['database_json_payload', configJsonString, new Date().toISOString()]);
+    } catch (e) {
+      Logger.log('Error save active config: ' + e);
     }
-  } catch (e) {
-    Logger.log('Error save active config: ' + e);
   }
 
-  // 2. Guardar en PropertiesService Chunks para respuesta ultrarrápida a la web
   var props = PropertiesService.getScriptProperties();
   var CHUNK_SIZE = 8000;
   var totalChunks = Math.ceil(configJsonString.length / CHUNK_SIZE);
   
   var newProps = {
     'xph_total_chunks': totalChunks.toString(),
-    'xph_updated_at': new Date().toISOString(),
-    'xph_spreadsheet_id': ss.getId(),
-    'xph_spreadsheet_url': ss.getUrl()
+    'xph_updated_at': new Date().toISOString()
   };
+
+  if (ss) {
+    try {
+      newProps['xph_spreadsheet_id'] = ss.getId();
+      newProps['xph_spreadsheet_url'] = ss.getUrl();
+    } catch (_) {}
+  }
   
   for (var i = 0; i < totalChunks; i++) {
     newProps['chunk_' + i] = configJsonString.substring(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
@@ -268,12 +298,13 @@ function loadActiveConfig() {
     if (fullString) return fullString;
   }
 
-  // Si no está en Properties, leer de Google Sheets
   try {
     var ss = getDatabaseSpreadsheet();
-    var sheet = ss.getSheetByName('Config_Activa');
-    if (sheet && sheet.getLastRow() >= 2) {
-      return sheet.getRange(2, 2).getValue() || '';
+    if (ss) {
+      var sheet = ss.getSheetByName('Config_Activa');
+      if (sheet && sheet.getLastRow() >= 2) {
+        return sheet.getRange(2, 2).getValue() || '';
+      }
     }
   } catch (_) {}
 
@@ -295,7 +326,6 @@ function doPost(e) {
     var auditType = '';
     var auditDetails = '';
 
-    // 1. Parsear datos entrantes (JSON o Form-encoded)
     if (e && e.postData && e.postData.contents) {
       var raw = e.postData.contents;
       var parsed = false;
@@ -342,7 +372,10 @@ function doPost(e) {
       auditDetails = e.parameter['auditDetails'] || auditDetails;
     }
 
-    var ss = getDatabaseSpreadsheet();
+    var ss = null;
+    try {
+      ss = getDatabaseSpreadsheet();
+    } catch (_) {}
 
     // ACCIÓN 1: GUARDAR Y SINCRONIZAR EN GOOGLE SHEETS
     if (action === 'saveConfig' || (configData && configData.length > 0)) {
@@ -356,24 +389,24 @@ function doPost(e) {
       var jsonStr = JSON.stringify(configObj);
       saveActiveConfig(ss, jsonStr);
 
-      // Sincronizar tablas individuales
-      if (configObj.galleryImages) syncGalleryTable(ss, configObj.galleryImages);
-      if (configObj.packages) syncPackagesTable(ss, configObj.packages);
-      if (configObj.quotes) syncQuotesTable(ss, configObj.quotes);
+      if (ss) {
+        if (configObj.galleryImages) syncGalleryTable(ss, configObj.galleryImages);
+        if (configObj.packages) syncPackagesTable(ss, configObj.packages);
+        if (configObj.quotes) syncQuotesTable(ss, configObj.quotes);
 
-      // Registrar auditoría
-      logAudit(
-        ss,
-        auditType || 'ACTUALIZACION_CONFIGURACION',
-        auditDetails || 'Cambios guardados en base de datos',
-        '-',
-        'Admin XPH'
-      );
+        logAudit(
+          ss,
+          auditType || 'ACTUALIZACION_CONFIGURACION',
+          auditDetails || 'Cambios guardados en base de datos',
+          '-',
+          'Admin XPH'
+        );
+      }
 
       return ContentService.createTextOutput(JSON.stringify({
         status: 'success',
-        spreadsheetUrl: ss.getUrl(),
-        message: 'Base de datos sincronizada en Google Sheets con éxito'
+        spreadsheetUrl: ss ? ss.getUrl() : '',
+        message: 'Base de datos sincronizada en la nube con éxito'
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -405,14 +438,15 @@ function doPost(e) {
     var directUrl = 'https://lh3.googleusercontent.com/d/' + fileId;
     var driveUrl  = 'https://drive.google.com/file/d/' + fileId + '/view';
 
-    // Registrar subida en Auditoría
-    logAudit(
-      ss,
-      'SUBIDA_FOTOGRAFIA_DRIVE',
-      'Archivo: ' + filename + ' | DirectUrl: ' + directUrl,
-      fileId,
-      'Admin XPH'
-    );
+    if (ss) {
+      logAudit(
+        ss,
+        'SUBIDA_FOTOGRAFIA_DRIVE',
+        'Archivo: ' + filename + ' | DirectUrl: ' + directUrl,
+        fileId,
+        'Admin XPH'
+      );
+    }
 
     return ContentService.createTextOutput(JSON.stringify({
       status:   'success',
@@ -420,7 +454,7 @@ function doPost(e) {
       url:      directUrl,
       driveUrl: driveUrl,
       name:     filename,
-      spreadsheetUrl: ss.getUrl()
+      spreadsheetUrl: ss ? ss.getUrl() : ''
     })).setMimeType(ContentService.MimeType.JSON);
 
   } catch (err) {
