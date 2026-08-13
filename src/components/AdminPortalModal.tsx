@@ -6,6 +6,7 @@ import {
   fetchDriveFolderImages,
   extractDriveFolderId,
   uploadImageToGoogleDrive,
+  saveSiteDataToCloud,
 } from '../utils/googleDrive';
 import { SafeImage } from './SafeImage';
 import {
@@ -32,6 +33,7 @@ import {
   Edit as EditIcon,
   RefreshCw as RefreshCwIcon,
   Table as TableIcon,
+  Folder as FolderIcon,
 } from 'lucide-react';
 
 import {
@@ -533,6 +535,30 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       onShowToast('Error al publicar', err.message || 'No se pudo procesar la fotografía.', 'warning');
     } finally {
       setIsUploadingPhoto(false);
+    }
+  };
+
+  // Force Gallery Sync with Google Sheets
+  const [isSyncingSheetsGallery, setIsSyncingSheetsGallery] = useState(false);
+
+  const handleForceSyncGalleryToSheets = async () => {
+    setIsSyncingSheetsGallery(true);
+    try {
+      const cleanImages = galleryImages.filter((img) => !img.url.startsWith('data:image/'));
+      await saveSiteDataToCloud(
+        { galleryImages: cleanImages },
+        'SINCRONIZACION_MANUAL_GALERIA',
+        `Sincronización forzada de ${cleanImages.length} fotos con Google Sheets`
+      );
+      onShowToast(
+        'Galería Sincronizada en Google Sheets',
+        `Las ${cleanImages.length} fotografías se actualizaron en la tabla Galeria_Fotos del Excel.`,
+        'success'
+      );
+    } catch (err: any) {
+      onShowToast('Error al sincronizar', err?.message || 'No se pudo sincronizar.', 'warning');
+    } finally {
+      setIsSyncingSheetsGallery(false);
     }
   };
 
@@ -1264,8 +1290,61 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
             {/* TAB 3: GALERÍA & SUBIR FOTOS */}
             {activeTab === 'gallery' && (
               <div className="space-y-6">
+                {/* Google Sheets Database & Cloud Controls */}
+                <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-[#161C28] via-[#1A2232] to-[#161C28] border border-[#D4AF37]/50 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <TableIcon className="w-5 h-5 text-[#D4AF37]" />
+                      <h4 className="text-sm sm:text-base font-bold text-white font-serif-luxury">
+                        Base de Datos de Fotografías & Historial Cloud
+                      </h4>
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 text-[10px] font-mono font-bold border border-emerald-500/30">
+                        {galleryImages.length} Fotos Activas
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-300">
+                      Gestiona, valida y audita cada fotografía registrada en tiempo real en la tabla <code className="text-[#D4AF37]">Galeria_Fotos</code> de Google Sheets.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2.5 flex-wrap w-full sm:w-auto">
+                    <button
+                      type="button"
+                      disabled={isSyncingSheetsGallery}
+                      onClick={handleForceSyncGalleryToSheets}
+                      className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl gold-gradient-bg text-black font-extrabold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-[#D4AF37]/20 hover:scale-105 transition-all disabled:opacity-50"
+                      title="Guardar y sincronizar todas las fotos actuales en Google Sheets"
+                    >
+                      <SaveIcon className={`w-3.5 h-3.5 ${isSyncingSheetsGallery ? 'animate-spin' : ''}`} />
+                      <span>{isSyncingSheetsGallery ? 'Sincronizando...' : '💾 Guardar en Google Sheets'}</span>
+                    </button>
+
+                    <a
+                      href={localStorage.getItem('xph_spreadsheet_url') || 'https://docs.google.com/spreadsheets/d/1GavJQKZnn_qtOdc5aaMtqvJg951CccgH1LxuWKhTLAg/edit'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 sm:flex-none px-3.5 py-2.5 rounded-xl bg-[#D4AF37]/10 border border-[#D4AF37]/40 text-[#D4AF37] hover:bg-[#D4AF37]/20 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                      title="Abrir tabla Galeria_Fotos en Google Sheets"
+                    >
+                      <TableIcon className="w-4 h-4 shrink-0" />
+                      <span>Ver en Google Sheets</span>
+                    </a>
+
+                    <a
+                      href="https://drive.google.com/drive/folders/1UyN3m72kG4liDumQYxlO03cKtJJpYG62"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3 py-2.5 rounded-xl bg-white/5 border border-white/15 text-gray-300 hover:text-white hover:bg-white/10 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                      title="Abrir carpeta en Google Drive"
+                    >
+                      <FolderIcon className="w-4 h-4 shrink-0 text-[#D4AF37]" />
+                      <span className="hidden md:inline">Google Drive</span>
+                    </a>
+                  </div>
+                </div>
+
                 {/* Google Drive Folder Automatic Sync Card */}
-                <div className="p-6 rounded-2xl bg-gradient-to-r from-[#161C28] via-[#1A2232] to-[#161C28] border border-[#D4AF37]/40 space-y-4 shadow-xl">
+                <div className="p-6 rounded-2xl bg-[#0B0F17] border border-white/10 space-y-4">
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-white/10 pb-3">
                     <div>
                       <h4 className="text-base font-bold text-white font-serif-luxury flex items-center gap-2">
@@ -1418,28 +1497,45 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  {galleryImages.map((img) => (
-                    <div key={img.id} className="relative group rounded-xl overflow-hidden border border-white/10 bg-[#0B0F17]">
-                      <SafeImage src={img.url} alt={img.title} className="w-full h-32 object-cover" />
-                      <div className="p-2 space-y-1">
-                        <p className="text-xs font-bold text-white truncate">{img.title}</p>
-                        <span className="text-[10px] text-[#D4AF37] uppercase block">{img.category}</span>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h5 className="text-xs font-bold uppercase tracking-wider text-gray-400">
+                      Fotografías en Portafolio ({galleryImages.length})
+                    </h5>
+                    <button
+                      type="button"
+                      disabled={isSyncingSheetsGallery}
+                      onClick={handleForceSyncGalleryToSheets}
+                      className="text-xs text-[#D4AF37] hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <SaveIcon className="w-3 h-3" />
+                      <span>Sincronizar tabla Excel</span>
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    {galleryImages.map((img) => (
+                      <div key={img.id} className="relative group rounded-xl overflow-hidden border border-white/10 bg-[#0B0F17]">
+                        <SafeImage src={img.url} alt={img.title} className="w-full h-32 object-cover" />
+                        <div className="p-2 space-y-1">
+                          <p className="text-xs font-bold text-white truncate">{img.title}</p>
+                          <span className="text-[10px] text-[#D4AF37] uppercase block">{img.category}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteGalleryImage(img.id);
+                            onShowToast('Foto Eliminada', 'La imagen fue removida de la galería permanentemente.', 'success');
+                          }}
+                          className="absolute top-2 right-2 p-1.5 sm:p-2 rounded-lg bg-rose-600/90 hover:bg-rose-600 text-white shadow-lg transition-all cursor-pointer z-10 opacity-90 sm:opacity-0 sm:group-hover:opacity-100"
+                          title="Eliminar foto de la galería"
+                        >
+                          <Trash2Icon className="w-3.5 h-3.5" />
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDeleteGalleryImage(img.id);
-                          onShowToast('Foto Eliminada', 'La imagen fue removida de la galería permanentemente.', 'success');
-                        }}
-                        className="absolute top-2 right-2 p-1.5 sm:p-2 rounded-lg bg-rose-600/90 hover:bg-rose-600 text-white shadow-lg transition-all cursor-pointer z-10 opacity-90 sm:opacity-0 sm:group-hover:opacity-100"
-                        title="Eliminar foto de la galería"
-                      >
-                        <Trash2Icon className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
