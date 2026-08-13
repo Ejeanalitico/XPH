@@ -461,6 +461,20 @@ export default function App() {
     saveSiteDataToCloud(dataToSync, auditType, auditDetails);
   };
 
+  const handleSavePrices = (newPackages: Record<EventType, PackageOption[]>, newAddons: AddOnOption[]) => {
+    setPackagesState(newPackages);
+    setAddonsState(newAddons);
+    try {
+      localStorage.setItem('xph_packages', JSON.stringify(newPackages));
+      localStorage.setItem('xph_addons', JSON.stringify(newAddons));
+    } catch (_) {}
+    syncToCloud(
+      { packages: newPackages, addons: newAddons },
+      'ACTUALIZACION_PAQUETES_PRECIOS',
+      'Catálogo de paquetes, precios y adicionales actualizado en Google Sheets'
+    );
+  };
+
   const handleUpdatePackages = (newPackages: Record<EventType, PackageOption[]>) => {
     setPackagesState(newPackages);
     try { localStorage.setItem('xph_packages', JSON.stringify(newPackages)); } catch (_) {}
@@ -646,6 +660,7 @@ export default function App() {
         onUpdatePackages={handleUpdatePackages}
         addons={addonsState}
         onUpdateAddons={handleUpdateAddons}
+        onSavePrices={handleSavePrices}
         quotes={quotesState}
         onUpdateQuotes={handleUpdateQuotes}
         galleryImages={galleryImages}

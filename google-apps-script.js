@@ -51,7 +51,7 @@ function getDatabaseSpreadsheet() {
     }
     return ss;
   } catch (e) {
-    Logger.log('Spreadsheet notice (requires one-time manual execution): ' + e);
+    Logger.log('Spreadsheet notice: ' + e);
     return null;
   }
 }
@@ -386,13 +386,30 @@ function doPost(e) {
         configObj = {};
       }
 
-      var jsonStr = JSON.stringify(configObj);
+      // Obtener estado previo y combinar (merge) para integridad de datos
+      var prevConfig = {};
+      try {
+        var prevRaw = loadActiveConfig();
+        if (prevRaw) prevConfig = JSON.parse(prevRaw);
+      } catch (_) {}
+
+      var mergedConfig = {
+        packages:         configObj.packages !== undefined ? configObj.packages : (prevConfig.packages || {}),
+        addons:           configObj.addons !== undefined ? configObj.addons : (prevConfig.addons || []),
+        footerContact:    configObj.footerContact !== undefined ? configObj.footerContact : (prevConfig.footerContact || {}),
+        testimonials:     configObj.testimonials !== undefined ? configObj.testimonials : (prevConfig.testimonials || []),
+        quotes:           configObj.quotes !== undefined ? configObj.quotes : (prevConfig.quotes || []),
+        adminCredentials: configObj.adminCredentials !== undefined ? configObj.adminCredentials : (prevConfig.adminCredentials || {}),
+        galleryImages:    configObj.galleryImages !== undefined ? configObj.galleryImages : (prevConfig.galleryImages || [])
+      };
+
+      var jsonStr = JSON.stringify(mergedConfig);
       saveActiveConfig(ss, jsonStr);
 
       if (ss) {
-        if (configObj.galleryImages) syncGalleryTable(ss, configObj.galleryImages);
-        if (configObj.packages) syncPackagesTable(ss, configObj.packages);
-        if (configObj.quotes) syncQuotesTable(ss, configObj.quotes);
+        if (mergedConfig.galleryImages) syncGalleryTable(ss, mergedConfig.galleryImages);
+        if (mergedConfig.packages) syncPackagesTable(ss, mergedConfig.packages);
+        if (mergedConfig.quotes) syncQuotesTable(ss, mergedConfig.quotes);
 
         logAudit(
           ss,
@@ -406,7 +423,7 @@ function doPost(e) {
       return ContentService.createTextOutput(JSON.stringify({
         status: 'success',
         spreadsheetUrl: ss ? ss.getUrl() : '',
-        message: 'Base de datos sincronizada en la nube con éxito'
+        message: 'Base de datos sincronizada en Google Sheets con éxito'
       })).setMimeType(ContentService.MimeType.JSON);
     }
 

@@ -55,6 +55,7 @@ interface AdminPortalModalProps {
   onUpdatePackages: (packages: Record<EventType, PackageOption[]>) => void;
   addons: AddOnOption[];
   onUpdateAddons: (addons: AddOnOption[]) => void;
+  onSavePrices?: (packages: Record<EventType, PackageOption[]>, addons: AddOnOption[]) => void;
   quotes: QuoteRecord[];
   onUpdateQuotes: (updater: (prev: QuoteRecord[]) => QuoteRecord[]) => void;
   galleryImages: GalleryImage[];
@@ -76,6 +77,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   onUpdatePackages,
   addons,
   onUpdateAddons,
+  onSavePrices,
   quotes,
   onUpdateQuotes,
   galleryImages,
@@ -285,11 +287,15 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
 
   // Save Packages and Addons
   const handleSavePrices = () => {
-    onUpdatePackages(editingPackages);
-    onUpdateAddons(editingAddons);
+    if (onSavePrices) {
+      onSavePrices(editingPackages, editingAddons);
+    } else {
+      onUpdatePackages(editingPackages);
+      onUpdateAddons(editingAddons);
+    }
     onShowToast(
       'Cambios Guardados en Vivo',
-      'Los paquetes, adiciones, inclusiones y exclusiones se actualizaron en toda la plataforma.',
+      'Los paquetes, adiciones y precios se actualizaron y sincronizaron en Google Sheets.',
       'success'
     );
   };
