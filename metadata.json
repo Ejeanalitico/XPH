@@ -1,0 +1,6 @@
+{
+  "name": "Xavi.Ph - Fotografía Editorial & Cotizador Dinámico",
+  "description": "Plataforma de alta conversión para servicios de fotografía editorial, cotizador interactivo en tiempo real, firma de contrato digital y portal SaaS.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

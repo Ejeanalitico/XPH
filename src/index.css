@@ -1,0 +1,132 @@
+@import "tailwindcss";
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  
+  h1, h2, h3, .font-serif-luxury {
+    font-family: 'Playfair Display', Georgia, serif;
+  }
+}
+
+/* Base Dark Theme (Default) */
+html, html.dark {
+  background-color: #0B0F17;
+  color: #F9FAFB;
+}
+
+/* Light Theme overrides when .light class is active */
+html.light {
+  background-color: #FFFFFF !important;
+  color: #0F172A !important;
+}
+
+html.light body,
+html.light section,
+html.light footer,
+html.light header {
+  background-color: #FFFFFF !important;
+  color: #0F172A !important;
+}
+
+/* Light Mode: Container and Card Background Overrides */
+html.light div[class*="bg-[#0B0F17]"],
+html.light section[class*="bg-[#0B0F17]"],
+html.light header[class*="bg-[#0B0F17]"] {
+  background-color: #F8FAFC !important;
+}
+
+html.light div[class*="bg-[#161C28]"],
+html.light section[class*="bg-[#161C28]"],
+html.light div[class*="bg-[#111723]"] {
+  background-color: #FFFFFF !important;
+  border-color: #E2E8F0 !important;
+  color: #0F172A !important;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.06);
+}
+
+html.light .text-white,
+html.light h1, html.light h2, html.light h3, html.light h4, html.light h5, html.light h6 {
+  color: #0F172A !important;
+}
+
+html.light .text-gray-200,
+html.light .text-gray-300,
+html.light .text-gray-400 {
+  color: #475569 !important;
+}
+
+html.light .text-gray-500 {
+  color: #64748B !important;
+}
+
+html.light .border-white\/10,
+html.light .border-white\/15,
+html.light .border-white\/5,
+html.light .border-white\/20 {
+  border-color: #E2E8F0 !important;
+}
+
+/* Custom Gold Shimmer and Glow Utilities */
+.gold-gradient-text {
+  background: linear-gradient(135deg, #FFF0BD 0%, #D4AF37 50%, #AA771C 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.gold-gradient-bg {
+  background: linear-gradient(135deg, #D4AF37 0%, #C59B27 50%, #AA771C 100%);
+}
+
+.gold-gradient-bg:hover {
+  background: linear-gradient(135deg, #F3E5AB 0%, #D4AF37 50%, #C59B27 100%);
+}
+
+.gold-border-glow {
+  box-shadow: 0 0 25px -5px rgba(212, 175, 55, 0.35);
+  border-color: #D4AF37 !important;
+}
+
+/* Masonry layout adjustments */
+.masonry-grid {
+  column-count: 1;
+  column-gap: 1.5rem;
+}
+
+@media (min-width: 640px) {
+  .masonry-grid {
+    column-count: 2;
+  }
+}
+
+@media (min-width: 1024px) {
+  .masonry-grid {
+    column-count: 3;
+  }
+}
+
+.masonry-item {
+  break-inside: avoid;
+  margin-bottom: 1.5rem;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #0B0F17;
+}
+html.light ::-webkit-scrollbar-track {
+  background: #E2E8F0;
+}
+::-webkit-scrollbar-thumb {
+  background: #1F293D;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #D4AF37;
+}
