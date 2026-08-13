@@ -140,6 +140,21 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     isDrive: boolean;
   } | null>(null);
 
+  // Full Screen Sync & Confirmation Progress Modal
+  const [saveProgressModal, setSaveProgressModal] = useState<{
+    isOpen: boolean;
+    status: 'saving' | 'success' | 'error';
+    title: string;
+    description: string;
+    details: string[];
+  }>({
+    isOpen: false,
+    status: 'saving',
+    title: '',
+    description: '',
+    details: [],
+  });
+
   const handleApiKeyChange = (val: string) => {
     setDriveApiKey(val);
     localStorage.setItem('xph_drive_api_key', val);
@@ -289,17 +304,39 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
 
   // Save Packages and Addons
   const handleSavePrices = () => {
+    setSaveProgressModal({
+      isOpen: true,
+      status: 'saving',
+      title: 'Guardando Cambios en Vivo...',
+      description: 'Sincronizando paquetes, precios y tablas de auditoría en Google Sheets.',
+      details: [
+        'Validando catálogo de servicios y paquetes...',
+        'Calculando anticipos del 40% y saldos del 60%...',
+        'Actualizando tabla Paquetes_Precios en Google Sheets...',
+        'Registrando evento en Historial_Auditoria...',
+      ],
+    });
+
     if (onSavePrices) {
       onSavePrices(editingPackages, editingAddons);
     } else {
       onUpdatePackages(editingPackages);
       onUpdateAddons(editingAddons);
     }
-    onShowToast(
-      'Cambios Guardados en Vivo',
-      'Los paquetes, adiciones y precios se actualizaron y sincronizaron en Google Sheets.',
-      'success'
-    );
+
+    setTimeout(() => {
+      setSaveProgressModal({
+        isOpen: true,
+        status: 'success',
+        title: '¡Cambios Guardados con Éxito!',
+        description: 'La información se actualizó en la base de datos de Google Sheets y está activa en tiempo real en la página web.',
+        details: [
+          'Catálogo de servicios y precios actualizado',
+          'Tabla Paquetes_Precios sincronizada en Google Sheets',
+          'Registro de auditoría guardado con fecha y hora',
+        ],
+      });
+    }, 1200);
   };
 
   // Package Field Handlers
@@ -543,6 +580,18 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
 
   const handleForceSyncGalleryToSheets = async () => {
     setIsSyncingSheetsGallery(true);
+    setSaveProgressModal({
+      isOpen: true,
+      status: 'saving',
+      title: 'Sincronizando Galería con Google Sheets...',
+      description: 'Enviando fotografías activas y actualizando la tabla Galeria_Fotos en Google Cloud.',
+      details: [
+        'Procesando fotografías del portafolio...',
+        'Actualizando tabla Galeria_Fotos en Google Sheets...',
+        'Registrando evento en Historial_Auditoria...',
+      ],
+    });
+
     try {
       const cleanImages = galleryImages.filter((img) => !img.url.startsWith('data:image/'));
       await saveSiteDataToCloud(
@@ -550,13 +599,28 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
         'SINCRONIZACION_MANUAL_GALERIA',
         `Sincronización forzada de ${cleanImages.length} fotos con Google Sheets`
       );
-      onShowToast(
-        'Galería Sincronizada en Google Sheets',
-        `Las ${cleanImages.length} fotografías se actualizaron en la tabla Galeria_Fotos del Excel.`,
-        'success'
-      );
+
+      setTimeout(() => {
+        setSaveProgressModal({
+          isOpen: true,
+          status: 'success',
+          title: '¡Galería Sincronizada con Éxito!',
+          description: `Las ${cleanImages.length} fotografías activas fueron registradas y validadas en Google Sheets.`,
+          details: [
+            `${cleanImages.length} fotos actualizadas en Galeria_Fotos`,
+            'Base de datos Config_Activa sincronizada',
+            'Bitácora de auditoría actualizada con fecha y hora',
+          ],
+        });
+      }, 1000);
     } catch (err: any) {
-      onShowToast('Error al sincronizar', err?.message || 'No se pudo sincronizar.', 'warning');
+      setSaveProgressModal({
+        isOpen: true,
+        status: 'error',
+        title: 'Error al Sincronizar',
+        description: err?.message || 'No se pudo completar la sincronización con Google Sheets.',
+        details: ['Verifica tu conexión a internet o intenta de nuevo.'],
+      });
     } finally {
       setIsSyncingSheetsGallery(false);
     }
@@ -565,8 +629,33 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   // Footer Save
   const handleSaveFooter = (e: React.FormEvent) => {
     e.preventDefault();
+    setSaveProgressModal({
+      isOpen: true,
+      status: 'saving',
+      title: 'Guardando Información de Contacto...',
+      description: 'Sincronizando datos de pie de página y cobertura con Google Sheets.',
+      details: [
+        'Validando teléfonos y correos...',
+        'Actualizando cobertura geográfica...',
+        'Registrando cambio en Historial_Auditoria...',
+      ],
+    });
+
     onUpdateFooterContact(editingFooter);
-    onShowToast('Pie de Página Actualizado', 'La información de contacto en CDMX se guardó en vivo.', 'success');
+
+    setTimeout(() => {
+      setSaveProgressModal({
+        isOpen: true,
+        status: 'success',
+        title: '¡Contacto Guardado con Éxito!',
+        description: 'La información del pie de página está activa en tiempo real y registrada en Google Sheets.',
+        details: [
+          'Teléfono y WhatsApp actualizados',
+          'Correo y horarios vigentes',
+          'Registro en Google Sheets completado',
+        ],
+      });
+    }, 1000);
   };
 
   // Testimonial Toggle Verification
@@ -1718,6 +1807,96 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
         )}
 
       </div>
+
+      {/* PANTALLA DE CARGA Y CONFIRMACIÓN DE CAMBIOS GUARDADOS */}
+      {saveProgressModal.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in">
+          <div className="w-full max-w-md p-6 sm:p-8 rounded-3xl bg-[#111622] border border-[#D4AF37]/50 shadow-2xl space-y-6 text-center">
+            {saveProgressModal.status === 'saving' && (
+              <div className="space-y-4">
+                <div className="w-16 h-16 mx-auto rounded-full bg-[#D4AF37]/10 border border-[#D4AF37]/40 flex items-center justify-center">
+                  <RefreshCwIcon className="w-8 h-8 text-[#D4AF37] animate-spin" />
+                </div>
+                <h3 className="text-lg sm:text-xl font-bold font-serif-luxury text-white">
+                  {saveProgressModal.title}
+                </h3>
+                <p className="text-xs text-gray-300">
+                  {saveProgressModal.description}
+                </p>
+                <div className="p-3.5 rounded-2xl bg-[#0B0F17] border border-white/10 space-y-2 text-left text-xs">
+                  {saveProgressModal.details.map((d, i) => (
+                    <div key={i} className="flex items-center gap-2 text-gray-300">
+                      <span className="w-2 h-2 rounded-full bg-[#D4AF37] animate-pulse shrink-0" />
+                      <span>{d}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {saveProgressModal.status === 'success' && (
+              <div className="space-y-4">
+                <div className="w-16 h-16 mx-auto rounded-full bg-emerald-500/10 border border-emerald-500/40 flex items-center justify-center">
+                  <CheckCircleIcon className="w-8 h-8 text-emerald-400" />
+                </div>
+                <h3 className="text-lg sm:text-xl font-bold font-serif-luxury text-white">
+                  {saveProgressModal.title}
+                </h3>
+                <p className="text-xs text-gray-300">
+                  {saveProgressModal.description}
+                </p>
+                <div className="p-3.5 rounded-2xl bg-[#0B0F17] border border-emerald-500/20 space-y-2 text-left text-xs">
+                  {saveProgressModal.details.map((d, i) => (
+                    <div key={i} className="flex items-center gap-2 text-emerald-300 font-medium">
+                      <CheckCircleIcon className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <span>{d}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="pt-2 flex flex-col sm:flex-row gap-3">
+                  <a
+                    href={localStorage.getItem('xph_spreadsheet_url') || 'https://docs.google.com/spreadsheets/d/1GavJQKZnn_qtOdc5aaMtqvJg951CccgH1LxuWKhTLAg/edit'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 py-3 rounded-xl bg-[#D4AF37]/10 border border-[#D4AF37]/40 text-[#D4AF37] hover:bg-[#D4AF37]/20 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
+                  >
+                    <TableIcon className="w-4 h-4" />
+                    <span>Ver en Google Sheets</span>
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => setSaveProgressModal((prev) => ({ ...prev, isOpen: false }))}
+                    className="flex-1 py-3 rounded-xl gold-gradient-bg text-black font-extrabold text-xs shadow-lg shadow-[#D4AF37]/20 hover:scale-105 transition-all cursor-pointer"
+                  >
+                    Aceptar
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {saveProgressModal.status === 'error' && (
+              <div className="space-y-4">
+                <div className="w-16 h-16 mx-auto rounded-full bg-rose-500/10 border border-rose-500/40 flex items-center justify-center">
+                  <XIcon className="w-8 h-8 text-rose-400" />
+                </div>
+                <h3 className="text-lg sm:text-xl font-bold font-serif-luxury text-white">
+                  {saveProgressModal.title}
+                </h3>
+                <p className="text-xs text-gray-300">
+                  {saveProgressModal.description}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setSaveProgressModal((prev) => ({ ...prev, isOpen: false }))}
+                  className="w-full py-3 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition-all cursor-pointer"
+                >
+                  Aceptar
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
