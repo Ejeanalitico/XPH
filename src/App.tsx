@@ -67,16 +67,12 @@ export default function App() {
     return ADDONS_CATALOG;
   });
 
-  // Gallery Images State — persisted in localStorage so uploads survive refresh
+  // Gallery Images State — persisted in localStorage and synced with Cloud
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>(() => {
     try {
       const saved = localStorage.getItem('xph_gallery_images');
-      if (saved) {
-        const parsed: GalleryImage[] = JSON.parse(saved);
-        // Merge: start with saved, add any default images not already present
-        const savedIds = new Set(parsed.map((img) => img.id));
-        const defaults = GALLERY_IMAGES.filter((img) => !savedIds.has(img.id));
-        return [...parsed, ...defaults];
+      if (saved !== null) {
+        return JSON.parse(saved);
       }
     } catch (_) {}
     return GALLERY_IMAGES;

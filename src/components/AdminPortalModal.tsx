@@ -1407,9 +1407,14 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                         <span className="text-[10px] text-[#D4AF37] uppercase block">{img.category}</span>
                       </div>
                       <button
-                        onClick={() => onDeleteGalleryImage(img.id)}
-                        className="absolute top-2 right-2 p-1.5 rounded-full bg-rose-600/80 text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                        title="Eliminar foto"
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteGalleryImage(img.id);
+                          onShowToast('Foto Eliminada', 'La imagen fue removida de la galería permanentemente.', 'success');
+                        }}
+                        className="absolute top-2 right-2 p-1.5 sm:p-2 rounded-lg bg-rose-600/90 hover:bg-rose-600 text-white shadow-lg transition-all cursor-pointer z-10 opacity-90 sm:opacity-0 sm:group-hover:opacity-100"
+                        title="Eliminar foto de la galería"
                       >
                         <Trash2Icon className="w-3.5 h-3.5" />
                       </button>
