@@ -64,39 +64,39 @@ export const TestimonialsSection: React.FC<TestimonialsSectionProps> = ({
   };
 
   return (
-    <section id="testimonios" className="py-20 bg-[#0B0F17] relative border-b border-white/5">
+    <section id="testimonios" className="py-12 sm:py-20 bg-[#0B0F17] relative border-b border-white/5">
       {/* Background glow */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-[#D4AF37]/5 rounded-full blur-3xl pointer-events-none" />
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 space-y-12">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 relative z-10 space-y-8 sm:space-y-12">
         
         {/* Header */}
-        <div className="flex flex-col md:flex-row items-center justify-between gap-6 border-b border-white/10 pb-8">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-5 sm:gap-6 border-b border-white/10 pb-6 sm:pb-8">
           <div className="space-y-2 text-center md:text-left">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-[#161C28] border border-[#D4AF37]/30 text-xs font-semibold text-[#D4AF37]">
+            <div className="inline-flex items-center gap-2 px-3 sm:px-3.5 py-1 rounded-full bg-[#161C28] border border-[#D4AF37]/30 text-[10px] sm:text-xs font-semibold text-[#D4AF37]">
               <MessageSquareQuote className="w-3.5 h-3.5" />
               <span>TESTIMONIOS REALES DE CLIENTES EN CDMX</span>
             </div>
-            <h2 className="text-3xl sm:text-4xl font-bold font-serif-luxury text-white">
+            <h2 className="text-2xl sm:text-4xl font-bold font-serif-luxury text-white">
               Historias & Experiencias Compartidas
             </h2>
-            <p className="text-gray-300 text-sm max-w-xl">
+            <p className="text-gray-300 text-xs sm:text-sm max-w-xl">
               Lee la opinión de nuestras parejas y clientes sobre la calidez, puntualidad y calidad editorial en Ciudad de México.
             </p>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-center gap-3">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 w-full md:w-auto">
             <button
               onClick={handleCopyReviewLink}
-              className="px-4 py-3 rounded-xl bg-[#161C28] hover:bg-white/10 border border-[#D4AF37]/40 text-[#D4AF37] font-bold text-xs flex items-center gap-2 transition-all cursor-pointer"
+              className="px-4 py-3 rounded-xl bg-[#161C28] hover:bg-white/10 border border-[#D4AF37]/40 text-[#D4AF37] font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
             >
               <Share2 className="w-4 h-4 text-[#D4AF37]" />
-              <span>{copiedLink ? '¡Enlace Copiado!' : 'Copiar Enlace de Reseña'}</span>
+              <span>{copiedLink ? '¡Enlace Copiado!' : 'Copiar Enlace'}</span>
             </button>
 
             <button
               onClick={() => setIsModalOpen(true)}
-              className="px-6 py-3 rounded-xl gold-gradient-bg text-black font-extrabold text-xs shadow-lg shadow-[#D4AF37]/20 hover:scale-105 transition-all cursor-pointer flex items-center gap-2"
+              className="px-5 py-3 rounded-xl gold-gradient-bg text-black font-extrabold text-xs shadow-lg shadow-[#D4AF37]/20 hover:scale-105 transition-all cursor-pointer flex items-center justify-center gap-2"
             >
               <Plus className="w-4 h-4 text-black" />
               <span>Escribir Mi Testimonio</span>
@@ -105,7 +105,7 @@ export const TestimonialsSection: React.FC<TestimonialsSectionProps> = ({
         </div>
 
         {/* Testimonials Grid */}
-        <div className="grid md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
           {testimonials.map((t) => (
             <div
               key={t.id}

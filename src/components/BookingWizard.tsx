@@ -469,10 +469,10 @@ export const BookingWizard: React.FC<BookingWizardProps> = ({
               </div>
 
               {/* Step 2 Actions */}
-              <div className="flex justify-between pt-4 border-t border-white/10">
+              <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-4 border-t border-white/10">
                 <button
                   onClick={() => setCurrentStep(1)}
-                  className="px-5 py-2.5 rounded-xl bg-white/5 text-gray-300 text-xs font-semibold flex items-center gap-2 cursor-pointer"
+                  className="px-5 py-3 rounded-xl bg-white/5 text-gray-300 text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <ArrowLeft className="w-4 h-4" />
                   <span>Regresar a Fecha</span>
@@ -481,7 +481,7 @@ export const BookingWizard: React.FC<BookingWizardProps> = ({
                 <button
                   onClick={() => setCurrentStep(3)}
                   disabled={!bookingState.clientName || !bookingState.clientEmail || !bookingState.clientPhone}
-                  className="px-6 py-3 rounded-xl gold-gradient-bg text-black font-bold text-xs flex items-center gap-2 disabled:opacity-40 cursor-pointer"
+                  className="px-6 py-3.5 rounded-xl gold-gradient-bg text-black font-bold text-xs flex items-center justify-center gap-2 disabled:opacity-40 cursor-pointer"
                 >
                   <span>Ir a Firma de Contrato</span>
                   <ArrowRight className="w-4 h-4" />
@@ -494,7 +494,7 @@ export const BookingWizard: React.FC<BookingWizardProps> = ({
           {currentStep === 3 && (
             <div className="space-y-6">
               <div className="space-y-1">
-                <h3 className="text-xl font-bold font-serif-luxury text-white flex items-center gap-2">
+                <h3 className="text-lg sm:text-xl font-bold font-serif-luxury text-white flex items-center gap-2">
                   <Edit3 className="w-5 h-5 text-[#D4AF37]" />
                   <span>Paso 3: Contrato Firmado de Prestación de Servicios</span>
                 </h3>
@@ -504,19 +504,19 @@ export const BookingWizard: React.FC<BookingWizardProps> = ({
               </div>
 
               {/* Legal Contract Scroll Box */}
-              <div className="p-4 rounded-xl bg-[#0B0F17] border border-white/10 max-h-48 overflow-y-auto space-y-3 text-xs text-gray-300 leading-relaxed font-mono border-l-4 border-l-[#D4AF37]">
-                <h4 className="font-bold text-white uppercase text-center">CONTRATO DE PRESTACIÓN DE SERVICIOS FOTOGRÁFICOS (CDMX) CON FIRMA AUTÓGRAFA</h4>
-                <p><strong>PRIMERA: OBJETO DEL CONTRATO.</strong> "EL FOTÓGRAFO" (Xavi.Ph, con cobertura exclusiva en Ciudad de México) se compromete a prestar el servicio de cobertura fotográfica para el evento del cliente ({bookingState.clientName || 'EL CLIENTE'}) programado para el día {bookingState.date || 'a definir'}. Este contrato es un instrumento legal binding formal con firma autógrafa digital o física.</p>
+              <div className="p-3.5 sm:p-4 rounded-xl bg-[#0B0F17] border border-white/10 max-h-48 overflow-y-auto space-y-3 text-xs text-gray-300 leading-relaxed font-mono border-l-4 border-l-[#D4AF37]">
+                <h4 className="font-bold text-white uppercase text-center text-xs">CONTRATO DE PRESTACIÓN DE SERVICIOS FOTOGRÁFICOS (CDMX) CON FIRMA AUTÓGRAFA</h4>
+                <p><strong>PRIMERA: OBJETO DEL CONTRATO.</strong> "EL FOTÓGRAFO" (Xavi.Ph, con cobertura en CDMX, EdoMex, Morelos, Puebla, Querétaro, Tlaxcala, Pachuca y toda la República) se compromete a prestar el servicio de cobertura fotográfica para el evento del cliente ({bookingState.clientName || 'EL CLIENTE'}) programado para el día {bookingState.date || 'a definir'}. Este contrato es un instrumento legal formal con firma autógrafa digital o física.</p>
                 <p><strong>SEGUNDA: GARANTÍA DE ENTREGA Y FORMATO.</strong> Las fotografías serán entregadas en formato HD a través de la plataforma de galería web privada en un plazo no mayor al estipulado en el paquete seleccionado. Todas las imágenes entregadas cuentan con edición de color y luces artesanal.</p>
                 <p><strong>TERCERA: ESQUEMA DE PAGOS.</strong> Se requiere un anticipo equivalente al 30% (${bookingState.depositAmount.toLocaleString('es-MX')} MXN) para la reserva en firme y bloqueo de agenda. El 70% restante será saldado previo o en el momento de la entrega final del material.</p>
-                <p><strong>CUARTA: COBERTURA Y JURISDICCIÓN.</strong> La prestación de servicios es exclusiva para la Ciudad de México y área conurbada autorizada. Para cualquier controversia, las partes se someten a los tribunales competentes de la Ciudad de México.</p>
+                <p><strong>CUARTA: COBERTURA Y JURISDICCIÓN.</strong> Para cualquier controversia, las partes se someten a los tribunales competentes de la Ciudad de México.</p>
               </div>
 
               {/* Signature Canvas Box */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-semibold text-gray-300">
-                    Firma aquí con tu ratón o pantalla táctil:
+                    Firma aquí con tu dedo o ratón:
                   </label>
                   <button
                     onClick={clearSignature}
@@ -550,10 +550,10 @@ export const BookingWizard: React.FC<BookingWizardProps> = ({
               </div>
 
               {/* Step 3 Actions */}
-              <div className="flex justify-between pt-4 border-t border-white/10">
+              <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-4 border-t border-white/10">
                 <button
                   onClick={() => setCurrentStep(2)}
-                  className="px-5 py-2.5 rounded-xl bg-white/5 text-gray-300 text-xs font-semibold flex items-center gap-2 cursor-pointer"
+                  className="px-5 py-3 rounded-xl bg-white/5 text-gray-300 text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <ArrowLeft className="w-4 h-4" />
                   <span>Regresar</span>
@@ -562,7 +562,7 @@ export const BookingWizard: React.FC<BookingWizardProps> = ({
                 <button
                   onClick={() => setCurrentStep(4)}
                   disabled={!bookingState.signatureDataUrl}
-                  className="px-6 py-3 rounded-xl gold-gradient-bg text-black font-bold text-xs flex items-center gap-2 disabled:opacity-40 cursor-pointer"
+                  className="px-6 py-3.5 rounded-xl gold-gradient-bg text-black font-bold text-xs flex items-center justify-center gap-2 disabled:opacity-40 cursor-pointer"
                 >
                   <span>Continuar a Esquema de Pago</span>
                   <ArrowRight className="w-4 h-4" />
@@ -575,7 +575,7 @@ export const BookingWizard: React.FC<BookingWizardProps> = ({
           {currentStep === 4 && (
             <div className="space-y-6">
               <div className="space-y-1">
-                <h3 className="text-xl font-bold font-serif-luxury text-white flex items-center gap-2">
+                <h3 className="text-lg sm:text-xl font-bold font-serif-luxury text-white flex items-center gap-2">
                   <CreditCard className="w-5 h-5 text-[#D4AF37]" />
                   <span>Paso 4: Esquema de Pagos y Liquidación</span>
                 </h3>
@@ -585,7 +585,7 @@ export const BookingWizard: React.FC<BookingWizardProps> = ({
               </div>
 
               {/* Payment Summary Box */}
-              <div className="p-5 rounded-xl bg-gradient-to-r from-[#161C28] to-[#0B0F17] border border-[#D4AF37]/30 grid sm:grid-cols-2 gap-4">
+              <div className="p-4 sm:p-5 rounded-xl bg-gradient-to-r from-[#161C28] to-[#0B0F17] border border-[#D4AF37]/30 grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <span className="text-[10px] text-gray-400 uppercase font-mono block">Anticipo Requerido (30%)</span>
                   <span className="text-2xl font-black text-emerald-400 font-mono">
@@ -607,7 +607,7 @@ export const BookingWizard: React.FC<BookingWizardProps> = ({
               <div className="space-y-3">
                 <label className="text-xs font-semibold text-gray-300 block">Selecciona Método de Pago del Anticipo:</label>
                 
-                <div className="grid sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3">
                   {[
                     { id: 'stripe', title: 'Tarjeta de Crédito / Débito', badge: 'Stripe Direct' },
                     { id: 'mercadopago', title: 'Mercado Pago', badge: 'Meses sin Intereses' },
@@ -623,7 +623,7 @@ export const BookingWizard: React.FC<BookingWizardProps> = ({
                             paymentMethod: method.id as 'stripe' | 'mercadopago' | 'spei',
                           }))
                         }
-                        className={`p-4 rounded-xl border transition-all cursor-pointer space-y-1 ${
+                        className={`p-3.5 sm:p-4 rounded-xl border transition-all cursor-pointer space-y-1 ${
                           isSelected
                             ? 'bg-[#D4AF37]/10 border-[#D4AF37] gold-border-glow'
                             : 'bg-[#0B0F17] border-white/10 hover:border-white/20'
@@ -641,14 +641,14 @@ export const BookingWizard: React.FC<BookingWizardProps> = ({
               {bookingState.paymentMethod === 'spei' && (
                 <div className="p-4 rounded-xl bg-[#0B0F17] border border-white/15 space-y-2 text-xs">
                   <p className="font-bold text-[#D4AF37]">Datos de Depósito Bancario SPEI (BBVA México):</p>
-                  <div className="grid grid-cols-2 gap-2 text-gray-300 font-mono">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-gray-300 font-mono">
                     <div>Banco: <strong>BBVA México</strong></div>
                     <div>Titular: <strong>Xavi Photography S.A.S.</strong></div>
-                    <div className="col-span-2 flex items-center justify-between bg-white/5 p-2 rounded-lg">
-                      <span>CLABE Interbancaria: <strong>012180015488920194</strong></span>
+                    <div className="sm:col-span-2 flex flex-col sm:flex-row sm:items-center justify-between bg-white/5 p-2 rounded-lg gap-2">
+                      <span className="break-all">CLABE: <strong>012180015488920194</strong></span>
                       <button
                         onClick={handleCopySPEI}
-                        className="px-2.5 py-1 rounded-md bg-[#D4AF37] text-black font-bold text-[10px] flex items-center gap-1 cursor-pointer"
+                        className="px-2.5 py-1.5 rounded-md bg-[#D4AF37] text-black font-bold text-[10px] flex items-center justify-center gap-1 cursor-pointer self-start sm:self-auto"
                       >
                         <Copy className="w-3 h-3" />
                         <span>{copiedSPEI ? '¡Copiado!' : 'Copiar CLABE'}</span>
@@ -670,17 +670,17 @@ export const BookingWizard: React.FC<BookingWizardProps> = ({
                   </p>
                   <button
                     onClick={onSendWhatsApp}
-                    className="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-2 mx-auto cursor-pointer"
+                    className="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 mx-auto cursor-pointer"
                   >
                     <i className="fa-brands fa-whatsapp text-sm" />
                     <span>Enviar Comprobante por WhatsApp</span>
                   </button>
                 </div>
               ) : (
-                <div className="flex justify-between pt-4 border-t border-white/10">
+                <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-4 border-t border-white/10">
                   <button
                     onClick={() => setCurrentStep(3)}
-                    className="px-5 py-2.5 rounded-xl bg-white/5 text-gray-300 text-xs font-semibold flex items-center gap-2 cursor-pointer"
+                    className="px-5 py-3 rounded-xl bg-white/5 text-gray-300 text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <ArrowLeft className="w-4 h-4" />
                     <span>Regresar</span>
@@ -688,7 +688,7 @@ export const BookingWizard: React.FC<BookingWizardProps> = ({
 
                   <button
                     onClick={handleConfirmReservation}
-                    className="px-8 py-3.5 rounded-xl gold-gradient-bg text-black font-extrabold text-xs tracking-wide shadow-xl shadow-[#D4AF37]/20 hover:scale-105 transition-all cursor-pointer flex items-center gap-2"
+                    className="px-6 sm:px-8 py-3.5 rounded-xl gold-gradient-bg text-black font-extrabold text-xs tracking-wide shadow-xl shadow-[#D4AF37]/20 hover:scale-105 transition-all cursor-pointer flex items-center justify-center gap-2"
                   >
                     <Lock className="w-4 h-4" />
                     <span>Confirmar Reserva (${bookingState.depositAmount.toLocaleString('es-MX')} MXN)</span>

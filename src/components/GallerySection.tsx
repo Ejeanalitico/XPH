@@ -74,44 +74,46 @@ export const GallerySection: React.FC<GallerySectionProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Section Header */}
-        <div className="text-center max-w-3xl mx-auto space-y-4 mb-12">
-          <span className="text-xs uppercase tracking-widest text-[#D4AF37] font-semibold font-mono">
+        <div className="text-center max-w-3xl mx-auto space-y-3 sm:space-y-4 mb-8 sm:mb-12">
+          <span className="text-[10px] sm:text-xs uppercase tracking-widest text-[#D4AF37] font-semibold font-mono">
             PORTAFOLIO FOTOGRÁFICO
           </span>
-          <h2 className="text-3xl sm:text-4xl font-bold font-serif-luxury text-white">
+          <h2 className="text-2xl sm:text-4xl font-bold font-serif-luxury text-white">
             Galerías Editoriales & Historias Documentadas
           </h2>
-          <p className="text-gray-300 text-sm sm:text-base leading-relaxed">
+          <p className="text-gray-300 text-xs sm:text-base leading-relaxed">
             Cada captura cuenta una historia viva con iluminación natural, composición cinematográfica y edición artesanal en la Ciudad de México.
           </p>
         </div>
 
-        {/* Filter Tabs Bar */}
-        <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 mb-10">
-          {[
-            { id: 'all', label: 'Todas las Fotos' },
-            { id: 'bodas', label: 'Bodas Editorial' },
-            { id: 'xv-anos', label: 'XV Años' },
-            { id: 'bautizos', label: 'Bautizos & Familia' },
-            { id: 'retratos', label: 'Retratos & Moda' },
-            { id: 'empresarial', label: 'Empresarial & Branding' },
-            { id: 'previa', label: 'Sesiones Previas' },
-          ].map((tab) => {
-            const isActive = activeCategory === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => handleSelectCategory(tab.id as GalleryCategory)}
-                className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all cursor-pointer flex items-center gap-1.5 ${
-                  isActive
-                    ? 'gold-gradient-bg text-black font-bold shadow-lg shadow-[#D4AF37]/20 scale-105'
-                    : 'bg-white/5 border border-white/10 text-gray-300 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
+        {/* Filter Tabs Bar with Mobile-Friendly Horizontal Scroll */}
+        <div className="flex justify-center -mx-3 sm:mx-0 px-3 sm:px-0 mb-8 sm:mb-10">
+          <div className="flex overflow-x-auto no-scrollbar max-w-full gap-1.5 sm:gap-2.5 p-1 rounded-2xl bg-[#161C28]/80 border border-white/10 shadow-lg">
+            {[
+              { id: 'all', label: 'Todas las Fotos' },
+              { id: 'bodas', label: 'Bodas Editorial' },
+              { id: 'xv-anos', label: 'XV Años' },
+              { id: 'bautizos', label: 'Bautizos & Familia' },
+              { id: 'retratos', label: 'Retratos & Moda' },
+              { id: 'empresarial', label: 'Empresarial & Branding' },
+              { id: 'previa', label: 'Sesiones Previas' },
+            ].map((tab) => {
+              const isActive = activeCategory === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => handleSelectCategory(tab.id as GalleryCategory)}
+                  className={`px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                    isActive
+                      ? 'gold-gradient-bg text-black font-bold shadow-lg shadow-[#D4AF37]/20 scale-105'
+                      : 'bg-white/5 border border-white/10 text-gray-300 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Masonry Grid */}

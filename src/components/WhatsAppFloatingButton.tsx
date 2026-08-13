@@ -50,7 +50,7 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
       href={encodedUrl}
       target="_blank"
       rel="noopener noreferrer"
-      className="fixed bottom-16 sm:bottom-20 right-4 sm:right-6 z-40 p-3.5 sm:p-4 rounded-full bg-emerald-500 hover:bg-emerald-400 text-white shadow-2xl shadow-emerald-500/40 hover:scale-110 active:scale-95 transition-all duration-300 flex items-center justify-center group cursor-pointer"
+      className="fixed bottom-24 sm:bottom-28 right-3.5 sm:right-6 z-40 p-3 sm:p-4 rounded-full bg-emerald-500 hover:bg-emerald-400 text-white shadow-2xl shadow-emerald-500/40 hover:scale-110 active:scale-95 transition-all duration-300 flex items-center justify-center group cursor-pointer"
       title="Agendar Cita Presencial vía WhatsApp"
     >
       <svg className="w-6 h-6 fill-current" viewBox="0 0 24 24">

@@ -23,13 +23,13 @@ export const Footer: React.FC<FooterProps> = ({
   },
 }) => {
   return (
-    <footer className="bg-[#0B0F17] border-t border-white/10 text-gray-400 text-xs pt-16 pb-32 sm:pb-24">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
+    <footer className="bg-[#0B0F17] border-t border-white/10 text-gray-400 text-xs pt-10 pb-24 sm:pb-16">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
         
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-6 sm:gap-8">
           
           {/* Col 1: Brand */}
-          <div className="space-y-4 md:col-span-1">
+          <div className="col-span-2 md:col-span-1 space-y-4">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#D4AF37] to-[#AA771C] p-0.5 flex items-center justify-center">
                 <div className="w-full h-full bg-[#0B0F17] rounded-[10px] flex items-center justify-center">

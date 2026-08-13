@@ -140,34 +140,34 @@ export const PricingQuoteEngine: React.FC<PricingQuoteEngineProps> = ({
       {/* Background Glow */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-[#D4AF37]/5 rounded-full blur-3xl pointer-events-none" />
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 space-y-16">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 relative z-10 space-y-10 sm:space-y-16 pb-28 sm:pb-24">
         
         {/* Section Header */}
-        <div className="text-center max-w-3xl mx-auto space-y-4">
-          <div id="paquetes" className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#161C28] border border-[#D4AF37]/30 text-xs font-semibold text-[#D4AF37]">
+        <div className="text-center max-w-3xl mx-auto space-y-3 sm:space-y-4">
+          <div id="paquetes" className="inline-flex items-center gap-2 px-3 sm:px-3.5 py-1.5 rounded-full bg-[#161C28] border border-[#D4AF37]/30 text-[10px] sm:text-xs font-semibold text-[#D4AF37]">
             <Sparkles className="w-3.5 h-3.5" />
             <span>COTIZADOR DINÁMICO EN TIEMPO REAL</span>
           </div>
 
-          <h2 className="text-3xl sm:text-5xl font-bold font-serif-luxury text-white">
+          <h2 className="text-2xl sm:text-4xl lg:text-5xl font-bold font-serif-luxury text-white">
             Diseña tu Cobertura Fotográfica a la Medida
           </h2>
 
-          <p className="text-gray-300 text-sm sm:text-base">
+          <p className="text-gray-300 text-xs sm:text-base">
             Selecciona la categoría activa, elige tu paquete base y personaliza con add-ons. El total se recalcula al instante en MXN.
           </p>
         </div>
 
-        {/* Category Tabs Selector */}
-        <div className="flex justify-center">
-          <div className="p-1.5 rounded-2xl bg-[#161C28] border border-white/10 inline-flex flex-wrap justify-center gap-1.5 sm:gap-2 shadow-xl">
+        {/* Category Tabs Selector with Mobile-Optimized Horizontal Scroll */}
+        <div className="flex justify-center -mx-3 sm:mx-0 px-3 sm:px-0">
+          <div className="p-1 sm:p-1.5 rounded-2xl bg-[#161C28] border border-white/10 flex overflow-x-auto no-scrollbar max-w-full gap-1.5 sm:gap-2 shadow-xl">
             {(['bodas', 'xv-anos', 'bautizos', 'retratos', 'empresarial'] as EventType[]).map((cat) => {
               const isActive = bookingState.eventType === cat;
               return (
                 <button
                   key={cat}
                   onClick={() => handleSelectEventType(cat)}
-                  className={`px-3.5 sm:px-5 py-2.5 sm:py-3 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+                  className={`px-3 sm:px-5 py-2 sm:py-3 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap cursor-pointer shrink-0 ${
                     isActive
                       ? 'gold-gradient-bg text-black font-bold shadow-lg shadow-[#D4AF37]/20 sm:scale-105'
                       : 'text-gray-400 hover:text-white hover:bg-white/5'
@@ -181,7 +181,7 @@ export const PricingQuoteEngine: React.FC<PricingQuoteEngineProps> = ({
         </div>
 
         {/* Base Packages Matrix */}
-        <div className="grid md:grid-cols-3 gap-8 items-stretch">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 sm:gap-6 lg:gap-8 items-stretch">
           {currentPackages.map((pkg) => {
             const isSelected = bookingState.selectedPackageId === pkg.id;
             const isHighlight = pkg.popular;
@@ -190,9 +190,9 @@ export const PricingQuoteEngine: React.FC<PricingQuoteEngineProps> = ({
               <div
                 key={pkg.id}
                 onClick={() => handleSelectPackage(pkg.id)}
-                className={`relative rounded-2xl p-6 sm:p-8 transition-all duration-300 cursor-pointer flex flex-col justify-between ${
+                className={`relative rounded-2xl p-5 sm:p-8 transition-all duration-300 cursor-pointer flex flex-col justify-between ${
                   isHighlight
-                    ? 'bg-[#161C28] border-2 border-[#D4AF37] gold-border-glow sm:scale-105 z-20'
+                    ? 'bg-[#161C28] border-2 border-[#D4AF37] gold-border-glow sm:scale-105 z-20 shadow-2xl'
                     : isSelected
                     ? 'bg-[#161C28] border-2 border-[#D4AF37] shadow-xl'
                     : 'bg-[#161C28]/80 border border-white/10 hover:border-white/30 hover:bg-[#161C28]'
@@ -200,7 +200,7 @@ export const PricingQuoteEngine: React.FC<PricingQuoteEngineProps> = ({
               >
                 {/* Badge if present */}
                 {pkg.badge && (
-                  <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full gold-gradient-bg text-black font-bold text-[10px] tracking-widest uppercase shadow-md">
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 sm:px-4 py-0.5 sm:py-1 rounded-full gold-gradient-bg text-black font-bold text-[9px] sm:text-[10px] tracking-widest uppercase shadow-md whitespace-nowrap">
                     {pkg.badge}
                   </div>
                 )}
