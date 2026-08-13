@@ -791,7 +791,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
 
               <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
                 <a
-                  href={localStorage.getItem('xph_spreadsheet_url') || 'https://drive.google.com/drive/folders/1UyN3m72kG4liDumQYxlO03cKtJJpYG62'}
+                  href={localStorage.getItem('xph_spreadsheet_url') || 'https://docs.google.com/spreadsheets/d/1GavJQKZnn_qtOdc5aaMtqvJg951CccgH1LxuWKhTLAg/edit'}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="px-3 sm:px-3.5 py-2 rounded-xl bg-[#D4AF37]/10 border border-[#D4AF37]/40 text-[#D4AF37] hover:bg-[#D4AF37]/20 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
