@@ -4,7 +4,7 @@
   "framework": "vite",
   "installCommand": "npm install",
   "env": {
-    "VITE_GOOGLE_APPS_SCRIPT_URL": "https://script.google.com/macros/s/AKfycbxgLEN7hdf2175sGpxcEmgjJn7KYt-AsD2EosVnr7Tey_J_S_GTRcdFUKocsPIGTB8_/exec",
+    "VITE_GOOGLE_APPS_SCRIPT_URL": "https://script.google.com/macros/s/AKfycbyRuOcNlxrKU6IF3CPiSH81MnCaT2AcipnJE3vlu6tCEnVMMfro0NPy5VToOq_myZAU/exec",
     "VITE_GOOGLE_DRIVE_API_KEY": "AIzaSyAkYYkiVk8qRrKdA8V3a1kGxxeAWMlWLCc",
     "VITE_GOOGLE_DRIVE_FOLDER_ID": "1UyN3m72kG4liDumQYxlO03cKtJJpYG62"
   }
