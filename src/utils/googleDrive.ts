@@ -201,3 +201,60 @@ export async function uploadImageToGoogleDrive(
     isDrive: false,
   };
 }
+
+/**
+ * Saves all site configuration (packages, prices, footer, testimonials, quotes, gallery) to Cloud via Apps Script
+ */
+export async function saveSiteDataToCloud(siteData: Record<string, any>, scriptUrl?: string): Promise<boolean> {
+  const targetScriptUrl =
+    scriptUrl ||
+    (import.meta as any).env?.VITE_GOOGLE_APPS_SCRIPT_URL ||
+    localStorage.getItem('xph_apps_script_url') ||
+    'https://script.google.com/macros/s/AKfycbzsubcFaMJWGZYoEal8TQ9cIxaZCHxroS5DcfcPacF9xWQqR6nbqkxpqaVuWMCVlq08/exec';
+
+  if (!targetScriptUrl) return false;
+
+  try {
+    const cleanData = JSON.stringify(siteData);
+    const body = new URLSearchParams({
+      action: 'saveConfig',
+      configData: cleanData,
+    });
+
+    await fetch(targetScriptUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    });
+    return true;
+  } catch (err) {
+    console.warn('[XPH Cloud Sync] Background save failed, local cache preserved:', err);
+    return false;
+  }
+}
+
+/**
+ * Loads shared site configuration from Cloud via Apps Script
+ */
+export async function loadSiteDataFromCloud(scriptUrl?: string): Promise<Record<string, any> | null> {
+  const targetScriptUrl =
+    scriptUrl ||
+    (import.meta as any).env?.VITE_GOOGLE_APPS_SCRIPT_URL ||
+    localStorage.getItem('xph_apps_script_url') ||
+    'https://script.google.com/macros/s/AKfycbzsubcFaMJWGZYoEal8TQ9cIxaZCHxroS5DcfcPacF9xWQqR6nbqkxpqaVuWMCVlq08/exec';
+
+  if (!targetScriptUrl) return null;
+
+  try {
+    const response = await fetch(`${targetScriptUrl}?action=loadConfig`);
+    if (!response.ok) return null;
+    const data = await response.json();
+    if (data.status === 'success' && data.config) {
+      return typeof data.config === 'string' ? JSON.parse(data.config) : data.config;
+    }
+  } catch (err) {
+    console.log('[XPH Cloud Sync] Using local storage cache.');
+  }
+  return null;
+}
+

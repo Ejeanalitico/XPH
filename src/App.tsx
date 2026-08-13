@@ -32,19 +32,40 @@ import { WhatsAppFloatingButton } from './components/WhatsAppFloatingButton';
 import { ToastContainer } from './components/Toast';
 import { Footer } from './components/Footer';
 
+import { saveSiteDataToCloud, loadSiteDataFromCloud } from './utils/googleDrive';
+
 export default function App() {
   // Current active route for SPA multi-page simulation
   const [currentRoute, setCurrentRoute] = useState<RoutePath>('inicio');
 
   // Admin Credentials State (Default: Xavier.garcia.vp@gmail.com / 1234)
-  const [adminCredentials, setAdminCredentials] = useState<AdminCredentials>({
-    email: 'Xavier.garcia.vp@gmail.com',
-    pass: '1234',
+  const [adminCredentials, setAdminCredentials] = useState<AdminCredentials>(() => {
+    try {
+      const saved = localStorage.getItem('xph_admin_credentials');
+      if (saved) return JSON.parse(saved);
+    } catch (_) {}
+    return {
+      email: 'Xavier.garcia.vp@gmail.com',
+      pass: '1234',
+    };
   });
 
   // Dynamic Packages & Addons State (Editable via Admin Panel)
-  const [packagesState, setPackagesState] = useState<Record<EventType, PackageOption[]>>(PACKAGES_BY_EVENT);
-  const [addonsState, setAddonsState] = useState<AddOnOption[]>(ADDONS_CATALOG);
+  const [packagesState, setPackagesState] = useState<Record<EventType, PackageOption[]>>(() => {
+    try {
+      const saved = localStorage.getItem('xph_packages');
+      if (saved) return JSON.parse(saved);
+    } catch (_) {}
+    return PACKAGES_BY_EVENT;
+  });
+
+  const [addonsState, setAddonsState] = useState<AddOnOption[]>(() => {
+    try {
+      const saved = localStorage.getItem('xph_addons');
+      if (saved) return JSON.parse(saved);
+    } catch (_) {}
+    return ADDONS_CATALOG;
+  });
 
   // Gallery Images State — persisted in localStorage so uploads survive refresh
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>(() => {
@@ -62,106 +83,105 @@ export default function App() {
   });
 
   // Footer Contact State (Editable by Admin)
-  const [footerContact, setFooterContact] = useState<FooterContact>({
-    phone: '+52 55 1234 5678',
-    whatsapp: '+52 55 1234 5678',
-    email: 'contacto@xavi.ph',
-    address: 'CDMX, Estado de México, Morelos, Puebla, Querétaro, Tlaxcala & Pachuca',
-    schedule: 'Lunes a Sábado: 09:00 - 19:00 hrs',
-    aboutText: 'Estudio especializado en fotografía editorial, cine documental y fotografía empresarial con cobertura en CDMX, Estado de México, Morelos, Tlaxcala, Puebla, Pachuca, Querétaro y toda la República.',
+  const [footerContact, setFooterContact] = useState<FooterContact>(() => {
+    try {
+      const saved = localStorage.getItem('xph_footer_contact');
+      if (saved) return JSON.parse(saved);
+    } catch (_) {}
+    return {
+      phone: '+52 55 1234 5678',
+      whatsapp: '+52 55 1234 5678',
+      email: 'contacto@xavi.ph',
+      address: 'CDMX, Estado de México, Morelos, Puebla, Querétaro, Tlaxcala & Pachuca',
+      schedule: 'Lunes a Sábado: 09:00 - 19:00 hrs',
+      aboutText: 'Estudio especializado en fotografía editorial, cine documental y fotografía empresarial con cobertura en CDMX, Estado de México, Morelos, Tlaxcala, Puebla, Pachuca, Querétaro y toda la República.',
+    };
   });
 
   // Testimonials State (Editable by Admin & submitable by clients)
-  const [testimonials, setTestimonials] = useState<Testimonial[]>([
-    {
-      id: 't-1',
-      clientName: 'Renata & Mateo',
-      eventType: 'bodas',
-      date: '2026-07-15',
-      rating: 5,
-      comment: 'Xavi capturó la esencia pura de nuestra boda en Polanco. La luz, el profesionalismo y la calidez en la cita presencial nos dieron absoluta confianza.',
-      verified: true,
-    },
-    {
-      id: 't-2',
-      clientName: 'Familia Gómez Suárez',
-      eventType: 'bautizos',
-      date: '2026-06-20',
-      rating: 5,
-      comment: 'Impresionante atención y sensibilidad con nuestro bebé. La entrega del álbum físico con pasta en lino es una joya que conservaremos siempre.',
-      verified: true,
-    },
-    {
-      id: 't-3',
-      clientName: 'Grupo Financiero Lomas',
-      eventType: 'empresarial',
-      date: '2026-08-01',
-      rating: 5,
-      comment: 'Excelente fotografía ejecutiva y de branding para nuestra directiva en CDMX. Entregas puntuales y de nivel internacional.',
-      verified: true,
-    },
-  ]);
+  const [testimonials, setTestimonials] = useState<Testimonial[]>(() => {
+    try {
+      const saved = localStorage.getItem('xph_testimonials');
+      if (saved) return JSON.parse(saved);
+    } catch (_) {}
+    return [
+      {
+        id: 't-1',
+        clientName: 'Renata & Mateo',
+        eventType: 'bodas',
+        date: '2026-07-15',
+        rating: 5,
+        comment: 'Xavi capturó la esencia pura de nuestra boda en Polanco. La luz, el profesionalismo y la calidez en la cita presencial nos dieron absoluta confianza.',
+        verified: true,
+      },
+      {
+        id: 't-2',
+        clientName: 'Familia Gómez Suárez',
+        eventType: 'bautizos',
+        date: '2026-06-20',
+        rating: 5,
+        comment: 'Impresionante atención y sensibilidad con nuestro bebé. La entrega del álbum físico con pasta en lino es una joya que conservaremos siempre.',
+        verified: true,
+      },
+      {
+        id: 't-3',
+        clientName: 'Grupo Financiero Lomas',
+        eventType: 'empresarial',
+        date: '2026-08-01',
+        rating: 5,
+        comment: 'Excelente fotografía ejecutiva y de branding para nuestra directiva en CDMX. Entregas puntuales y de nivel internacional.',
+        verified: true,
+      },
+    ];
+  });
 
   // Quotes & Contracts List (Recorded in real-time)
-  const [quotesState, setQuotesState] = useState<QuoteRecord[]>([
-    {
-      id: 'quote-101',
-      clientName: 'Valeria & Carlos',
-      clientEmail: 'valeria.carlos@gmail.com',
-      clientPhone: '+52 55 9876 5432',
-      eventType: 'bodas',
-      selectedPackageId: 'pro',
-      packageName: 'COBERTURA TOTAL (PRO)',
-      packagePrice: 24500,
-      addons: ['Photobook Impreso para Padres', 'Horas Extra (+2h)'],
-      extraHours: 2,
-      total: 33000,
-      depositAmount: 9900,
-      eventDate: '2026-10-14',
-      eventCity: 'Oaxaca, Oax.',
-      status: 'Contratado',
-      createdAt: '2026-08-10',
-      notes: 'Cita presencial realizada. Muestras de lino aprobadas.',
-    },
-    {
-      id: 'quote-102',
-      clientName: 'Sofía Martínez',
-      clientEmail: 'sofia.xv@gmail.com',
-      clientPhone: '+52 55 1234 9988',
-      eventType: 'xv-anos',
-      selectedPackageId: 'pro',
-      packageName: 'PAQUETE XV PRO',
-      packagePrice: 21500,
-      addons: ['Cuadro Impreso 50x70cm'],
-      extraHours: 0,
-      total: 24000,
-      depositAmount: 7200,
-      eventDate: '2026-11-28',
-      eventCity: 'CDMX',
-      status: 'Cita Presencial Agendada',
-      createdAt: '2026-08-11',
-      notes: 'Agendó cita presencial en San Ángel para ver álbumes físicos.',
-    },
-    {
-      id: 'quote-103',
-      clientName: 'Mariana Ríos',
-      clientEmail: 'mariana.rios@editorial.com',
-      clientPhone: '+52 55 3344 5566',
-      eventType: 'retratos',
-      selectedPackageId: 'pareja',
-      packageName: 'SESIÓN PAREJA / EDITORIAL',
-      packagePrice: 6800,
-      addons: ['Entrega Prioritaria Express 48 Horas'],
-      extraHours: 0,
-      total: 9800,
-      depositAmount: 2940,
-      eventDate: '2026-09-05',
-      eventCity: 'San Miguel de Allende',
-      status: 'Pendiente',
-      createdAt: '2026-08-11',
-      notes: 'Cotización generada desde la web.',
-    },
-  ]);
+  const [quotesState, setQuotesState] = useState<QuoteRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem('xph_quotes');
+      if (saved) return JSON.parse(saved);
+    } catch (_) {}
+    return [
+      {
+        id: 'quote-101',
+        clientName: 'Valeria & Carlos',
+        clientEmail: 'valeria.carlos@gmail.com',
+        clientPhone: '+52 55 9876 5432',
+        eventType: 'bodas',
+        selectedPackageId: 'pro',
+        packageName: 'COBERTURA TOTAL (PRO)',
+        packagePrice: 24500,
+        addons: ['Photobook Impreso para Padres', 'Horas Extra (+2h)'],
+        extraHours: 2,
+        total: 33000,
+        depositAmount: 9900,
+        eventDate: '2026-10-14',
+        eventCity: 'Oaxaca, Oax.',
+        status: 'Contratado',
+        createdAt: '2026-08-10',
+        notes: 'Cita presencial realizada. Muestras de lino aprobadas.',
+      },
+      {
+        id: 'quote-102',
+        clientName: 'Sofía Martínez',
+        clientEmail: 'sofia.xv@gmail.com',
+        clientPhone: '+52 55 1234 9988',
+        eventType: 'xv-anos',
+        selectedPackageId: 'pro',
+        packageName: 'PAQUETE XV PRO',
+        packagePrice: 21500,
+        addons: ['Cuadro Impreso 50x70cm'],
+        extraHours: 0,
+        total: 24000,
+        depositAmount: 7200,
+        eventDate: '2026-11-28',
+        eventCity: 'CDMX',
+        status: 'Pendiente',
+        createdAt: '2026-08-11',
+        notes: 'Cotización generada desde la web.',
+      },
+    ];
+  });
 
   // Global Booking State Object
   const [bookingState, setBookingState] = useState<BookingState>({
@@ -193,6 +213,42 @@ export default function App() {
 
   // Toast notifications
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  // Load shared configuration from Cloud (Google Apps Script) on mount
+  useEffect(() => {
+    loadSiteDataFromCloud().then((cloudData) => {
+      if (cloudData) {
+        if (cloudData.packages) {
+          setPackagesState(cloudData.packages);
+          try { localStorage.setItem('xph_packages', JSON.stringify(cloudData.packages)); } catch (_) {}
+        }
+        if (cloudData.addons) {
+          setAddonsState(cloudData.addons);
+          try { localStorage.setItem('xph_addons', JSON.stringify(cloudData.addons)); } catch (_) {}
+        }
+        if (cloudData.footerContact) {
+          setFooterContact(cloudData.footerContact);
+          try { localStorage.setItem('xph_footer_contact', JSON.stringify(cloudData.footerContact)); } catch (_) {}
+        }
+        if (cloudData.testimonials) {
+          setTestimonials(cloudData.testimonials);
+          try { localStorage.setItem('xph_testimonials', JSON.stringify(cloudData.testimonials)); } catch (_) {}
+        }
+        if (cloudData.galleryImages) {
+          setGalleryImages(cloudData.galleryImages);
+          try { localStorage.setItem('xph_gallery_images', JSON.stringify(cloudData.galleryImages)); } catch (_) {}
+        }
+        if (cloudData.quotes) {
+          setQuotesState(cloudData.quotes);
+          try { localStorage.setItem('xph_quotes', JSON.stringify(cloudData.quotes)); } catch (_) {}
+        }
+        if (cloudData.adminCredentials) {
+          setAdminCredentials(cloudData.adminCredentials);
+          try { localStorage.setItem('xph_admin_credentials', JSON.stringify(cloudData.adminCredentials)); } catch (_) {}
+        }
+      }
+    });
+  }, []);
 
   // Hash / URL routing synchronization
   useEffect(() => {
@@ -394,15 +450,64 @@ export default function App() {
     showToast('Cita Registrada', 'La solicitud de cita fue guardada en el sistema de administración.');
   };
 
+  // Helper to sync cloud config
+  const syncToCloud = (overrides?: Record<string, any>) => {
+    const dataToSync = {
+      packages: packagesState,
+      addons: addonsState,
+      footerContact,
+      testimonials,
+      quotes: quotesState,
+      adminCredentials,
+      galleryImages: galleryImages.filter((img) => !img.url.startsWith('data:image/')),
+      ...overrides,
+    };
+    saveSiteDataToCloud(dataToSync);
+  };
+
+  const handleUpdatePackages = (newPackages: Record<EventType, PackageOption[]>) => {
+    setPackagesState(newPackages);
+    try { localStorage.setItem('xph_packages', JSON.stringify(newPackages)); } catch (_) {}
+    syncToCloud({ packages: newPackages });
+  };
+
+  const handleUpdateAddons = (newAddons: AddOnOption[]) => {
+    setAddonsState(newAddons);
+    try { localStorage.setItem('xph_addons', JSON.stringify(newAddons)); } catch (_) {}
+    syncToCloud({ addons: newAddons });
+  };
+
+  const handleUpdateFooterContact = (newFooter: FooterContact) => {
+    setFooterContact(newFooter);
+    try { localStorage.setItem('xph_footer_contact', JSON.stringify(newFooter)); } catch (_) {}
+    syncToCloud({ footerContact: newFooter });
+  };
+
+  const handleUpdateTestimonials = (newTestimonials: Testimonial[]) => {
+    setTestimonials(newTestimonials);
+    try { localStorage.setItem('xph_testimonials', JSON.stringify(newTestimonials)); } catch (_) {}
+    syncToCloud({ testimonials: newTestimonials });
+  };
+
+  const handleUpdateQuotes = (newQuotes: QuoteRecord[]) => {
+    setQuotesState(newQuotes);
+    try { localStorage.setItem('xph_quotes', JSON.stringify(newQuotes)); } catch (_) {}
+    syncToCloud({ quotes: newQuotes });
+  };
+
+  const handleUpdateAdminCredentials = (newCreds: AdminCredentials) => {
+    setAdminCredentials(newCreds);
+    try { localStorage.setItem('xph_admin_credentials', JSON.stringify(newCreds)); } catch (_) {}
+    syncToCloud({ adminCredentials: newCreds });
+  };
+
   // Handlers for Gallery Images Admin
   const handleAddGalleryImage = (image: GalleryImage) => {
     setGalleryImages((prev) => {
       const next = [image, ...prev];
-      // Persist immediately — only Drive URLs, skip base64
-      try {
-        const toSave = next.filter((img) => !img.url.startsWith('data:image/'));
-        localStorage.setItem('xph_gallery_images', JSON.stringify(toSave));
-      } catch (_) {}
+      const toSave = next.filter((img) => !img.url.startsWith('data:image/'));
+      try { localStorage.setItem('xph_gallery_images', JSON.stringify(toSave)); } catch (_) {}
+      syncToCloud({ galleryImages: toSave });
       return next;
     });
   };
@@ -410,10 +515,9 @@ export default function App() {
   const handleDeleteGalleryImage = (id: string) => {
     setGalleryImages((prev) => {
       const next = prev.filter((img) => img.id !== id);
-      try {
-        const toSave = next.filter((img) => !img.url.startsWith('data:image/'));
-        localStorage.setItem('xph_gallery_images', JSON.stringify(toSave));
-      } catch (_) {}
+      const toSave = next.filter((img) => !img.url.startsWith('data:image/'));
+      try { localStorage.setItem('xph_gallery_images', JSON.stringify(toSave)); } catch (_) {}
+      syncToCloud({ galleryImages: toSave });
       return next;
     });
   };
@@ -425,7 +529,12 @@ export default function App() {
       verified: false,
       ...newTestimonial,
     };
-    setTestimonials((prev) => [created, ...prev]);
+    setTestimonials((prev) => {
+      const next = [created, ...prev];
+      try { localStorage.setItem('xph_testimonials', JSON.stringify(next)); } catch (_) {}
+      syncToCloud({ testimonials: next });
+      return next;
+    });
   };
 
   return (
@@ -531,20 +640,20 @@ export default function App() {
         onClose={() => setAdminPortalOpen(false)}
         onShowToast={showToast}
         adminCredentials={adminCredentials}
-        onUpdateAdminCredentials={setAdminCredentials}
+        onUpdateAdminCredentials={handleUpdateAdminCredentials}
         packages={packagesState}
-        onUpdatePackages={setPackagesState}
+        onUpdatePackages={handleUpdatePackages}
         addons={addonsState}
-        onUpdateAddons={setAddonsState}
+        onUpdateAddons={handleUpdateAddons}
         quotes={quotesState}
-        onUpdateQuotes={setQuotesState}
+        onUpdateQuotes={handleUpdateQuotes}
         galleryImages={galleryImages}
         onAddGalleryImage={handleAddGalleryImage}
         onDeleteGalleryImage={handleDeleteGalleryImage}
         footerContact={footerContact}
-        onUpdateFooterContact={setFooterContact}
+        onUpdateFooterContact={handleUpdateFooterContact}
         testimonials={testimonials}
-        onUpdateTestimonials={setTestimonials}
+        onUpdateTestimonials={handleUpdateTestimonials}
       />
     </div>
   );
