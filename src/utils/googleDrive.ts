@@ -155,9 +155,43 @@ export async function uploadImageToGoogleDrive(
     });
   }
 
-  if (targetScriptUrl) {
+  // Compress if large base64
+  if (base64String.startsWith('data:image/') && typeof window !== 'undefined') {
     try {
-      const cleanFilename = filename || `foto_xph_${Date.now()}.jpg`;
+      base64String = await new Promise<string>((resolve) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          let width = img.width;
+          let height = img.height;
+          const maxWidth = 1600;
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/jpeg', 0.82));
+          } else {
+            resolve(base64String);
+          }
+        };
+        img.onerror = () => resolve(base64String);
+        img.src = base64String;
+      });
+      mimeType = 'image/jpeg';
+    } catch (_) {}
+  }
+
+  if (targetScriptUrl) {
+    const cleanFilename = filename || `foto_xph_${Date.now()}.jpg`;
+
+    // Attempt 1: Standard text/plain JSON POST
+    try {
       const payload = JSON.stringify({
         action: 'uploadPhoto',
         filename: cleanFilename,
@@ -172,36 +206,36 @@ export async function uploadImageToGoogleDrive(
       });
 
       const result = await response.json();
-      console.log('[XPH Drive Upload] Response:', result);
-
       if (result.status === 'success' && result.fileId) {
         return { fileId: result.fileId, url: result.url, isDrive: true };
-      } else {
-        throw new Error(result.message || 'Google Drive no devolvió ID de archivo');
       }
-    } catch (err: any) {
-      console.error('[XPH Drive Upload] Error:', err);
-      // Fallback via URLSearchParams if text/plain fails
-      try {
-        const body = new URLSearchParams({
-          filename: filename || `foto_xph_${Date.now()}.jpg`,
-          mimeType,
-          base64: base64String,
-        });
-        const res = await fetch(targetScriptUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: body.toString(),
-        });
-        const data = await res.json();
-        if (data.status === 'success' && data.fileId) {
-          return { fileId: data.fileId, url: data.url, isDrive: true };
-        }
-      } catch (_) {}
-      throw new Error(`Error al subir a Google Drive: ${err.message}`);
+    } catch (err) {
+      console.warn('[XPH Drive Upload] Method 1 notice, trying urlencoded method...', err);
+    }
+
+    // Attempt 2: Form URL Encoded
+    try {
+      const body = new URLSearchParams({
+        action: 'uploadPhoto',
+        filename: cleanFilename,
+        mimeType,
+        base64: base64String,
+      });
+      const res = await fetch(targetScriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString(),
+      });
+      const data = await res.json();
+      if (data.status === 'success' && data.fileId) {
+        return { fileId: data.fileId, url: data.url, isDrive: true };
+      }
+    } catch (err2: any) {
+      console.error('[XPH Drive Upload] Method 2 error:', err2);
     }
   }
 
+  // Fallback to local image URL if offline
   return {
     fileId: `local-${Date.now()}`,
     url: base64String,

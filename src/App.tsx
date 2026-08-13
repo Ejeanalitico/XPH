@@ -513,28 +513,28 @@ export default function App() {
 
   // Handlers for Gallery Images Admin
   const handleAddGalleryImage = (image: GalleryImage) => {
-    setGalleryImages((prev) => {
-      const next = [image, ...prev];
-      const toSave = next.filter((img) => !img.url.startsWith('data:image/'));
-      try { localStorage.setItem('xph_gallery_images', JSON.stringify(toSave)); } catch (_) {}
-      syncToCloud({ galleryImages: toSave }, 'FOTO_AGREGADA', `Foto "${image.title}" (${image.category}) agregada al portafolio`);
-      return next;
-    });
+    const next = [image, ...galleryImages.filter((img) => img.id !== image.id)];
+    const toSave = next.filter((img) => !img.url.startsWith('data:image/'));
+    setGalleryImages(next);
+    try { localStorage.setItem('xph_gallery_images', JSON.stringify(toSave)); } catch (_) {}
+    syncToCloud(
+      { galleryImages: toSave },
+      'FOTO_AGREGADA',
+      `Foto "${image.title}" (${image.category}) agregada al portafolio`
+    );
   };
 
   const handleDeleteGalleryImage = (id: string) => {
-    setGalleryImages((prev) => {
-      const deletedItem = prev.find((img) => img.id === id);
-      const next = prev.filter((img) => img.id !== id);
-      const toSave = next.filter((img) => !img.url.startsWith('data:image/'));
-      try { localStorage.setItem('xph_gallery_images', JSON.stringify(toSave)); } catch (_) {}
-      syncToCloud(
-        { galleryImages: toSave },
-        'FOTO_ELIMINADA',
-        `Foto "${deletedItem?.title || id}" eliminada de la galería`
-      );
-      return next;
-    });
+    const deletedItem = galleryImages.find((img) => img.id === id);
+    const next = galleryImages.filter((img) => img.id !== id);
+    const toSave = next.filter((img) => !img.url.startsWith('data:image/'));
+    setGalleryImages(next);
+    try { localStorage.setItem('xph_gallery_images', JSON.stringify(toSave)); } catch (_) {}
+    syncToCloud(
+      { galleryImages: toSave },
+      'FOTO_ELIMINADA',
+      `Foto "${deletedItem?.title || id}" eliminada de la galería`
+    );
   };
 
   // Handlers for Testimonials
