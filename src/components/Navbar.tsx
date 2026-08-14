@@ -31,6 +31,11 @@ export const Navbar: React.FC<NavbarProps> = ({
     empresarial: { title: 'Empresarial & Branding', subtitle: 'Headshots & eventos corporativos', icon: '💼' },
   };
 
+  // Routes shown in the dropdown/mobile menu (excluding 'inicio')
+  const selectableRoutes = (Object.keys(routeLabels) as RoutePath[]).filter(r => r !== 'inicio');
+  // Label to show in nav badge/button — fallback to 'Bodas CDMX' when on inicio
+  const activeRouteLabel = routeLabels[currentRoute] || routeLabels['bodas'];
+
   const scrollToSection = (id: string) => {
     setMobileMenuOpen(false);
     setRouteDropdownOpen(false);
@@ -71,11 +76,13 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </button>
 
-          {/* Route Active Badge */}
-          <div className="hidden lg:flex items-center gap-2 px-3 py-1 rounded-full bg-[#D4AF37]/10 border border-[#D4AF37]/30 text-[#D4AF37] text-xs font-medium">
-            <span>{routeLabels[currentRoute].icon}</span>
-            <span className="capitalize">{routeLabels[currentRoute].title}</span>
-          </div>
+          {/* Route Active Badge — hidden when on inicio */}
+          {currentRoute !== 'inicio' && (
+            <div className="hidden lg:flex items-center gap-2 px-3 py-1 rounded-full bg-[#D4AF37]/10 border border-[#D4AF37]/30 text-[#D4AF37] text-xs font-medium">
+              <span>{activeRouteLabel.icon}</span>
+              <span className="capitalize">{activeRouteLabel.title}</span>
+            </div>
+          )}
         </div>
 
         {/* Desktop Navigation Links & Route Selector */}
@@ -87,8 +94,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               onClick={() => setRouteDropdownOpen(!routeDropdownOpen)}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white hover:border-[#D4AF37]/40 hover:text-[#D4AF37] transition-all cursor-pointer font-semibold"
             >
-              <span>{routeLabels[currentRoute].icon}</span>
-              <span>{routeLabels[currentRoute].title}</span>
+              <span>{activeRouteLabel.icon}</span>
+              <span>{currentRoute === 'inicio' ? 'Especialidad' : activeRouteLabel.title}</span>
               <ChevronDown className={`w-4 h-4 text-[#D4AF37] transition-transform ${routeDropdownOpen ? 'rotate-180' : ''}`} />
             </button>
 
@@ -97,7 +104,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <div className="px-3 py-1.5 text-[11px] font-bold tracking-wider uppercase text-gray-400 font-mono">
                   Especialidades / Secciones
                 </div>
-                {(Object.keys(routeLabels) as RoutePath[]).map((r) => (
+                {selectableRoutes.map((r) => (
                   <button
                     key={r}
                     onClick={() => handleSelectRoute(r)}
@@ -204,7 +211,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
           
           <div className="grid grid-cols-1 gap-2">
-            {(Object.keys(routeLabels) as RoutePath[]).map((r) => (
+            {selectableRoutes.map((r) => (
               <button
                 key={r}
                 onClick={() => handleSelectRoute(r)}

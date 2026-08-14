@@ -14,8 +14,8 @@ export const Footer: React.FC<FooterProps> = ({
   onOpenClientPortal,
   onOpenAdminPortal,
   footerContact = {
-    phone: '+52 55 1234 5678',
-    whatsapp: '+52 55 1234 5678',
+    phone: '5615567863',
+    whatsapp: '5615567863',
     email: 'contacto@xavi.ph',
     address: 'Polanco & Roma Norte, Ciudad de México (CDMX)',
     schedule: 'Lunes a Sábado: 09:00 - 19:00 hrs',

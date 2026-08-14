@@ -83,9 +83,6 @@ export const ClientPortalModal: React.FC<ClientPortalModalProps> = ({
               </button>
             </form>
 
-            <p className="text-[11px] text-gray-500 font-mono">
-              💡 Tip de prueba: Ingresa <strong className="text-[#D4AF37]">1234</strong> para ver la entrega simulada.
-            </p>
           </div>
         ) : (
           /* UNLOCKED CLIENT GALLERY DELIVERY VIEW */

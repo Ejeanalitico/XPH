@@ -91,8 +91,8 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   onUpdateTestimonials,
 }) => {
   // Login State
-  const [email, setEmail] = useState('Xavier.garcia.vp@gmail.com');
-  const [password, setPassword] = useState('1234');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   // Active Sub-Tab

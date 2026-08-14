@@ -86,7 +86,7 @@ export default function App() {
     } catch (_) {}
     return {
       phone: '+52 55 1234 5678',
-      whatsapp: '+52 55 1234 5678',
+      whatsapp: '5615567863',
       email: 'contacto@xavi.ph',
       address: 'CDMX, Estado de México, Morelos, Puebla, Querétaro, Tlaxcala & Pachuca',
       schedule: 'Lunes a Sábado: 09:00 - 19:00 hrs',
@@ -376,9 +376,12 @@ export default function App() {
   };
 
   const getCleanWhatsAppNumber = (contact: FooterContact) => {
-    const raw = contact.whatsapp || contact.phone || '525512345678';
+    const raw = contact.whatsapp || contact.phone || '5215615567863';
     const digits = raw.replace(/[^0-9]/g, '');
-    return digits || '525512345678';
+    // Ensure full international format: if starts with 52 use as is, otherwise prefix
+    if (digits.length === 10) return '52' + digits;
+    if (digits.length === 12 && digits.startsWith('52')) return digits;
+    return digits || '5215615567863';
   };
 
   const handleSendWhatsApp = () => {
