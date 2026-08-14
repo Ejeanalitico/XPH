@@ -3,63 +3,57 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  BookingState,
-  ToastMessage,
-  RoutePath,
-  EventType,
-  PackageOption,
   AddOnOption,
-  QuoteRecord,
   AdminCredentials,
-  GalleryImage,
+  BookingState,
+  EventType,
   FooterContact,
+  GalleryImage,
+  PackageOption,
+  QuoteRecord,
+  RoutePath,
   Testimonial,
+  ToastMessage,
 } from './types';
 import { GALLERY_IMAGES } from './data/gallery';
-import { PACKAGES_BY_EVENT, ADDONS_CATALOG } from './data/packages';
-import { Navbar } from './components/Navbar';
-import { Hero } from './components/Hero';
-import { GallerySection } from './components/GallerySection';
-import { PricingQuoteEngine } from './components/PricingQuoteEngine';
-import { InPersonConsultation } from './components/InPersonConsultation';
-import { BookingWizard } from './components/BookingWizard';
-import { TestimonialsSection } from './components/TestimonialsSection';
-import { ClientPortalModal } from './components/ClientPortalModal';
+import { ADDONS_CATALOG, PACKAGES_BY_EVENT } from './data/packages';
 import { AdminPortalModal } from './components/AdminPortalModal';
-import { WhatsAppFloatingButton } from './components/WhatsAppFloatingButton';
-import { ToastContainer } from './components/Toast';
+import { BookingWizard } from './components/BookingWizard';
+import { ClientPortalModal } from './components/ClientPortalModal';
 import { Footer } from './components/Footer';
+import { GallerySection } from './components/GallerySection';
+import { Hero } from './components/Hero';
+import { InPersonConsultation } from './components/InPersonConsultation';
+import { Navbar } from './components/Navbar';
+import { PricingQuoteEngine } from './components/PricingQuoteEngine';
+import { TestimonialsSection } from './components/TestimonialsSection';
+import { ToastContainer } from './components/Toast';
+import { WhatsAppFloatingButton } from './components/WhatsAppFloatingButton';
 
 export default function App() {
-  // Current active route for SPA multi-page simulation
   const [currentRoute, setCurrentRoute] = useState<RoutePath>('inicio');
 
-  // Admin Credentials State (Default: Xavier.garcia.vp@gmail.com / 1234)
   const [adminCredentials, setAdminCredentials] = useState<AdminCredentials>({
     email: 'Xavier.garcia.vp@gmail.com',
     pass: '1234',
   });
 
-  // Dynamic Packages & Addons State (Editable via Admin Panel)
   const [packagesState, setPackagesState] = useState<Record<EventType, PackageOption[]>>(PACKAGES_BY_EVENT);
   const [addonsState, setAddonsState] = useState<AddOnOption[]>(ADDONS_CATALOG);
-
-  // Gallery Images State (Editable by Admin)
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>(GALLERY_IMAGES);
 
-  // Footer Contact State (Editable by Admin)
   const [footerContact, setFooterContact] = useState<FooterContact>({
     phone: '+52 55 1234 5678',
     whatsapp: '+52 55 1234 5678',
     email: 'contacto@xavi.ph',
     address: 'CDMX, Estado de México, Morelos, Puebla, Querétaro, Tlaxcala & Pachuca',
     schedule: 'Lunes a Sábado: 09:00 - 19:00 hrs',
-    aboutText: 'Estudio especializado en fotografía editorial, cine documental y fotografía empresarial con cobertura en CDMX, Estado de México, Morelos, Tlaxcala, Puebla, Pachuca, Querétaro y toda la República.',
+    aboutText:
+      'Estudio especializado en fotografía editorial, cine documental y fotografía empresarial con cobertura en CDMX, Estado de México, Morelos, Tlaxcala, Puebla, Pachuca, Querétaro y toda la República.',
   });
 
-  // Testimonials State (Editable by Admin & submitable by clients)
   const [testimonials, setTestimonials] = useState<Testimonial[]>([
     {
       id: 't-1',
@@ -67,7 +61,8 @@ export default function App() {
       eventType: 'bodas',
       date: '2026-07-15',
       rating: 5,
-      comment: 'Xavi capturó la esencia pura de nuestra boda en Polanco. La luz, el profesionalismo y la calidez en la cita presencial nos dieron absoluta confianza.',
+      comment:
+        'Xavi capturó la esencia pura de nuestra boda en Polanco. La luz, el profesionalismo y la calidez en la cita presencial nos dieron absoluta confianza.',
       verified: true,
     },
     {
@@ -76,7 +71,8 @@ export default function App() {
       eventType: 'bautizos',
       date: '2026-06-20',
       rating: 5,
-      comment: 'Impresionante atención y sensibilidad con nuestro bebé. La entrega del álbum físico con pasta en lino es una joya que conservaremos siempre.',
+      comment:
+        'Impresionante atención y sensibilidad con nuestro bebé. La entrega del álbum físico con pasta en lino es una joya que conservaremos siempre.',
       verified: true,
     },
     {
@@ -85,12 +81,12 @@ export default function App() {
       eventType: 'empresarial',
       date: '2026-08-01',
       rating: 5,
-      comment: 'Excelente fotografía ejecutiva y de branding para nuestra directiva en CDMX. Entregas puntuales y de nivel internacional.',
+      comment:
+        'Excelente fotografía ejecutiva y de branding para nuestra directiva en CDMX. Entregas puntuales y de nivel internacional.',
       verified: true,
     },
   ]);
 
-  // Quotes & Contracts List (Recorded in real-time)
   const [quotesState, setQuotesState] = useState<QuoteRecord[]>([
     {
       id: 'quote-101',
@@ -104,12 +100,12 @@ export default function App() {
       addons: ['Photobook Impreso para Padres', 'Horas Extra (+2h)'],
       extraHours: 2,
       total: 33000,
-      depositAmount: 9900,
+      depositAmount: 0,
       eventDate: '2026-10-14',
       eventCity: 'Oaxaca, Oax.',
-      status: 'Contratado',
+      status: 'Pendiente',
       createdAt: '2026-08-10',
-      notes: 'Cita presencial realizada. Muestras de lino aprobadas.',
+      notes: 'Solicitud de información registrada.',
     },
     {
       id: 'quote-102',
@@ -123,35 +119,15 @@ export default function App() {
       addons: ['Cuadro Impreso 50x70cm'],
       extraHours: 0,
       total: 24000,
-      depositAmount: 7200,
+      depositAmount: 0,
       eventDate: '2026-11-28',
       eventCity: 'CDMX',
-      status: 'Cita Presencial Agendada',
-      createdAt: '2026-08-11',
-      notes: 'Agendó cita presencial en San Ángel para ver álbumes físicos.',
-    },
-    {
-      id: 'quote-103',
-      clientName: 'Mariana Ríos',
-      clientEmail: 'mariana.rios@editorial.com',
-      clientPhone: '+52 55 3344 5566',
-      eventType: 'retratos',
-      selectedPackageId: 'pareja',
-      packageName: 'SESIÓN PAREJA / EDITORIAL',
-      packagePrice: 6800,
-      addons: ['Entrega Prioritaria Express 48 Horas'],
-      extraHours: 0,
-      total: 9800,
-      depositAmount: 2940,
-      eventDate: '2026-09-05',
-      eventCity: 'San Miguel de Allende',
       status: 'Pendiente',
       createdAt: '2026-08-11',
-      notes: 'Cotización generada desde la web.',
+      notes: 'Solicitud de disponibilidad pendiente de confirmación.',
     },
   ]);
 
-  // Global Booking State Object
   const [bookingState, setBookingState] = useState<BookingState>({
     eventType: 'bodas',
     selectedPackageId: 'pro',
@@ -166,23 +142,15 @@ export default function App() {
     signatureDataUrl: '',
     paymentMethod: 'stripe',
     total: 24500,
-    depositAmount: 7350,
+    depositAmount: 0,
   });
 
-  // Favorites state
   const [favorites, setFavorites] = useState<string[]>(['img-1', 'img-4']);
-
-  // Modals state
-  const [clientPortalOpen, setClientPortalOpen] = useState<boolean>(false);
-  const [adminPortalOpen, setAdminPortalOpen] = useState<boolean>(false);
-
-  // Theme state
-  const [isDarkMode, setIsDarkMode] = useState<boolean>(true);
-
-  // Toast notifications
+  const [clientPortalOpen, setClientPortalOpen] = useState(false);
+  const [adminPortalOpen, setAdminPortalOpen] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(true);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  // Hash / URL routing synchronization
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#/', '').replace('#', '');
@@ -195,13 +163,13 @@ export default function App() {
     handleHashChange();
     window.addEventListener('hashchange', handleHashChange);
     window.addEventListener('popstate', handleHashChange);
+
     return () => {
       window.removeEventListener('hashchange', handleHashChange);
       window.removeEventListener('popstate', handleHashChange);
     };
   }, []);
 
-  // Apply dark / light class on HTML document root
   useEffect(() => {
     const root = document.documentElement;
     if (isDarkMode) {
@@ -224,112 +192,92 @@ export default function App() {
       description,
       type,
     };
-    setToasts((prev) => [...prev, newToast]);
 
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== newToast.id));
+    setToasts((prev) => [...prev, newToast]);
+    window.setTimeout(() => {
+      setToasts((prev) => prev.filter((toast) => toast.id !== newToast.id));
     }, 4000);
   };
 
   const handleDismissToast = (id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
+    setToasts((prev) => prev.filter((toast) => toast.id !== id));
   };
 
   const handleNavigateRoute = (route: RoutePath) => {
     setCurrentRoute(route);
     window.history.pushState({}, '', `#/${route}`);
 
-    // Update default booking state for the navigated route
     if (route !== 'inicio') {
       const eventTypeKey = route as EventType;
       const availablePackages = packagesState[eventTypeKey] || packagesState.bodas;
-      const defaultPackage = availablePackages.find((p) => p.popular) || availablePackages[0];
+      const defaultPackage = availablePackages.find((pkg) => pkg.popular) || availablePackages[0];
 
       setBookingState((prev) => {
         let addonsSum = 0;
         prev.selectedAddons.forEach((addonId) => {
-          const item = addonsState.find((a) => a.id === addonId);
+          const item = addonsState.find((addon) => addon.id === addonId);
           if (item && item.type === 'checkbox') addonsSum += item.price;
         });
-        const extraHoursAddon = addonsState.find((a) => a.id === 'extra_hours');
-        const extraHoursRate = extraHoursAddon ? extraHoursAddon.price : 2000;
-        const extraHoursPrice = prev.extraHours * extraHoursRate;
-        const total = defaultPackage.price + addonsSum + extraHoursPrice;
+
+        const extraHoursAddon = addonsState.find((addon) => addon.id === 'extra_hours');
+        const extraHoursRate = extraHoursAddon ? extraHoursAddon.price : 0;
+        const total = defaultPackage.price + addonsSum + prev.extraHours * extraHoursRate;
 
         return {
           ...prev,
           eventType: eventTypeKey,
           selectedPackageId: defaultPackage.id,
           total,
-          depositAmount: Math.round(total * 0.3),
+          depositAmount: 0,
         };
       });
     }
 
     window.scrollTo({ top: 0, behavior: 'smooth' });
-    showToast(`Navegando a ${route.toUpperCase()}`, 'Cargando paquetes y contenidos específicos.');
   };
 
   const handleToggleFavorite = (imageId: string) => {
-    setFavorites((prev) => {
-      const exists = prev.includes(imageId);
-      const next = exists ? prev.filter((id) => id !== imageId) : [...prev, imageId];
-      if (exists) {
-        showToast('Removida de Favoritas', 'La imagen fue removida de tu lista personal.');
-      } else {
-        showToast('¡Agregada a Favoritas!', 'La imagen fue guardada en tu colección personal.', 'success');
-      }
-      return next;
-    });
+    setFavorites((prev) =>
+      prev.includes(imageId) ? prev.filter((id) => id !== imageId) : [...prev, imageId]
+    );
   };
 
   const handleToggleTheme = () => {
     setIsDarkMode((prev) => !prev);
-    showToast(
-      isDarkMode ? 'Modo Claro Activado' : 'Modo Oscuro Activado',
-      'Cambiando el tema visual de la interfaz.'
-    );
   };
 
   const handleScrollTo = (id: string) => {
-    const el = document.getElementById(id);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth' });
-    }
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
   };
 
   const handleSendWhatsApp = () => {
     const phoneNumber = '525512345678';
 
     const categoryNames: Record<string, string> = {
-      bodas: 'BODAS DESTINATION',
-      'xv-anos': 'QUINCEAÑERAS (XV AÑOS)',
+      bodas: 'BODAS',
+      'xv-anos': 'XV AÑOS',
       bautizos: 'BAUTIZOS Y EVENTOS FAMILIARES',
       retratos: 'RETRATOS Y EDITORIAL',
+      empresarial: 'EMPRESARIAL',
     };
 
     const categoryLabel = categoryNames[bookingState.eventType] || bookingState.eventType.toUpperCase();
-
     const activePackages = packagesState[bookingState.eventType] || packagesState.bodas;
-    const selectedPkg = activePackages.find((p) => p.id === bookingState.selectedPackageId) || activePackages[0];
+    const selectedPkg = activePackages.find((pkg) => pkg.id === bookingState.selectedPackageId) || activePackages[0];
 
     const activeAddonsNames = bookingState.selectedAddons
-      .map((id) => {
-        const addon = addonsState.find((a) => a.id === id);
-        return addon ? addon.name : '';
-      })
+      .map((id) => addonsState.find((addon) => addon.id === id)?.name || '')
       .filter(Boolean);
 
     if (bookingState.extraHours > 0) {
       activeAddonsNames.push(`${bookingState.extraHours} Horas Extra de Cobertura`);
     }
 
-    // Save Quote to Admin State
     const newQuoteRecord: QuoteRecord = {
       id: `quote-${Date.now()}`,
-      clientName: bookingState.clientName || 'Cliente Cita Presencial',
-      clientEmail: bookingState.clientEmail || 'contacto@whatsapp.com',
-      clientPhone: bookingState.clientPhone || '+52 55 1234 5678',
+      clientName: bookingState.clientName || 'Prospecto web',
+      clientEmail: bookingState.clientEmail || 'Sin correo',
+      clientPhone: bookingState.clientPhone || 'Sin teléfono',
       eventType: bookingState.eventType,
       selectedPackageId: bookingState.selectedPackageId,
       packageName: selectedPkg.name,
@@ -337,42 +285,34 @@ export default function App() {
       addons: activeAddonsNames,
       extraHours: bookingState.extraHours,
       total: bookingState.total,
-      depositAmount: bookingState.depositAmount,
+      depositAmount: 0,
       eventDate: bookingState.date || 'Por definir',
-      eventCity: bookingState.eventCity || 'CDMX',
-      status: 'Cita Presencial Agendada',
+      eventCity: bookingState.eventCity || 'Por definir',
+      status: 'Pendiente',
       createdAt: new Date().toISOString().split('T')[0],
-      notes: bookingState.notes || 'Solicitud de Cita Presencial iniciada vía WhatsApp.',
-      signatureDataUrl: bookingState.signatureDataUrl,
+      notes: bookingState.notes || 'Solicitud de disponibilidad iniciada desde la web.',
     };
 
     setQuotesState((prev) => [newQuoteRecord, ...prev]);
 
-    const messageText = `Hola Xavi.Ph! 👋 Quisiera agendar una cita presencial y reservar mi fecha:
+    const messageText = `Hola Xavi.Ph. Quisiera solicitar disponibilidad e información para mi evento.\n\n📸 Tipo de evento: ${categoryLabel}\n📦 Paquete de interés: ${selectedPkg.name} ($${selectedPkg.price.toLocaleString('es-MX')} MXN)\n🗓️ Fecha tentativa: ${bookingState.date || 'Por definir'}\n📍 Lugar: ${bookingState.eventCity || 'Por definir'}\n✨ Adicionales: ${activeAddonsNames.length > 0 ? activeAddonsNames.join(', ') : 'Ninguno'}\n💰 Total estimado: $${bookingState.total.toLocaleString('es-MX')} MXN\n\nQuedo pendiente de que me confirmen disponibilidad y los siguientes pasos.`;
 
-📸 Categoría de Evento: ${categoryLabel}
-📦 Paquete Seleccionado: ${selectedPkg.name} ($${selectedPkg.price.toLocaleString('es-MX')} MXN)
-🗓️ Fecha Estimada: ${bookingState.date || 'Por definir'}
-✨ Add-ons Activos: ${activeAddonsNames.length > 0 ? activeAddonsNames.join(', ') : 'Ninguno'}
-💰 Total Cotizado: $${bookingState.total.toLocaleString('es-MX')} MXN (Anticipo 30%: $${bookingState.depositAmount.toLocaleString('es-MX')} MXN)
-
-🤝 Solicito agendar una Visita Presencial / Cita Personalizada para conocer el equipo, ver muestras de álbumes físicos y coordinar la logística. ¡Gracias!`;
-
-    const encodedUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(messageText)}`;
-    window.open(encodedUrl, '_blank');
-    showToast('Cita Registrada', 'La solicitud de cita fue guardada en el sistema de administración.');
+    window.open(`https://wa.me/${phoneNumber}?text=${encodeURIComponent(messageText)}`, '_blank');
+    showToast(
+      'Solicitud preparada',
+      'Se abrió WhatsApp con tu información. La fecha queda pendiente de confirmación.',
+      'success'
+    );
   };
 
-  // Handlers for Gallery Images Admin
   const handleAddGalleryImage = (image: GalleryImage) => {
     setGalleryImages((prev) => [image, ...prev]);
   };
 
   const handleDeleteGalleryImage = (id: string) => {
-    setGalleryImages((prev) => prev.filter((img) => img.id !== id));
+    setGalleryImages((prev) => prev.filter((image) => image.id !== id));
   };
 
-  // Handlers for Testimonials
   const handleAddTestimonial = (newTestimonial: Omit<Testimonial, 'id' | 'verified'>) => {
     const created: Testimonial = {
       id: `t-${Date.now()}`,
@@ -388,10 +328,8 @@ export default function App() {
         isDarkMode ? 'bg-[#0B0F17] text-[#F9FAFB]' : 'bg-[#F8FAFC] text-[#0F172A]'
       } font-sans antialiased transition-colors duration-300`}
     >
-      {/* Toast Notifications Container */}
       <ToastContainer toasts={toasts} onDismiss={handleDismissToast} />
 
-      {/* Header & Navbar */}
       <Navbar
         currentRoute={currentRoute}
         onNavigateRoute={handleNavigateRoute}
@@ -403,7 +341,6 @@ export default function App() {
         onToggleTheme={handleToggleTheme}
       />
 
-      {/* Dynamic Hero Section */}
       <Hero
         currentRoute={currentRoute}
         onQuoteClick={() => handleScrollTo('cotizador')}
@@ -411,7 +348,6 @@ export default function App() {
         onCitaClick={() => handleScrollTo('cierre-presencial')}
       />
 
-      {/* Gallery Section with Masonry & Lightbox */}
       <GallerySection
         currentRoute={currentRoute}
         images={galleryImages}
@@ -420,18 +356,16 @@ export default function App() {
         onShowToast={showToast}
       />
 
-      {/* Package Matrix & Real-time Quote Engine */}
       <PricingQuoteEngine
         currentRoute={currentRoute}
         bookingState={bookingState}
         onUpdateBookingState={setBookingState}
-        onProceedToBooking={() => handleScrollTo('contratacion')}
+        onProceedToBooking={() => handleScrollTo('solicitud')}
         onSendWhatsApp={handleSendWhatsApp}
         packages={packagesState}
         addons={addonsState}
       />
 
-      {/* VIP Human Service & In-Person Appointment Section */}
       <InPersonConsultation
         bookingState={bookingState}
         onSendWhatsApp={handleSendWhatsApp}
@@ -439,7 +373,6 @@ export default function App() {
         onShowToast={showToast}
       />
 
-      {/* 4-Step Booking & Contract Signature Wizard */}
       <BookingWizard
         bookingState={bookingState}
         onUpdateBookingState={setBookingState}
@@ -449,14 +382,12 @@ export default function App() {
         addons={addonsState}
       />
 
-      {/* Client Testimonials Section */}
       <TestimonialsSection
         testimonials={testimonials}
         onAddTestimonial={handleAddTestimonial}
         onShowToast={showToast}
       />
 
-      {/* Footer */}
       <Footer
         onNavigateRoute={handleNavigateRoute}
         onOpenClientPortal={() => setClientPortalOpen(true)}
@@ -464,17 +395,14 @@ export default function App() {
         footerContact={footerContact}
       />
 
-      {/* WhatsApp Floating CTA */}
       <WhatsAppFloatingButton bookingState={bookingState} />
 
-      {/* Client Access Portal Modal (PIN '1234' Demo) */}
       <ClientPortalModal
         isOpen={clientPortalOpen}
         onClose={() => setClientPortalOpen(false)}
         onShowToast={showToast}
       />
 
-      {/* Admin / Photographer Portal Modal */}
       <AdminPortalModal
         isOpen={adminPortalOpen}
         onClose={() => setAdminPortalOpen(false)}
