@@ -23,14 +23,46 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Keep all editable controls truly editable in Chrome/Edge, including admin forms. */
+input:not([disabled]):not([readonly]),
+textarea:not([disabled]):not([readonly]),
+select:not([disabled]) {
+  pointer-events: auto !important;
+  -webkit-user-select: text !important;
+  user-select: text !important;
+  caret-color: #D4AF37;
+  color: inherit;
+  cursor: text;
+}
+
+select:not([disabled]),
+input[type="file"]:not([disabled]),
+input[type="date"]:not([disabled]),
+input[type="checkbox"]:not([disabled]),
+input[type="radio"]:not([disabled]) {
+  cursor: pointer;
+}
+
+input::selection,
+textarea::selection {
+  background: #D4AF37;
+  color: #0B0F17;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #6B7280;
+  opacity: 1;
+}
+
 /* Hide scrollbar for Chrome, Safari and Opera */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
 /* Hide scrollbar for IE, Edge and Firefox */
 .no-scrollbar {
-  -ms-overflow-style: none;  /* IE and Edge */
-  scrollbar-width: none;  /* Firefox */
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 /* Light Theme overrides when .light class is active */
