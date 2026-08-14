@@ -5,6 +5,12 @@ export type AdminSession = {
   password: string;
 };
 
+let activeAdminSession: AdminSession | null = null;
+
+export function getCurrentAdminSession(): AdminSession | null {
+  return activeAdminSession;
+}
+
 async function parseResponse(res: Response) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data?.status === 'error') {
@@ -21,7 +27,8 @@ export async function adminLogin(email: string, password: string): Promise<Admin
   });
   const data = await parseResponse(res);
   if (!data.authenticated) throw new Error('Credenciales incorrectas.');
-  return { email, password };
+  activeAdminSession = { email, password };
+  return activeAdminSession;
 }
 
 export async function loadAdminConfig(session: AdminSession): Promise<Record<string, any>> {
