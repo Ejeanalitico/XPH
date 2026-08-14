@@ -136,7 +136,7 @@ export async function uploadImageToGoogleDrive(
     scriptUrl ||
     (import.meta as any).env?.VITE_GOOGLE_APPS_SCRIPT_URL ||
     localStorage.getItem('xph_apps_script_url') ||
-    'https://script.google.com/macros/s/AKfycby_fFhp_OTT46hZP2F8goSUktnwMkvjnUtje5CAursQOBH7kHQofea4uhoUCfq3tSy9/exec';
+    'https://script.google.com/macros/s/AKfycbxYOBROH9z0rgulm5CjmXxAV5w97od3VLCgpuUvnXtNIIUQzixWpJIN2udS_-frqPGS/exec';
 
   let base64String = '';
   let mimeType = 'image/jpeg';
@@ -256,7 +256,7 @@ export async function saveSiteDataToCloud(
     scriptUrl ||
     (import.meta as any).env?.VITE_GOOGLE_APPS_SCRIPT_URL ||
     localStorage.getItem('xph_apps_script_url') ||
-    'https://script.google.com/macros/s/AKfycby_fFhp_OTT46hZP2F8goSUktnwMkvjnUtje5CAursQOBH7kHQofea4uhoUCfq3tSy9/exec';
+    'https://script.google.com/macros/s/AKfycbxYOBROH9z0rgulm5CjmXxAV5w97od3VLCgpuUvnXtNIIUQzixWpJIN2udS_-frqPGS/exec';
 
   if (!targetScriptUrl) return false;
 
@@ -325,7 +325,7 @@ export async function loadSiteDataFromCloud(scriptUrl?: string): Promise<Record<
     scriptUrl ||
     (import.meta as any).env?.VITE_GOOGLE_APPS_SCRIPT_URL ||
     localStorage.getItem('xph_apps_script_url') ||
-    'https://script.google.com/macros/s/AKfycby_fFhp_OTT46hZP2F8goSUktnwMkvjnUtje5CAursQOBH7kHQofea4uhoUCfq3tSy9/exec';
+    'https://script.google.com/macros/s/AKfycbxYOBROH9z0rgulm5CjmXxAV5w97od3VLCgpuUvnXtNIIUQzixWpJIN2udS_-frqPGS/exec';
 
   if (!targetScriptUrl) return null;
 
