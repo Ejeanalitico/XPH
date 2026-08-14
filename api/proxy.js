@@ -2,8 +2,8 @@
  * api/proxy.js — Vercel Serverless Proxy for Google Apps Script (ES Module)
  */
 
+// Active XPH Apps Script deployment selected for production.
 const APPS_SCRIPT_URL =
-  process.env.VITE_GOOGLE_APPS_SCRIPT_URL ||
   'https://script.google.com/macros/s/AKfycbzcabU0-P7RCW04G-MMFds6m4JeQKpiPl6_IaAA40KGQsp73ZsaJx6PuwbcmhBCa4Br/exec';
 
 async function readBody(req) {
@@ -24,15 +24,15 @@ async function fetchConfigFromScript() {
     redirect: 'follow',
   });
   const text = await response.text();
-  return JSON.parse(text);
+  const parsed = JSON.parse(text);
+  if (!parsed || parsed.status !== 'success') throw new Error('Apps Script no devolvió una configuración válida.');
+  return parsed;
 }
 
 function sanitizeConfigPayload(payload) {
   if (!payload || typeof payload !== 'object') return payload;
   const copy = JSON.parse(JSON.stringify(payload));
-  if (copy.config && typeof copy.config === 'object') {
-    delete copy.config.adminCredentials;
-  }
+  if (copy.config && typeof copy.config === 'object') delete copy.config.adminCredentials;
   return copy;
 }
 
@@ -47,7 +47,6 @@ export default async function handler(req, res) {
   try {
     const action = String(req.query?.action || '');
 
-    // Admin credentials are checked server-side and are never returned to the browser.
     if (req.method === 'POST' && action === 'adminLogin') {
       const raw = await readBody(req);
       let submitted = {};
@@ -87,10 +86,12 @@ export default async function handler(req, res) {
 
     const text = await scriptRes.text();
     let parsed;
-    try { parsed = JSON.parse(text); }
-    catch (_) { parsed = { status: 'success', raw: text }; }
+    try {
+      parsed = JSON.parse(text);
+    } catch (_) {
+      throw new Error('Apps Script devolvió una respuesta no válida.');
+    }
 
-    // Never expose administrative credentials from the public Vercel endpoint.
     if (req.method === 'GET' && (!action || action === 'loadConfig')) {
       parsed = sanitizeConfigPayload(parsed);
     }
@@ -98,6 +99,6 @@ export default async function handler(req, res) {
     return res.status(200).json(parsed);
   } catch (err) {
     console.error('[XPH Proxy] Error:', err);
-    return res.status(500).json({ status: 'error', message: err.message || 'Proxy error' });
+    return res.status(502).json({ status: 'error', message: err.message || 'Proxy error' });
   }
 }
