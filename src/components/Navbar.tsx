@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Camera, Sun, Moon, Menu, X, Sparkles, ChevronDown, MapPin, CalendarCheck, Shield } from 'lucide-react';
+import { Sun, Moon, Menu, X, Sparkles, ChevronDown, MapPin, CalendarCheck, Shield } from 'lucide-react';
 import { RoutePath } from '../types';
 
 interface NavbarProps {
@@ -12,6 +12,8 @@ interface NavbarProps {
   isDarkMode: boolean;
   onToggleTheme: () => void;
 }
+
+const ORIGINAL_XPH_LOGO = 'https://lh3.googleusercontent.com/d/1hPjzWpgGqQ0JkaMOgeERFWbt_qXiMaIg';
 
 export const Navbar: React.FC<NavbarProps> = ({
   currentRoute,
@@ -55,8 +57,8 @@ export const Navbar: React.FC<NavbarProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
         <div className="flex items-center gap-4 min-w-0">
           <button onClick={() => handleSelectRoute('inicio')} className="flex items-center gap-3 group text-left cursor-pointer min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#D4AF37] to-[#AA771C] p-0.5 flex items-center justify-center shadow-lg shadow-[#D4AF37]/20 group-hover:scale-105 transition-transform shrink-0">
-              <div className="w-full h-full bg-[#0B0F17] rounded-[10px] flex items-center justify-center"><Camera className="w-5 h-5 text-[#D4AF37]" /></div>
+            <div className="w-12 h-12 rounded-xl overflow-hidden bg-black border border-white/10 flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform shrink-0">
+              <img src={ORIGINAL_XPH_LOGO} alt="XPH" className="w-full h-full object-contain" />
             </div>
             <div className="min-w-0">
               <span className="text-base sm:text-lg xl:text-xl font-bold tracking-wide font-serif-luxury text-white block truncate">XPH <span className="text-[#D4AF37] font-sans font-light">Fotografía & Video</span></span>
