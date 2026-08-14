@@ -1,0 +1,28 @@
+/* Primary XPH mark in the public navigation. */
+header.sticky > div > div:first-child > button.group > div:first-child {
+  background-image: url('/xph-mark.svg') !important;
+  background-size: cover !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+  border: 1px solid rgba(212, 175, 55, .55) !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+header.sticky > div > div:first-child > button.group > div:first-child > * {
+  opacity: 0 !important;
+}
+
+/* Private client gallery brand mark. */
+main > header.sticky > div > div:first-child > div:first-child {
+  background-image: url('/xph-mark.svg') !important;
+  background-size: cover !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+  border-color: rgba(212, 175, 55, .55) !important;
+  overflow: hidden !important;
+}
+
+main > header.sticky > div > div:first-child > div:first-child > * {
+  opacity: 0 !important;
+}
