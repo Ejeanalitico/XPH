@@ -4,15 +4,38 @@ export type EventType = 'bodas' | 'xv-anos' | 'bautizos' | 'retratos' | 'empresa
 
 export type GalleryCategory = 'all' | 'bodas' | 'xv-anos' | 'bautizos' | 'retratos' | 'empresarial' | 'previa';
 
+export type GalleryVisibility = 'public' | 'private';
+export type GalleryMediaType = 'image' | 'video' | 'gallery-meta';
+
 export interface GalleryImage {
   id: string;
   title: string;
-  category: 'bodas' | 'xv-anos' | 'bautizos' | 'retratos' | 'empresarial' | 'previa';
+  category: 'bodas' | 'xv-anos' | 'bautizos' | 'retratos' | 'empresarial' | 'previa' | 'private';
   url: string;
   location: string;
   camera?: string;
   lens?: string;
   likes?: number;
+  visibility?: GalleryVisibility;
+  mediaType?: GalleryMediaType;
+  galleryId?: string;
+  gallerySlug?: string;
+  galleryTitle?: string;
+  galleryClient?: string;
+  galleryToken?: string;
+  downloadUrl?: string;
+  previewUrl?: string;
+  createdAt?: string;
+}
+
+export interface PrivateGallerySummary {
+  galleryId: string;
+  slug: string;
+  title: string;
+  clientName: string;
+  token: string;
+  createdAt: string;
+  mediaCount: number;
 }
 
 export interface PackageOption {
@@ -24,6 +47,7 @@ export interface PackageOption {
   features: string[];
   notIncludes?: string[];
   popular?: boolean;
+  managedByAdmin?: boolean;
 }
 
 export interface AddOnOption {
@@ -33,6 +57,7 @@ export interface AddOnOption {
   description: string;
   type: 'checkbox' | 'counter';
   includes?: string[];
+  managedByAdmin?: boolean;
 }
 
 export interface FooterContact {
