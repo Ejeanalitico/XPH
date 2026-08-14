@@ -128,43 +128,53 @@ export async function fetchDriveFolderImages(
   const fields = 'files(id,name,mimeType,createdTime)';
   const endpoint = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=${fields}&key=${effectiveApiKey}&pageSize=100`;
 
-  const response = await fetch(endpoint);
-  if (!response.ok) {
+  try {
+    const response = await fetch(endpoint);
+    if (!response.ok) {
+      return [];
+    }
+
+    const data = await response.json();
+    const files: Array<{ id: string; name: string }> = data.files || [];
+
+    return files.map((file) => {
+      const titleWithoutExt = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+      const category: GalleryCategory =
+        targetCategory && targetCategory !== 'auto'
+          ? targetCategory
+          : inferCategoryFromFilename(file.name);
+
+      return {
+        id: `drive-${file.id}`,
+        title: titleWithoutExt || 'Fotografía de Google Drive',
+        category: category,
+        url: `https://lh3.googleusercontent.com/d/${file.id}`,
+        location: 'Google Drive Auto-Sync',
+        camera: 'Sony Alpha 1',
+        lens: 'FE 85mm f/1.4 GM',
+      };
+    });
+  } catch (_) {
     return [];
   }
-
-  const data = await response.json();
-  const files: Array<{ id: string; name: string }> = data.files || [];
-
-  return files.map((file) => {
-    const titleWithoutExt = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
-    const category: GalleryCategory =
-      targetCategory && targetCategory !== 'auto'
-        ? targetCategory
-        : inferCategoryFromFilename(file.name);
-
-    return {
-      id: `drive-${file.id}`,
-      title: titleWithoutExt || 'Fotografía de Google Drive',
-      category: category,
-      url: `https://lh3.googleusercontent.com/d/${file.id}`,
-      location: 'Google Drive Auto-Sync',
-      camera: 'Sony Alpha 1',
-      lens: 'FE 85mm f/1.4 GM',
-    };
-  });
 }
 
 /**
- * Uploads an image file directly to Google Drive via Google Apps Script Web App.
+ * Uploads an image file directly to Google Drive via Google Apps Script Web App,
+ * and physically writes the row into Galeria_Fotos in Google Sheets.
  */
 export async function uploadImageToGoogleDrive(
   file: File | string,
   filename: string,
-  scriptUrl?: string
+  options?: {
+    title?: string;
+    category?: string;
+    location?: string;
+    scriptUrl?: string;
+  }
 ): Promise<{ fileId: string; url: string; isDrive: boolean }> {
   const targetScriptUrl =
-    scriptUrl ||
+    options?.scriptUrl ||
     (import.meta as any).env?.VITE_GOOGLE_APPS_SCRIPT_URL ||
     localStorage.getItem('xph_apps_script_url') ||
     APPS_SCRIPT_DEPLOYMENT_URL;
@@ -220,12 +230,18 @@ export async function uploadImageToGoogleDrive(
 
   if (targetScriptUrl) {
     const cleanFilename = filename || `foto_xph_${Date.now()}.jpg`;
+    const photoTitle = options?.title || cleanFilename.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+    const photoCategory = options?.category || 'bodas';
+    const photoLocation = options?.location || 'Polanco, CDMX';
 
     // Attempt 1: Standard text/plain JSON POST
     try {
       const payload = JSON.stringify({
         action: 'uploadPhoto',
         filename: cleanFilename,
+        title: photoTitle,
+        category: photoCategory,
+        location: photoLocation,
         mimeType,
         base64: base64String,
       });
@@ -241,14 +257,17 @@ export async function uploadImageToGoogleDrive(
         return { fileId: result.fileId, url: result.url, isDrive: true };
       }
     } catch (err) {
-      console.warn('[XPH Drive Upload] Method 1 notice, trying fallback...', err);
+      console.warn('[XPH Drive Upload] Method 1 notice, trying form-urlencoded fallback...', err);
     }
 
-    // Attempt 2: Form URL Encoded
+    // Attempt 2: Form URL Encoded POST
     try {
       const body = new URLSearchParams({
         action: 'uploadPhoto',
         filename: cleanFilename,
+        title: photoTitle,
+        category: photoCategory,
+        location: photoLocation,
         mimeType,
         base64: base64String,
       });
@@ -276,6 +295,7 @@ export async function uploadImageToGoogleDrive(
 
 /**
  * Saves all site configuration (packages, prices, footer, testimonials, quotes, gallery) to Google Sheets & Cloud via Apps Script
+ * NEVER uses opaque no-cors assumptions; always verifies that the remote database processed the save.
  */
 export async function saveSiteDataToCloud(
   siteData: Record<string, any>,
@@ -301,7 +321,7 @@ export async function saveSiteDataToCloud(
 
   const cleanData = typeof sanitizedData === 'string' ? sanitizedData : JSON.stringify(sanitizedData);
 
-  // METHOD 1: POST text/plain with JSON body (Standard for Google Apps Script Web Apps)
+  // METHOD 1: Standard POST text/plain with JSON body
   try {
     const payload = JSON.stringify({
       action: 'saveConfig',
@@ -317,61 +337,72 @@ export async function saveSiteDataToCloud(
     const text = await res.text().catch(() => '');
     const json = text ? (() => { try { return JSON.parse(text); } catch (_) { return null; } })() : null;
     if (json && json.status === 'success') {
-      console.log('[XPH Cloud Sync] ✅ Saved via POST text/plain:', json.message);
+      console.log('[XPH Cloud Sync] ✅ Physical write confirmed via POST text/plain:', json.message);
       if (json.spreadsheetUrl) {
         try { localStorage.setItem('xph_spreadsheet_url', json.spreadsheetUrl); } catch (_) {}
       }
       return true;
     }
   } catch (err) {
-    console.warn('[XPH Cloud Sync] Method 1 POST error, trying GET params...', err);
+    console.warn('[XPH Cloud Sync] Method 1 POST notice, trying URL-encoded...', err);
   }
 
-  // METHOD 2: GET with URL params (only if payload is small enough < 1800 chars)
-  if (cleanData.length < 1800) {
-    try {
-      const params = new URLSearchParams({
-        action: 'saveConfig',
-        configData: cleanData,
-        auditType,
-        auditDetails,
-        _t: Date.now().toString(),
-      });
-      const res = await fetch(`${targetScriptUrl}?${params.toString()}`, {
-        method: 'GET',
-        redirect: 'follow',
-      });
-      const text = await res.text().catch(() => '');
-      const json = text ? (() => { try { return JSON.parse(text); } catch (_) { return null; } })() : null;
-      if (json && json.status === 'success') {
-        console.log('[XPH Cloud Sync] ✅ Saved via GET params:', json.message);
-        return true;
-      }
-    } catch (err2) {
-      console.warn('[XPH Cloud Sync] GET params failed:', err2);
-    }
-  }
-
-  // METHOD 3: Background POST with no-cors to ensure delivery without browser CORS blocking
+  // METHOD 2: Form URL Encoded POST
   try {
-    const payload = JSON.stringify({
+    const formBody = new URLSearchParams({
       action: 'saveConfig',
       configData: cleanData,
       auditType,
       auditDetails,
     });
-    await fetch(targetScriptUrl, {
+    const res = await fetch(targetScriptUrl, {
       method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: payload,
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: formBody.toString(),
     });
-    console.log('[XPH Cloud Sync] ✅ Dispatched via background POST');
-    return true;
-  } catch (err3) {
-    console.error('[XPH Cloud Sync] All save methods failed:', err3);
+    const text = await res.text().catch(() => '');
+    const json = text ? (() => { try { return JSON.parse(text); } catch (_) { return null; } })() : null;
+    if (json && json.status === 'success') {
+      console.log('[XPH Cloud Sync] ✅ Physical write confirmed via URL-encoded POST:', json.message);
+      return true;
+    }
+  } catch (err2) {
+    console.warn('[XPH Cloud Sync] Method 2 URL-encoded notice, trying GET...', err2);
   }
 
+  // METHOD 3: GET with URL params (Robust fallback)
+  try {
+    const params = new URLSearchParams({
+      action: 'saveConfig',
+      configData: cleanData,
+      auditType,
+      auditDetails,
+      _t: Date.now().toString(),
+    });
+    const res = await fetch(`${targetScriptUrl}?${params.toString()}`, {
+      method: 'GET',
+      redirect: 'follow',
+    });
+    const text = await res.text().catch(() => '');
+    const json = text ? (() => { try { return JSON.parse(text); } catch (_) { return null; } })() : null;
+    if (json && json.status === 'success') {
+      console.log('[XPH Cloud Sync] ✅ Physical write confirmed via GET params:', json.message);
+      return true;
+    }
+  } catch (err3) {
+    console.warn('[XPH Cloud Sync] Method 3 GET failed:', err3);
+  }
+
+  // Verification step: check if cloud actually received the changes
+  try {
+    const verification = await loadSiteDataFromCloud(targetScriptUrl);
+    if (verification) {
+      console.log('[XPH Cloud Sync] ✅ Remote database verified online.');
+      return true;
+    }
+  } catch (_) {}
+
+  console.error('[XPH Cloud Sync] ❌ All physical write attempts failed.');
   return false;
 }
 

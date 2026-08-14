@@ -427,6 +427,9 @@ function doPost(e) {
     var rawBase64 = '';
     var mimeType = 'image/jpeg';
     var filename = 'foto_xph_' + Date.now() + '.jpg';
+    var title = '';
+    var category = 'bodas';
+    var location = 'Polanco, CDMX';
     var action = '';
     var configData = '';
     var auditType = '';
@@ -444,6 +447,9 @@ function doPost(e) {
           rawBase64    = j.base64 || '';
           mimeType     = j.mimeType || mimeType;
           filename     = j.filename || filename;
+          title        = j.title || '';
+          category     = j.category || category;
+          location     = j.location || location;
           auditType    = j.auditType || '';
           auditDetails = j.auditDetails || '';
           parsed = true;
@@ -463,6 +469,9 @@ function doPost(e) {
         rawBase64    = params['base64'] || rawBase64;
         mimeType     = params['mimeType'] || mimeType;
         filename     = params['filename'] || filename;
+        title        = params['title'] || title;
+        category     = params['category'] || category;
+        location     = params['location'] || location;
         auditType    = params['auditType'] || auditType;
         auditDetails = params['auditDetails'] || auditDetails;
       }
@@ -474,6 +483,9 @@ function doPost(e) {
       rawBase64    = e.parameter['base64'] || rawBase64;
       mimeType     = e.parameter['mimeType'] || mimeType;
       filename     = e.parameter['filename'] || filename;
+      title        = e.parameter['title'] || title;
+      category     = e.parameter['category'] || category;
+      location     = e.parameter['location'] || location;
       auditType    = e.parameter['auditType'] || auditType;
       auditDetails = e.parameter['auditDetails'] || auditDetails;
     }
@@ -530,7 +542,7 @@ function doPost(e) {
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    // ACCIÓN 2: SUBIR FOTOGRAFÍA A GOOGLE DRIVE Y REGISTRAR EN TABLA
+    // ACCIÓN 2: SUBIR FOTOGRAFÍA A GOOGLE DRIVE Y REGISTRAR EN TABLA GALERIA_FOTOS
     if (!rawBase64) {
       throw new Error('No se recibieron datos de imagen ni configuración.');
     }
@@ -557,12 +569,49 @@ function doPost(e) {
 
     var directUrl = 'https://lh3.googleusercontent.com/d/' + fileId;
     var driveUrl  = 'https://drive.google.com/file/d/' + fileId + '/view';
+    var finalTitle = title || filename.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+    var nowStr = new Date().toISOString().split('T')[0];
 
+    // Escribir físicamente en la pestaña Galeria_Fotos de Google Sheets
     if (ss) {
+      var sheetG = ss.getSheetByName('Galeria_Fotos');
+      if (!sheetG) {
+        initSpreadsheetSheets(ss);
+        sheetG = ss.getSheetByName('Galeria_Fotos');
+      }
+      if (sheetG) {
+        sheetG.appendRow([
+          fileId,
+          finalTitle,
+          (category || 'bodas').toLowerCase(),
+          directUrl,
+          location || 'Polanco, CDMX',
+          nowStr,
+          'ACTIVO'
+        ]);
+      }
+
+      // Actualizar también Config_Activa con la nueva foto
+      var prevCfg = {};
+      try {
+        var rawC = loadActiveConfig();
+        if (rawC) prevCfg = JSON.parse(rawC);
+      } catch (_) {}
+      var currentGallery = Array.isArray(prevCfg.galleryImages) ? prevCfg.galleryImages : [];
+      currentGallery.unshift({
+        id: fileId,
+        title: finalTitle,
+        category: (category || 'bodas').toLowerCase(),
+        url: directUrl,
+        location: location || 'Polanco, CDMX'
+      });
+      prevCfg.galleryImages = currentGallery;
+      saveActiveConfig(ss, JSON.stringify(prevCfg));
+
       logAudit(
         ss,
         'SUBIDA_FOTOGRAFIA_DRIVE',
-        'Archivo: ' + filename + ' | DirectUrl: ' + directUrl,
+        'Foto registrada en Galeria_Fotos: ' + finalTitle + ' | ' + directUrl,
         fileId,
         'Admin XPH'
       );
@@ -574,6 +623,8 @@ function doPost(e) {
       url:      directUrl,
       driveUrl: driveUrl,
       name:     filename,
+      title:    finalTitle,
+      category: category,
       spreadsheetUrl: ss ? ss.getUrl() : ''
     })).setMimeType(ContentService.MimeType.JSON);
 

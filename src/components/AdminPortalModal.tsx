@@ -522,8 +522,12 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
         finalPhotoUrl = await compressImageForWeb(newPhotoUrl);
       }
 
-      // Upload image file directly to Google Drive folder
-      const uploadResult = await uploadImageToGoogleDrive(finalPhotoUrl, titleToUse);
+      // Upload image file directly to Google Drive folder and record in Google Sheets
+      const uploadResult = await uploadImageToGoogleDrive(finalPhotoUrl, titleToUse, {
+        title: titleToUse,
+        category: newPhotoCategory,
+        location: newPhotoLocation || 'Polanco, CDMX',
+      });
       const processedUrl = getDirectGoogleDriveUrl(uploadResult.url);
 
       const newImg: GalleryImage = {
