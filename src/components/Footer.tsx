@@ -22,9 +22,12 @@ export const Footer: React.FC<FooterProps> = ({ onNavigateRoute, footerContact }
                   <Camera className="w-4 h-4 text-[#D4AF37]" />
                 </div>
               </div>
-              <span className="text-xl font-bold font-serif-luxury text-white">
-                XAVI<span className="text-[#D4AF37] font-sans font-light">.PH</span>
-              </span>
+              <div>
+                <div className="text-base font-bold font-serif-luxury text-white">
+                  XPH <span className="text-[#D4AF37] font-sans font-light">Fotografía & Video</span>
+                </div>
+                <div className="text-[9px] uppercase tracking-widest text-gray-500 font-mono">Producción Audiovisual</div>
+              </div>
             </div>
             <p className="text-xs text-gray-400 leading-relaxed">{footerContact.aboutText}</p>
           </div>
@@ -92,7 +95,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigateRoute, footerContact }
         </div>
 
         <div className="pt-8 border-t border-white/10 text-[11px] text-gray-500 font-mono text-center sm:text-left">
-          <p>© 2026 Xavi.Ph Photography. Cobertura en CDMX, Estado de México y estados de la zona centro. Todos los derechos reservados.</p>
+          <p>© 2026 XPH Fotografía & Video; Producción Audiovisual. Todos los derechos reservados.</p>
         </div>
       </div>
     </footer>
