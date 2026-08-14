@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { EventType, BookingState, RoutePath, PackageOption, AddOnOption } from '../types';
-import { PACKAGES_BY_EVENT, ADDONS_CATALOG } from '../data/packages';
-import { Check, Sparkles, Plus, Minus, ShieldCheck, ArrowRight, Clock, MapPin, Calendar, PhoneCall, X, Eye } from 'lucide-react';
+import React from 'react';
+import { Check, Minus, Plus, Sparkles, X } from 'lucide-react';
+import { AddOnOption, BookingState, EventType, PackageOption, RoutePath } from '../types';
+import { ADDONS_CATALOG, PACKAGES_BY_EVENT } from '../data/packages';
 
 interface PricingQuoteEngineProps {
   currentRoute: RoutePath;
@@ -9,453 +9,288 @@ interface PricingQuoteEngineProps {
   bookingState: BookingState;
   onUpdateBookingState: (updater: (prev: BookingState) => BookingState) => void;
   onProceedToBooking: () => void;
-  onSendWhatsApp: () => void;
+  onSendWhatsApp?: () => void;
   packages?: Record<EventType, PackageOption[]>;
   addons?: AddOnOption[];
 }
 
 export const PricingQuoteEngine: React.FC<PricingQuoteEngineProps> = ({
-  currentRoute,
-  onNavigateRoute,
   bookingState,
   onUpdateBookingState,
   onProceedToBooking,
-  onSendWhatsApp,
   packages = PACKAGES_BY_EVENT,
   addons = ADDONS_CATALOG,
+  onNavigateRoute,
 }) => {
   const currentPackages = packages[bookingState.eventType] || packages.bodas;
-  const selectedPackage = currentPackages.find((p) => p.id === bookingState.selectedPackageId) || currentPackages[0];
+  const selectedPackage =
+    currentPackages.find((pkg) => pkg.id === bookingState.selectedPackageId) || currentPackages[0];
+  const isCustomQuote = selectedPackage.price === 0;
+  const extraHoursAddon = addons.find((addon) => addon.id === 'extra_hours');
+  const extraHoursRate = extraHoursAddon?.price || 0;
 
   const categoryLabels: Record<EventType, string> = {
-    bodas: 'Bodas CDMX',
-    'xv-anos': 'Quinceañeras (XV)',
-    bautizos: 'Bautizos & Familia',
-    retratos: 'Retratos & Moda',
-    empresarial: 'Empresarial & Branding',
+    bodas: 'Bodas',
+    'xv-anos': 'XV Años',
+    bautizos: 'Bautizos',
+    retratos: 'Retratos',
+    empresarial: 'Empresarial',
   };
 
-  const extraHoursAddon = addons.find((a) => a.id === 'extra_hours');
-  const extraHoursPriceRate = extraHoursAddon ? extraHoursAddon.price : 2000;
+  const calculateTotal = (pkg: PackageOption, selectedAddons: string[], extraHours: number) => {
+    if (pkg.price === 0) return 0;
+    const addonsTotal = selectedAddons.reduce((sum, addonId) => {
+      const addon = addons.find((item) => item.id === addonId);
+      return addon && addon.type === 'checkbox' ? sum + addon.price : sum;
+    }, 0);
+    return pkg.price + addonsTotal + extraHours * extraHoursRate;
+  };
 
-  const handleSelectEventType = (type: EventType) => {
-    if (onNavigateRoute) {
-      onNavigateRoute(type as RoutePath);
-    }
-    onUpdateBookingState((prev) => {
-      const newPackages = packages[type] || packages.bodas;
-      const newPackage = newPackages.find((p) => p.id === prev.selectedPackageId) || newPackages[0];
-      
-      // Calculate new total
-      let addonsSum = 0;
-      prev.selectedAddons.forEach((addonId) => {
-        const item = addons.find((a) => a.id === addonId);
-        if (item && item.type === 'checkbox') addonsSum += item.price;
-      });
-      const extraHoursPrice = prev.extraHours * extraHoursPriceRate;
-      const total = newPackage.price + addonsSum + extraHoursPrice;
+  const handleSelectEventType = (eventType: EventType) => {
+    const eventPackages = packages[eventType] || packages.bodas;
+    const defaultPackage = eventPackages.find((pkg) => pkg.popular) || eventPackages[0];
+    const customQuote = defaultPackage.price === 0;
 
-      return {
-        ...prev,
-        eventType: type,
-        selectedPackageId: newPackage.id,
-        total,
-        depositAmount: Math.round(total * 0.4),
-      };
-    });
+    onUpdateBookingState((prev) => ({
+      ...prev,
+      eventType,
+      selectedPackageId: defaultPackage.id,
+      selectedAddons: customQuote ? [] : prev.selectedAddons,
+      extraHours: customQuote ? 0 : prev.extraHours,
+      total: customQuote ? 0 : calculateTotal(defaultPackage, prev.selectedAddons, prev.extraHours),
+      depositAmount: 0,
+    }));
+
+    onNavigateRoute?.(eventType as RoutePath);
   };
 
   const handleSelectPackage = (packageId: string) => {
-    onUpdateBookingState((prev) => {
-      const pkg = currentPackages.find((p) => p.id === packageId) || currentPackages[0];
-      let addonsSum = 0;
-      prev.selectedAddons.forEach((addonId) => {
-        const item = addons.find((a) => a.id === addonId);
-        if (item && item.type === 'checkbox') addonsSum += item.price;
-      });
-      const extraHoursPrice = prev.extraHours * extraHoursPriceRate;
-      const total = pkg.price + addonsSum + extraHoursPrice;
-
-      return {
-        ...prev,
-        selectedPackageId: packageId,
-        total,
-        depositAmount: Math.round(total * 0.4),
-      };
-    });
+    const pkg = currentPackages.find((item) => item.id === packageId) || currentPackages[0];
+    onUpdateBookingState((prev) => ({
+      ...prev,
+      selectedPackageId: pkg.id,
+      selectedAddons: pkg.price === 0 ? [] : prev.selectedAddons,
+      extraHours: pkg.price === 0 ? 0 : prev.extraHours,
+      total: calculateTotal(pkg, prev.selectedAddons, prev.extraHours),
+      depositAmount: 0,
+    }));
   };
 
   const handleToggleAddon = (addonId: string) => {
+    if (isCustomQuote) return;
     onUpdateBookingState((prev) => {
-      const exists = prev.selectedAddons.includes(addonId);
-      const nextAddons = exists
+      const nextAddons = prev.selectedAddons.includes(addonId)
         ? prev.selectedAddons.filter((id) => id !== addonId)
         : [...prev.selectedAddons, addonId];
-
-      const pkg = currentPackages.find((p) => p.id === prev.selectedPackageId) || currentPackages[0];
-      let addonsSum = 0;
-      nextAddons.forEach((id) => {
-        const item = addons.find((a) => a.id === id);
-        if (item && item.type === 'checkbox') addonsSum += item.price;
-      });
-      const extraHoursPrice = prev.extraHours * extraHoursPriceRate;
-      const total = pkg.price + addonsSum + extraHoursPrice;
-
       return {
         ...prev,
         selectedAddons: nextAddons,
-        total,
-        depositAmount: Math.round(total * 0.4),
+        total: calculateTotal(selectedPackage, nextAddons, prev.extraHours),
+        depositAmount: 0,
       };
     });
   };
 
   const handleExtraHoursChange = (delta: number) => {
+    if (isCustomQuote) return;
     onUpdateBookingState((prev) => {
       const nextHours = Math.max(0, prev.extraHours + delta);
-      const pkg = currentPackages.find((p) => p.id === prev.selectedPackageId) || currentPackages[0];
-      let addonsSum = 0;
-      prev.selectedAddons.forEach((id) => {
-        const item = addons.find((a) => a.id === id);
-        if (item && item.type === 'checkbox') addonsSum += item.price;
-      });
-      const extraHoursPrice = nextHours * extraHoursPriceRate;
-      const total = pkg.price + addonsSum + extraHoursPrice;
-
       return {
         ...prev,
         extraHours: nextHours,
-        total,
-        depositAmount: Math.round(total * 0.4),
+        total: calculateTotal(selectedPackage, prev.selectedAddons, nextHours),
+        depositAmount: 0,
       };
     });
   };
 
-
-  const [showPrice, setShowPrice] = useState<boolean>(true);
-
   return (
     <section id="cotizador" className="py-20 bg-[#0B0F17] relative border-b border-white/5">
-      
-      {/* Background Glow */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-[#D4AF37]/5 rounded-full blur-3xl pointer-events-none" />
-
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 relative z-10 space-y-10 sm:space-y-16 pb-28 sm:pb-24">
-        
-        {/* Section Header */}
-        <div className="text-center max-w-3xl mx-auto space-y-3 sm:space-y-4">
-          <div id="paquetes" className="inline-flex items-center gap-2 px-3 sm:px-3.5 py-1.5 rounded-full bg-[#161C28] border border-[#D4AF37]/30 text-[10px] sm:text-xs font-semibold text-[#D4AF37]">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-14">
+        <div className="text-center max-w-3xl mx-auto space-y-4">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#161C28] border border-[#D4AF37]/30 text-xs font-semibold text-[#D4AF37]">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>COTIZADOR DINÁMICO EN TIEMPO REAL</span>
+            <span>COTIZADOR XPH</span>
           </div>
-
-          <h2 className="text-2xl sm:text-4xl lg:text-5xl font-bold font-serif-luxury text-white">
-            Diseña tu Cobertura Fotográfica a la Medida
+          <h2 className="text-3xl sm:text-5xl font-bold font-serif-luxury text-white">
+            Encuentra la cobertura adecuada para tu evento
           </h2>
-
-          <p className="text-gray-300 text-xs sm:text-base">
-            Selecciona la categoría activa, elige tu paquete base y personaliza con add-ons. El total se recalcula al instante en MXN.
+          <p className="text-gray-300 text-sm sm:text-base">
+            Los paquetes con precio publicado se calculan al instante. La fecha y los servicios finales se confirman directamente antes de cualquier apartado.
           </p>
         </div>
 
-        {/* Category Tabs Selector with Mobile-Optimized Horizontal Scroll */}
-        <div className="flex justify-center -mx-3 sm:mx-0 px-3 sm:px-0">
-          <div className="p-1 sm:p-1.5 rounded-2xl bg-[#161C28] border border-white/10 flex overflow-x-auto no-scrollbar max-w-full gap-1.5 sm:gap-2 shadow-xl">
-            {(['bodas', 'xv-anos', 'bautizos', 'retratos', 'empresarial'] as EventType[]).map((cat) => {
-              const isActive = bookingState.eventType === cat;
+        <div className="flex justify-center">
+          <div className="p-1.5 rounded-2xl bg-[#161C28] border border-white/10 inline-flex flex-wrap justify-center gap-2">
+            {(Object.keys(categoryLabels) as EventType[]).map((category) => {
+              const active = bookingState.eventType === category;
               return (
                 <button
-                  key={cat}
-                  onClick={() => handleSelectEventType(cat)}
-                  className={`px-3 sm:px-5 py-2 sm:py-3 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap cursor-pointer shrink-0 ${
-                    isActive
-                      ? 'gold-gradient-bg text-black font-bold shadow-lg shadow-[#D4AF37]/20 sm:scale-105'
-                      : 'text-gray-400 hover:text-white hover:bg-white/5'
+                  key={category}
+                  type="button"
+                  onClick={() => handleSelectEventType(category)}
+                  className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+                    active ? 'gold-gradient-bg text-black font-bold' : 'text-gray-400 hover:text-white hover:bg-white/5'
                   }`}
                 >
-                  {categoryLabels[cat]}
+                  {categoryLabels[category]}
                 </button>
               );
             })}
           </div>
         </div>
 
-        {/* Base Packages Matrix */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 sm:gap-6 lg:gap-8 items-stretch">
+        <div className={`grid gap-8 items-stretch ${currentPackages.length === 1 ? 'md:grid-cols-1 max-w-2xl mx-auto' : 'md:grid-cols-2'}`}>
           {currentPackages.map((pkg) => {
-            const isSelected = bookingState.selectedPackageId === pkg.id;
-            const isHighlight = pkg.popular;
-
+            const selected = bookingState.selectedPackageId === pkg.id;
             return (
-              <div
+              <button
                 key={pkg.id}
+                type="button"
                 onClick={() => handleSelectPackage(pkg.id)}
-                className={`relative rounded-2xl p-5 sm:p-8 transition-all duration-300 cursor-pointer flex flex-col justify-between ${
-                  isHighlight
-                    ? 'bg-[#161C28] border-2 border-[#D4AF37] gold-border-glow sm:scale-105 z-20 shadow-2xl'
-                    : isSelected
-                    ? 'bg-[#161C28] border-2 border-[#D4AF37] shadow-xl'
-                    : 'bg-[#161C28]/80 border border-white/10 hover:border-white/30 hover:bg-[#161C28]'
+                className={`relative text-left rounded-2xl p-6 sm:p-8 transition-all flex flex-col ${
+                  selected ? 'bg-[#161C28] border-2 border-[#D4AF37] shadow-xl' : 'bg-[#161C28]/80 border border-white/10 hover:border-white/30'
                 }`}
               >
-                {/* Badge if present */}
                 {pkg.badge && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 sm:px-4 py-0.5 sm:py-1 rounded-full gold-gradient-bg text-black font-bold text-[9px] sm:text-[10px] tracking-widest uppercase shadow-md whitespace-nowrap">
+                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full gold-gradient-bg text-black font-bold text-[10px] tracking-wider whitespace-nowrap">
                     {pkg.badge}
-                  </div>
+                  </span>
                 )}
-
-                <div className="space-y-6">
-                  <div className="space-y-2">
-                    <h3 className="text-xl font-bold font-serif-luxury text-white flex items-center justify-between">
-                      <span>{pkg.name}</span>
-                      {isSelected && (
-                        <span className="w-5 h-5 rounded-full bg-[#D4AF37] text-black flex items-center justify-center text-xs">
+                <div className="space-y-5 flex-1">
+                  <div>
+                    <div className="flex items-start justify-between gap-3">
+                      <h3 className="text-xl font-bold font-serif-luxury text-white">{pkg.name}</h3>
+                      {selected && (
+                        <span className="w-5 h-5 rounded-full bg-[#D4AF37] text-black flex items-center justify-center shrink-0">
                           <Check className="w-3.5 h-3.5 stroke-[3]" />
                         </span>
                       )}
-                    </h3>
-                    <p className="text-xs text-gray-400 leading-relaxed">{pkg.description}</p>
-                  </div>
-
-                  {/* Price */}
-                  <div className="pt-2 border-t border-white/10">
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-3xl font-extrabold text-white font-mono">
-                        ${pkg.price.toLocaleString('es-MX')}
-                      </span>
-                      <span className="text-xs text-gray-400">MXN</span>
                     </div>
-                    <span className="text-[11px] text-emerald-400 block mt-1">
-                      Anticipo 40%: ${(pkg.price * 0.4).toLocaleString('es-MX')} MXN
-                    </span>
+                    <p className="text-xs text-gray-400 mt-2 leading-relaxed">{pkg.description}</p>
                   </div>
 
-                  {/* Feature List (Incluye) */}
-                  <div className="space-y-2 pt-2">
-                    <span className="text-[10px] uppercase font-mono font-bold tracking-wider text-[#D4AF37] block">
-                      ✓ Incluye:
-                    </span>
-                    <ul className="space-y-2 text-xs text-gray-300">
-                      {(pkg.features || (pkg as any).includes || []).map((feat: string, idx: number) => (
-                        <li key={idx} className="flex items-start gap-2.5">
+                  <div className="pt-4 border-t border-white/10">
+                    {pkg.price > 0 ? (
+                      <>
+                        <span className="text-3xl font-extrabold text-white font-mono">${pkg.price.toLocaleString('es-MX')}</span>
+                        <span className="text-xs text-gray-400 ml-1">MXN</span>
+                        <p className="text-[11px] text-gray-500 mt-1">Precio base publicado.</p>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-2xl font-extrabold text-[#D4AF37]">Cotización personalizada</span>
+                        <p className="text-[11px] text-gray-500 mt-1">Se calcula según alcance y necesidades.</p>
+                      </>
+                    )}
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] uppercase font-mono font-bold tracking-wider text-[#D4AF37]">Incluye / considera</span>
+                    <ul className="space-y-2 text-xs text-gray-300 mt-2">
+                      {pkg.features.map((feature) => (
+                        <li key={feature} className="flex items-start gap-2">
                           <Check className="w-4 h-4 text-[#D4AF37] shrink-0 mt-0.5" />
-                          <span>{feat}</span>
+                          <span>{feature}</span>
                         </li>
                       ))}
                     </ul>
                   </div>
 
-                  {/* Exclusions List (No Incluye) */}
-                  {Array.isArray(pkg.notIncludes) && pkg.notIncludes.length > 0 && (
-                    <div className="space-y-2 pt-3 border-t border-white/10">
-                      <span className="text-[10px] uppercase font-mono font-bold tracking-wider text-rose-400 block">
-                        ✕ No Incluye:
-                      </span>
-                      <ul className="space-y-2 text-xs text-gray-400">
-                        {pkg.notIncludes.map((noFeat, idx) => (
-                          <li key={idx} className="flex items-start gap-2 text-gray-400">
+                  {pkg.notIncludes && pkg.notIncludes.length > 0 && (
+                    <div className="pt-3 border-t border-white/10">
+                      <span className="text-[10px] uppercase font-mono font-bold tracking-wider text-rose-400">No incluye</span>
+                      <ul className="space-y-2 text-xs text-gray-400 mt-2">
+                        {pkg.notIncludes.map((feature) => (
+                          <li key={feature} className="flex items-start gap-2">
                             <X className="w-3.5 h-3.5 text-rose-400 shrink-0 mt-0.5" />
-                            <span className="line-through decoration-rose-500/50">{noFeat}</span>
+                            <span>{feature}</span>
                           </li>
                         ))}
                       </ul>
                     </div>
                   )}
                 </div>
-
-                {/* Selection Action Button */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleSelectPackage(pkg.id);
-                  }}
-                  className={`w-full py-3 mt-8 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                    isSelected
-                      ? 'gold-gradient-bg text-black shadow-lg shadow-[#D4AF37]/20'
-                      : 'bg-white/10 text-white hover:bg-white/20'
-                  }`}
-                >
-                  {isSelected ? '✓ Paquete Seleccionado' : 'Seleccionar Paquete'}
-                </button>
-              </div>
+              </button>
             );
           })}
         </div>
 
-        {/* Dynamic Customizer / Add-On Engine */}
-        <div className="p-8 rounded-2xl bg-[#161C28] border border-white/10 space-y-8">
-          <div className="border-b border-white/10 pb-4">
-            <h3 className="text-xl font-bold font-serif-luxury text-white flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-[#D4AF37]" />
-              <span>Añade Servicios Adicionales (Add-Ons Exclusivos)</span>
-            </h3>
-            <p className="text-xs text-gray-400 mt-1">
-              Personaliza tu experiencia. Los servicios seleccionados se sincronizan en tu cotización y contrato.
-            </p>
-          </div>
+        {!isCustomQuote ? (
+          <div className="grid lg:grid-cols-2 gap-8">
+            <div className="rounded-2xl bg-[#161C28] border border-white/10 p-6 space-y-5">
+              <div>
+                <h3 className="text-xl font-bold text-white">Personaliza tu cobertura</h3>
+                <p className="text-xs text-gray-400 mt-1">Adicionales con precio publicado.</p>
+              </div>
 
-          <div className="grid md:grid-cols-2 gap-6">
-            
-            {/* Extra Hours Counter Item */}
-            {extraHoursAddon && (
-              <div className="p-5 rounded-xl bg-white/5 border border-white/10 flex flex-col justify-between gap-4">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <Clock className="w-4 h-4 text-[#D4AF37]" />
-                      <span className="text-sm font-semibold text-white">{extraHoursAddon.name}</span>
-                    </div>
-                    <span className="text-xs font-mono font-bold text-[#D4AF37]">
-                      +${extraHoursPriceRate.toLocaleString('es-MX')} MXN/h
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-400">{extraHoursAddon.description}</p>
-
-                  {extraHoursAddon.includes && extraHoursAddon.includes.length > 0 && (
-                    <div className="pt-2 border-t border-white/5 space-y-1">
-                      <span className="text-[10px] text-[#D4AF37] font-mono font-bold uppercase block">
-                        Detalles / Qué Incluye:
-                      </span>
-                      <ul className="space-y-1 text-[11px] text-gray-300">
-                        {extraHoursAddon.includes.map((inc, idx) => (
-                          <li key={idx} className="flex items-center gap-1.5">
-                            <Check className="w-3 h-3 text-[#D4AF37] shrink-0" />
-                            <span>{inc}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex items-center justify-between pt-2 border-t border-white/10">
-                  <span className="text-xs text-gray-400 font-mono">Horas añadidas:</span>
-                  <div className="flex items-center gap-3 bg-[#0B0F17] p-1.5 rounded-xl border border-white/10">
+              <div className="space-y-3">
+                {addons.filter((addon) => addon.type === 'checkbox').map((addon) => {
+                  const active = bookingState.selectedAddons.includes(addon.id);
+                  return (
                     <button
-                      onClick={() => handleExtraHoursChange(-1)}
-                      disabled={bookingState.extraHours === 0}
-                      className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-30 text-white flex items-center justify-center transition-all cursor-pointer"
+                      key={addon.id}
+                      type="button"
+                      onClick={() => handleToggleAddon(addon.id)}
+                      className={`w-full p-4 rounded-xl border text-left flex items-start justify-between gap-4 transition-all ${
+                        active ? 'border-[#D4AF37] bg-[#D4AF37]/5' : 'border-white/10 bg-[#0B0F17] hover:border-white/20'
+                      }`}
                     >
-                      <Minus className="w-3.5 h-3.5" />
+                      <div>
+                        <p className="text-sm font-semibold text-white">{addon.name}</p>
+                        <p className="text-xs text-gray-400 mt-1">{addon.description}</p>
+                      </div>
+                      <span className="text-sm font-bold text-[#D4AF37] font-mono whitespace-nowrap">+${addon.price.toLocaleString('es-MX')}</span>
                     </button>
-                    <span className="w-6 text-center font-mono font-bold text-sm text-[#D4AF37]">
-                      {bookingState.extraHours}h
-                    </span>
-                    <button
-                      onClick={() => handleExtraHoursChange(1)}
-                      className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
+                  );
+                })}
+              </div>
+
+              {extraHoursAddon && (
+                <div className="p-4 rounded-xl bg-[#0B0F17] border border-white/10 flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold text-white">Horas extra</p>
+                    <p className="text-xs text-gray-400">${extraHoursRate.toLocaleString('es-MX')} MXN por hora completa</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button type="button" aria-label="Quitar hora extra" onClick={() => handleExtraHoursChange(-1)} className="p-2 rounded-lg bg-white/10 text-white">
+                      <Minus className="w-4 h-4" />
+                    </button>
+                    <span className="w-6 text-center text-white font-mono">{bookingState.extraHours}</span>
+                    <button type="button" aria-label="Agregar hora extra" onClick={() => handleExtraHoursChange(1)} className="p-2 rounded-lg bg-white/10 text-white">
+                      <Plus className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
-            {/* Checkbox Catalog Items */}
-            {addons.filter((a) => a.type === 'checkbox').map((addon) => {
-              const isChecked = bookingState.selectedAddons.includes(addon.id);
-              return (
-                <div
-                  key={addon.id}
-                  onClick={() => handleToggleAddon(addon.id)}
-                  className={`p-5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between gap-3 ${
-                    isChecked
-                      ? 'bg-[#D4AF37]/10 border-[#D4AF37] shadow-lg shadow-[#D4AF37]/5'
-                      : 'bg-white/5 border-white/10 hover:border-white/20'
-                  }`}
-                >
-                  <div className="space-y-2">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
-                          isChecked ? 'bg-[#D4AF37] border-[#D4AF37] text-black' : 'border-white/30 bg-transparent'
-                        }`}>
-                          {isChecked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                        </div>
-                        <span className="text-sm font-semibold text-white">{addon.name}</span>
-                      </div>
-                      <span className="text-xs font-mono font-bold text-[#D4AF37] whitespace-nowrap">
-                        +${addon.price.toLocaleString('es-MX')} MXN
-                      </span>
-                    </div>
-
-                    <p className="text-xs text-gray-400 leading-relaxed pl-8">{addon.description}</p>
-
-                    {addon.includes && addon.includes.length > 0 && (
-                      <div className="pl-8 pt-2 border-t border-white/5 space-y-1">
-                        <span className="text-[10px] text-[#D4AF37] font-mono font-bold uppercase block">
-                          Qué Incluye este Adicional:
-                        </span>
-                        <ul className="space-y-1 text-[11px] text-gray-300">
-                          {addon.includes.map((inc, idx) => (
-                            <li key={idx} className="flex items-center gap-1.5">
-                              <Check className="w-3 h-3 text-[#D4AF37] shrink-0" />
-                              <span>{inc}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
+            <div className="rounded-2xl bg-[#161C28] border border-[#D4AF37]/30 p-6 sm:p-8 flex flex-col justify-between gap-8">
+              <div>
+                <span className="text-[10px] uppercase tracking-widest text-gray-400 font-mono">Total estimado</span>
+                <div className="mt-2">
+                  <span className="text-4xl font-black text-[#D4AF37] font-mono">${bookingState.total.toLocaleString('es-MX')}</span>
+                  <span className="text-sm text-gray-400 ml-2">MXN</span>
                 </div>
-              );
-            })}
-
-          </div>
-        </div>
-
-      </div>
-
-      {/* Floating Sticky Bottom Bar for Live Total & Quote Conversion */}
-      <div className="fixed bottom-0 left-0 right-0 z-30 bg-[#0B0F17]/95 backdrop-blur-xl border-t border-[#D4AF37]/40 p-2.5 sm:p-4 shadow-2xl">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2.5 sm:gap-4">
-          
-          {/* Summary Details */}
-          <div className="flex items-center justify-between w-full sm:w-auto gap-4 text-left">
-            <div>
-              <span className="text-[10px] text-gray-400 uppercase tracking-wider block font-mono truncate max-w-[200px] sm:max-w-none">
-                {selectedPackage.name} — {categoryLabels[bookingState.eventType]}
-              </span>
-              <div className="flex items-baseline gap-2 mt-0.5">
-                <span className="text-xl sm:text-2xl font-black text-white font-mono">
-                  ${bookingState.total.toLocaleString('es-MX')}
-                </span>
-                <span className="text-[11px] text-emerald-400 font-mono hidden sm:inline">
-                  (Anticipo 40%: ${bookingState.depositAmount.toLocaleString('es-MX')})
-                </span>
+                <p className="text-xs text-gray-400 mt-3 leading-relaxed">
+                  Este cálculo es informativo. La disponibilidad de fecha se confirma directamente antes de cualquier apartado.
+                </p>
               </div>
-            </div>
 
-            <div className="sm:hidden text-right">
-              <span className="text-[9px] text-emerald-400 uppercase font-mono block">Anticipo 40%</span>
-              <span className="text-xs font-bold text-emerald-400 font-mono">
-                ${bookingState.depositAmount.toLocaleString('es-MX')}
-              </span>
+              <button type="button" onClick={onProceedToBooking} className="w-full py-4 rounded-xl gold-gradient-bg text-black font-extrabold text-sm cursor-pointer">
+                Solicitar disponibilidad
+              </button>
             </div>
           </div>
-
-          {/* Action CTAs */}
-          <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
-            <button
-              onClick={onSendWhatsApp}
-              className="flex-1 sm:flex-none px-3.5 sm:px-5 py-2.5 sm:py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-600/20"
-            >
-              <PhoneCall className="w-3.5 h-3.5" />
-              <span>Agendar Cita</span>
-            </button>
-
-            <button
-              onClick={onProceedToBooking}
-              className="flex-1 sm:flex-none px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl gold-gradient-bg text-black font-extrabold text-xs tracking-wide shadow-xl shadow-[#D4AF37]/20 hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <span>Reservar Fecha</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+        ) : (
+          <div className="max-w-2xl mx-auto rounded-2xl bg-[#161C28] border border-[#D4AF37]/30 p-6 sm:p-8 text-center space-y-4">
+            <h3 className="text-2xl font-bold text-white">Cuéntanos qué necesitas</h3>
+            <p className="text-sm text-gray-400">Para este servicio no publicamos un precio genérico. Envíanos fecha, lugar y alcance para preparar una cotización adecuada.</p>
+            <button type="button" onClick={onProceedToBooking} className="w-full sm:w-auto px-8 py-4 rounded-xl gold-gradient-bg text-black font-extrabold text-sm cursor-pointer">
+              Solicitar cotización y disponibilidad
             </button>
           </div>
-
-        </div>
+        )}
       </div>
     </section>
   );
