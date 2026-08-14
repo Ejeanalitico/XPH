@@ -1,7 +1,16 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
+import {
+  AlertCircle,
+  ArrowLeft,
+  ArrowRight,
+  Calendar as CalendarIcon,
+  CheckCircle2,
+  FileText,
+  MessageCircle,
+  Share2,
+} from 'lucide-react';
 import { BookingState, PackageOption, AddOnOption, EventType } from '../types';
 import { PACKAGES_BY_EVENT, ADDONS_CATALOG } from '../data/packages';
-import { Calendar as CalendarIcon, FileText, Edit3, CreditCard, CheckCircle2, ShieldCheck, Eraser, Copy, ArrowRight, ArrowLeft, Lock, AlertCircle, RefreshCw, User, Share2, Sparkles } from 'lucide-react';
 import { copyToClipboard } from '../utils/clipboard';
 
 interface BookingWizardProps {
@@ -21,180 +30,97 @@ export const BookingWizard: React.FC<BookingWizardProps> = ({
   packages,
   addons,
 }) => {
-  const [currentStep, setCurrentStep] = useState<number>(1);
-  const [dateStatus, setDateStatus] = useState<'checking' | 'available' | 'empty'>(bookingState.date ? 'available' : 'empty');
-  const [copiedSPEI, setCopiedSPEI] = useState<boolean>(false);
-  const [copiedLink, setCopiedLink] = useState<boolean>(false);
-  const [isBooked, setIsBooked] = useState<boolean>(false);
+  const [currentStep, setCurrentStep] = useState<1 | 2>(1);
+  const [copiedLink, setCopiedLink] = useState(false);
 
-  // Canvas ref for signature
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const isDrawing = useRef<boolean>(false);
+  const currentPackages =
+    (packages && packages[bookingState.eventType]) || PACKAGES_BY_EVENT[bookingState.eventType];
+  const currentAddons = addons || ADDONS_CATALOG;
+  const selectedPackage =
+    currentPackages.find((pkg) => pkg.id === bookingState.selectedPackageId) || currentPackages[0];
 
-  // Package details
-  const currentPackages = (packages && packages[bookingState.eventType]) || PACKAGES_BY_EVENT[bookingState.eventType];
-  const selectedPackage = currentPackages.find((p) => p.id === bookingState.selectedPackageId) || currentPackages[0];
-
-  // Initialize Canvas drawing events
-  useEffect(() => {
-    if (currentStep === 3 && canvasRef.current) {
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.strokeStyle = '#D4AF37';
-        ctx.lineWidth = 2.5;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-      }
-    }
-  }, [currentStep]);
+  const selectedAddons = bookingState.selectedAddons
+    .map((id) => currentAddons.find((addon) => addon.id === id))
+    .filter((addon): addon is AddOnOption => Boolean(addon));
 
   const handleDateChange = (newDate: string) => {
     onUpdateBookingState((prev) => ({ ...prev, date: newDate }));
     if (newDate) {
-      setDateStatus('checking');
-      setTimeout(() => {
-        setDateStatus('available');
-        onShowToast('¡Fecha Disponible!', `La fecha ${newDate} está libre para reserva inmediata en CDMX.`, 'success');
-      }, 400);
-    } else {
-      setDateStatus('empty');
+      onShowToast(
+        'Fecha seleccionada',
+        'La disponibilidad debe confirmarse en la agenda antes de apartar el evento.',
+        'info'
+      );
     }
   };
 
-  const handleCopySPEI = async () => {
-    const success = await copyToClipboard('012180015488920194');
-    setCopiedSPEI(true);
-    if (success) {
-      onShowToast('CLABE Copiada', 'La CLABE interbancaria SPEI fue copiada al portapapeles.', 'success');
-    } else {
-      onShowToast('CLABE SPEI BBVA', '012180015488920194', 'info');
-    }
-    setTimeout(() => setCopiedSPEI(false), 3000);
-  };
-
-  const handleCopyBookingLink = async () => {
-    const link = `${window.location.origin}${window.location.pathname}#contratacion`;
+  const handleCopyRequestLink = async () => {
+    const link = `${window.location.origin}${window.location.pathname}#solicitud`;
     const success = await copyToClipboard(link);
     setCopiedLink(true);
-    if (success) {
-      onShowToast('¡Enlace de Reserva Copiado!', 'Puedes compartir este enlace directo para la contratación.', 'success');
-    } else {
-      onShowToast('Enlace de Reserva', link, 'info');
-    }
-    setTimeout(() => setCopiedLink(false), 3000);
+    onShowToast(
+      success ? 'Enlace copiado' : 'Enlace de solicitud',
+      success ? 'Puedes compartir este enlace para solicitar disponibilidad.' : link,
+      'info'
+    );
+    window.setTimeout(() => setCopiedLink(false), 3000);
   };
 
-  const handleScrollToQuote = () => {
-    const el = document.getElementById('cotizador');
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth' });
-      onShowToast('Selección de Paquetes', 'Elige o cambia tu paquete en el cotizador interactivo.', 'info');
-    }
-  };
-
-  // Canvas drawing functions
-  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    isDrawing.current = true;
-    draw(e);
-  };
-
-  const stopDrawing = () => {
-    if (isDrawing.current && canvasRef.current) {
-      isDrawing.current = false;
-      const dataUrl = canvasRef.current.toDataURL();
-      onUpdateBookingState((prev) => ({ ...prev, signatureDataUrl: dataUrl }));
-    }
-  };
-
-  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    if (!isDrawing.current || !canvasRef.current) return;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const rect = canvas.getBoundingClientRect();
-    let clientX = 0;
-    let clientY = 0;
-
-    if ('touches' in e) {
-      clientX = e.touches[0].clientX;
-      clientY = e.touches[0].clientY;
-    } else {
-      clientX = e.clientX;
-      clientY = e.clientY;
+  const handleSendRequest = () => {
+    if (!bookingState.date) {
+      setCurrentStep(1);
+      onShowToast(
+        'Selecciona una fecha',
+        'Necesitamos una fecha tentativa para revisar la agenda.',
+        'warning'
+      );
+      return;
     }
 
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
-
-    ctx.lineTo(x, y);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-  };
-
-  const clearSignature = () => {
-    if (canvasRef.current) {
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.beginPath();
-      }
-      onUpdateBookingState((prev) => ({ ...prev, signatureDataUrl: '' }));
-      onShowToast('Firma Limpiada', 'Puedes volver a trazar tu firma digital.');
-    }
-  };
-
-  const handleConfirmReservation = () => {
     if (!bookingState.clientName || !bookingState.clientEmail || !bookingState.clientPhone) {
-      onShowToast('Campos Incompletos', 'Por favor llena tus datos de contacto en el Paso 2.');
       setCurrentStep(2);
-      return;
-    }
-    if (!bookingState.signatureDataUrl) {
-      onShowToast('Firma Requerida', 'Por favor firma el contrato digital en el Paso 3 para continuar.');
-      setCurrentStep(3);
+      onShowToast(
+        'Campos incompletos',
+        'Completa nombre, correo y WhatsApp antes de enviar la solicitud.',
+        'warning'
+      );
       return;
     }
 
-    setIsBooked(true);
-    onShowToast('¡Reserva Registrada Exitosamente!', 'Hemos generado tu folio de contrato y enviado la confirmación.');
+    onSendWhatsApp();
   };
 
   return (
-    <section id="contratacion" className="py-20 bg-[#0B0F17] relative border-b border-white/5">
+    <section id="solicitud" className="py-20 bg-[#0B0F17] relative border-b border-white/5">
+      <span id="contratacion" className="absolute -top-20" aria-hidden="true" />
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
-        
-        {/* Wizard Section Header */}
         <div className="text-center space-y-3">
           <span className="text-xs uppercase tracking-widest text-[#D4AF37] font-semibold font-mono">
-            SISTEMA DE CONTRATACIÓN Y RESERVA
+            SOLICITUD DE DISPONIBILIDAD
           </span>
           <h2 className="text-3xl sm:text-4xl font-bold font-serif-luxury text-white">
-            Reserva tu Fecha en 4 Sencillos Pasos
+            Solicita tu fecha en 2 pasos
           </h2>
-          <p className="text-gray-300 text-sm max-w-xl mx-auto">
-            Proceso 100% digital con contrato formal de servicio fotográfico, firma en pantalla y recibo inmediato.
+          <p className="text-gray-300 text-sm max-w-2xl mx-auto">
+            Selecciona tu fecha tentativa y comparte tus datos. La disponibilidad se confirma personalmente antes de cualquier apartado.
           </p>
         </div>
 
-        {/* Step Progress Indicator */}
-        <div className="grid grid-cols-2 gap-1.5 sm:gap-4 p-1.5 sm:p-2 rounded-2xl bg-[#161C28] border border-white/10">
+        <div className="grid grid-cols-2 gap-2 sm:gap-4 p-2 rounded-2xl bg-[#161C28] border border-white/10">
           {[
-            { step: 1, label: '1. Fecha', icon: CalendarIcon },
-            { step: 2, label: '2. Detalle', icon: FileText },
+            { step: 1 as const, label: '1. Fecha', icon: CalendarIcon },
+            { step: 2 as const, label: '2. Datos', icon: FileText },
           ].map((item) => {
+            const Icon = item.icon;
             const isActive = currentStep === item.step;
             const isDone = currentStep > item.step;
-            const Icon = item.icon;
 
             return (
               <button
                 key={item.step}
+                type="button"
                 onClick={() => setCurrentStep(item.step)}
-                className={`p-2 sm:p-3 rounded-xl flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 text-[10px] sm:text-xs font-bold transition-all cursor-pointer ${
+                className={`p-3 rounded-xl flex items-center justify-center gap-2 text-xs font-bold transition-all cursor-pointer ${
                   isActive
                     ? 'gold-gradient-bg text-black shadow-lg shadow-[#D4AF37]/20'
                     : isDone
@@ -202,292 +128,216 @@ export const BookingWizard: React.FC<BookingWizardProps> = ({
                     : 'text-gray-400 hover:text-white hover:bg-white/5'
                 }`}
               >
-                <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-                <span className="truncate">{item.label}</span>
+                <Icon className="w-4 h-4" />
+                <span>{item.label}</span>
               </button>
             );
           })}
         </div>
 
-        {/* Wizard Main Container Card */}
         <div className="p-4 sm:p-8 lg:p-10 rounded-2xl bg-[#161C28] border border-white/10 space-y-8 shadow-2xl">
-          
-          {/* STEP 1: DATE VERIFICATION */}
           {currentStep === 1 && (
             <div className="space-y-6">
               <div className="space-y-1">
                 <h3 className="text-xl font-bold font-serif-luxury text-white flex items-center gap-2">
                   <CalendarIcon className="w-5 h-5 text-[#D4AF37]" />
-                  <span>Paso 1: Verificación de Disponibilidad de Fecha</span>
+                  <span>Paso 1: Fecha tentativa del evento</span>
                 </h3>
                 <p className="text-xs text-gray-400">
-                  Selecciona la fecha de tu evento en el calendario para consultar disponibilidad en CDMX, Estado de México, Morelos, Puebla, Querétaro, Tlaxcala, Pachuca y todo México.
+                  Elegir una fecha aquí no la bloquea ni confirma. Primero se revisa la agenda y después se confirma contigo por WhatsApp.
                 </p>
               </div>
 
-              <div className="p-6 rounded-2xl bg-[#0B0F17] border border-white/10 space-y-6">
-                <div className="grid sm:grid-cols-2 gap-6 items-center">
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold text-gray-300 block">
-                      Selecciona la Fecha Exacta de tu Evento *
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="date"
-                        min="2026-01-01"
-                        max="2027-12-31"
-                        value={bookingState.date}
-                        onClick={(e) => {
-                          try { (e.target as HTMLInputElement).showPicker?.(); } catch (err) {}
-                        }}
-                        onChange={(e) => handleDateChange(e.target.value)}
-                        className="w-full px-4 py-3 rounded-xl bg-[#161C28] border border-white/20 text-white focus:outline-none focus:border-[#D4AF37] font-mono text-sm cursor-pointer"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Status Indicator Feedback */}
-                  <div className="p-4 rounded-xl bg-[#161C28] border border-white/10 flex items-center gap-3 min-h-[72px]">
-                    {dateStatus === 'checking' && (
-                      <div className="flex items-center gap-2 text-amber-400 text-xs font-semibold">
-                        <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping" />
-                        <span>Verificando disponibilidad en la agenda CDMX...</span>
-                      </div>
-                    )}
-
-                    {dateStatus === 'available' && (
-                      <div className="flex items-center gap-3 text-emerald-400 text-xs font-semibold">
-                        <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-                        <div>
-                          <p className="font-bold text-sm text-emerald-400">¡Fecha Disponible!</p>
-                          <p className="text-gray-300 font-normal">
-                            Fecha seleccionada: <span className="font-mono text-white font-bold">{bookingState.date}</span>.
-                          </p>
-                        </div>
-                      </div>
-                    )}
-
-                    {dateStatus === 'empty' && (
-                      <div className="flex items-center gap-2 text-gray-400 text-xs">
-                        <AlertCircle className="w-4 h-4 text-gray-500 shrink-0" />
-                        <span>Haz clic arriba para desplegar el calendario y elegir fecha.</span>
-                      </div>
-                    )}
-                  </div>
+              <div className="grid sm:grid-cols-2 gap-6 items-stretch">
+                <div className="p-5 rounded-2xl bg-[#0B0F17] border border-white/10 space-y-2">
+                  <label className="text-xs font-semibold text-gray-300 block">
+                    Fecha tentativa del evento *
+                  </label>
+                  <input
+                    type="date"
+                    value={bookingState.date}
+                    onChange={(event) => handleDateChange(event.target.value)}
+                    className="w-full px-4 py-3 rounded-xl bg-[#161C28] border border-white/20 text-white focus:outline-none focus:border-[#D4AF37] font-mono text-sm cursor-pointer"
+                  />
                 </div>
 
-                {/* Quick Date Chips / Interactive Calendar Guidance */}
-                <div className="pt-4 border-t border-white/10 space-y-2">
-                  <span className="text-[11px] font-mono text-[#D4AF37] uppercase tracking-wider block">
-                    Sugerencias de Fechas Frecuentes para Eventos 2026:
-                  </span>
-                  <div className="flex flex-wrap gap-2">
-                    {['2026-06-20', '2026-07-11', '2026-08-15', '2026-09-19', '2026-10-24', '2026-11-14'].map((suggestedDate) => (
-                      <button
-                        key={suggestedDate}
-                        onClick={() => handleDateChange(suggestedDate)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all cursor-pointer border ${
-                          bookingState.date === suggestedDate
-                            ? 'bg-[#D4AF37] text-black border-[#D4AF37] font-bold'
-                            : 'bg-[#161C28] text-gray-300 border-white/10 hover:border-[#D4AF37]'
-                        }`}
-                      >
-                        📅 {suggestedDate}
-                      </button>
-                    ))}
-                  </div>
+                <div className="p-5 rounded-2xl bg-[#0B0F17] border border-white/10 flex items-center gap-3">
+                  {bookingState.date ? (
+                    <>
+                      <CheckCircle2 className="w-5 h-5 text-[#D4AF37] shrink-0" />
+                      <div>
+                        <p className="text-sm font-bold text-white">Fecha seleccionada</p>
+                        <p className="text-xs text-gray-400">
+                          {bookingState.date}. Pendiente de validación en agenda.
+                        </p>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <AlertCircle className="w-5 h-5 text-gray-500 shrink-0" />
+                      <p className="text-xs text-gray-400">Selecciona una fecha para continuar.</p>
+                    </>
+                  )}
                 </div>
               </div>
 
-              {/* Step 1 Actions */}
-              <div className="flex justify-between items-center pt-4 border-t border-white/10">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-white/10">
                 <button
-                  onClick={handleCopyBookingLink}
-                  className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-gray-300 hover:text-white text-xs font-semibold flex items-center gap-2 cursor-pointer"
+                  type="button"
+                  onClick={handleCopyRequestLink}
+                  className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-gray-300 hover:text-white text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  <Share2 className="w-3.5 h-3.5 text-[#D4AF37]" />
-                  <span>{copiedLink ? '¡Enlace Copiado!' : 'Copiar Enlace de Reserva'}</span>
+                  <Share2 className="w-4 h-4 text-[#D4AF37]" />
+                  <span>{copiedLink ? 'Enlace copiado' : 'Copiar enlace de solicitud'}</span>
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => setCurrentStep(2)}
                   disabled={!bookingState.date}
-                  className="px-6 py-3 rounded-xl gold-gradient-bg text-black font-bold text-xs flex items-center gap-2 disabled:opacity-40 cursor-pointer"
+                  className="px-6 py-3 rounded-xl gold-gradient-bg text-black font-bold text-xs flex items-center justify-center gap-2 disabled:opacity-40 cursor-pointer"
                 >
-                  <span>Continuar a Detalles del Evento</span>
+                  <span>Continuar con mis datos</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
             </div>
           )}
 
-          {/* STEP 2: DETAILS & TRANSPARENT BREAKDOWN */}
           {currentStep === 2 && (
             <div className="space-y-6">
               <div className="space-y-1">
                 <h3 className="text-xl font-bold font-serif-luxury text-white flex items-center gap-2">
                   <FileText className="w-5 h-5 text-[#D4AF37]" />
-                  <span>Paso 2: Desglose del Servicio & Datos del Cliente</span>
+                  <span>Paso 2: Datos de contacto</span>
                 </h3>
                 <p className="text-xs text-gray-400">
-                  Verifica tu nombre, el paquete seleccionado y tus datos de contacto para la elaboración del contrato formal.
+                  Estos datos se usan para revisar tu solicitud y continuar la atención por WhatsApp.
                 </p>
               </div>
 
-              {/* Package Summary & Switch Package Banner */}
-              <div className="p-5 rounded-2xl bg-[#0B0F17] border border-[#D4AF37]/30 space-y-4 shadow-xl">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-white/10 pb-4">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/40">
-                        {bookingState.eventType.toUpperCase()}
-                      </span>
-                      <span className="text-xs text-gray-400 font-mono">
-                        Fecha: <strong className="text-white">{bookingState.date || 'No definida'}</strong>
-                      </span>
-                    </div>
-
-                    <h4 className="text-lg font-bold text-white font-serif-luxury">
-                      Paquete Elegido: <span className="text-[#D4AF37]">{selectedPackage.name}</span>
-                    </h4>
-
-                    {bookingState.clientName && (
-                      <p className="text-xs text-emerald-400 font-medium flex items-center gap-1">
-                        <User className="w-3.5 h-3.5" />
-                        <span>Titular registrado: <strong>{bookingState.clientName}</strong></span>
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Change Package Button */}
-                  <button
-                    onClick={handleScrollToQuote}
-                    className="px-4 py-2.5 rounded-xl bg-[#161C28] hover:bg-white/10 border border-[#D4AF37]/50 text-[#D4AF37] font-bold text-xs flex items-center gap-2 transition-all shadow-md cursor-pointer shrink-0"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Cambiar tu paquete</span>
-                  </button>
+              <div className="p-5 rounded-2xl bg-[#0B0F17] border border-white/10 space-y-3 text-xs">
+                <div className="flex justify-between gap-4">
+                  <span className="text-gray-400">Paquete</span>
+                  <span className="text-white font-semibold text-right">{selectedPackage.name}</span>
                 </div>
-
-                {/* Price Itemized List */}
-                <div className="space-y-2 text-xs">
-                  <div className="flex justify-between items-center text-gray-300">
-                    <span>Costo Base del Paquete ({selectedPackage.name})</span>
-                    <span className="font-mono font-bold text-white">${selectedPackage.price.toLocaleString('es-MX')} MXN</span>
-                  </div>
-
-                  {bookingState.extraHours > 0 && (
-                    <div className="flex justify-between items-center text-gray-300">
-                      <span>Horas Extra ({bookingState.extraHours}h)</span>
-                      <span className="font-mono">${(bookingState.extraHours * 2000).toLocaleString('es-MX')} MXN</span>
-                    </div>
-                  )}
-
-                  {bookingState.selectedAddons.map((addonId) => {
-                    const addon = ADDONS_CATALOG.find((a) => a.id === addonId);
-                    if (!addon) return null;
-                    return (
-                      <div key={addon.id} className="flex justify-between items-center text-gray-300">
-                        <span>{addon.name}</span>
-                        <span className="font-mono">${addon.price.toLocaleString('es-MX')} MXN</span>
-                      </div>
-                    );
-                  })}
-
-                  <div className="pt-3 border-t border-white/10 flex justify-between items-baseline">
-                    <div>
-                      <span className="font-bold text-white text-sm block">TOTAL FINAL COTIZADO</span>
-                      <span className="text-[10px] text-gray-400">Incluye cobertura, edición digital y contrato</span>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-xl font-extrabold text-[#D4AF37] font-mono">
-                        ${bookingState.total.toLocaleString('es-MX')} MXN
-                      </span>
-                      <span className="text-[10px] text-emerald-400 block font-semibold">
-                        Anticipo requerido (40%): ${bookingState.depositAmount.toLocaleString('es-MX')} MXN
-                      </span>
-                    </div>
-                  </div>
+                <div className="flex justify-between gap-4">
+                  <span className="text-gray-400">Precio</span>
+                  <span className="text-[#D4AF37] font-mono font-bold text-right">
+                    {selectedPackage.price > 0
+                      ? `$${selectedPackage.price.toLocaleString('es-MX')} MXN`
+                      : 'Cotización personalizada'}
+                  </span>
                 </div>
+                <div className="flex justify-between gap-4">
+                  <span className="text-gray-400">Fecha tentativa</span>
+                  <span className="text-white font-mono">{bookingState.date || 'Por definir'}</span>
+                </div>
+                {selectedAddons.length > 0 && (
+                  <div className="pt-3 border-t border-white/10">
+                    <span className="text-gray-400 block mb-2">Adicionales seleccionados</span>
+                    <ul className="space-y-1 text-gray-200">
+                      {selectedAddons.map((addon) => (
+                        <li key={addon.id}>• {addon.name}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
 
-              {/* Client Form Fields */}
               <div className="grid sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs font-semibold text-gray-300 block mb-1">Nombre Completo del Titular *</label>
+                  <label className="text-xs font-semibold text-gray-300 block mb-1">Nombre completo *</label>
                   <input
                     type="text"
-                    placeholder="Ej. Valeria Mendoza"
                     value={bookingState.clientName}
-                    onChange={(e) =>
-                      onUpdateBookingState((prev) => ({ ...prev, clientName: e.target.value }))
+                    onChange={(event) =>
+                      onUpdateBookingState((prev) => ({ ...prev, clientName: event.target.value }))
                     }
+                    placeholder="Nombre completo"
                     className="w-full px-4 py-2.5 rounded-xl bg-[#0B0F17] border border-white/15 text-white focus:outline-none focus:border-[#D4AF37] text-xs"
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-gray-300 block mb-1">Correo Electrónico *</label>
+                  <label className="text-xs font-semibold text-gray-300 block mb-1">Correo electrónico *</label>
                   <input
                     type="email"
-                    placeholder="valeria@ejemplo.com"
                     value={bookingState.clientEmail}
-                    onChange={(e) =>
-                      onUpdateBookingState((prev) => ({ ...prev, clientEmail: e.target.value }))
+                    onChange={(event) =>
+                      onUpdateBookingState((prev) => ({ ...prev, clientEmail: event.target.value }))
                     }
+                    placeholder="correo@ejemplo.com"
                     className="w-full px-4 py-2.5 rounded-xl bg-[#0B0F17] border border-white/15 text-white focus:outline-none focus:border-[#D4AF37] text-xs"
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-gray-300 block mb-1">Teléfono WhatsApp *</label>
+                  <label className="text-xs font-semibold text-gray-300 block mb-1">WhatsApp *</label>
                   <input
                     type="tel"
-                    placeholder="+52 55 1234 5678"
                     value={bookingState.clientPhone}
-                    onChange={(e) =>
-                      onUpdateBookingState((prev) => ({ ...prev, clientPhone: e.target.value }))
+                    onChange={(event) =>
+                      onUpdateBookingState((prev) => ({ ...prev, clientPhone: event.target.value }))
                     }
+                    placeholder="+52 55 0000 0000"
                     className="w-full px-4 py-2.5 rounded-xl bg-[#0B0F17] border border-white/15 text-white focus:outline-none focus:border-[#D4AF37] text-xs"
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-gray-300 block mb-1">Ciudad / Locación del Evento (Cobertura en CDMX)</label>
+                  <label className="text-xs font-semibold text-gray-300 block mb-1">Ciudad / locación</label>
                   <input
                     type="text"
-                    placeholder="Ej. Polanco, Cuauhtémoc, Coyoacán, CDMX"
                     value={bookingState.eventCity}
-                    onChange={(e) =>
-                      onUpdateBookingState((prev) => ({ ...prev, eventCity: e.target.value }))
+                    onChange={(event) =>
+                      onUpdateBookingState((prev) => ({ ...prev, eventCity: event.target.value }))
                     }
+                    placeholder="Ej. Iztacalco, CDMX"
                     className="w-full px-4 py-2.5 rounded-xl bg-[#0B0F17] border border-white/15 text-white focus:outline-none focus:border-[#D4AF37] text-xs"
                   />
                 </div>
               </div>
 
-              {/* Step 2 Actions */}
-              <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-4 border-t border-white/10">
+              <div>
+                <label className="text-xs font-semibold text-gray-300 block mb-1">Notas adicionales</label>
+                <textarea
+                  value={bookingState.notes}
+                  onChange={(event) =>
+                    onUpdateBookingState((prev) => ({ ...prev, notes: event.target.value }))
+                  }
+                  rows={3}
+                  placeholder="Cuéntanos brevemente qué necesitas para tu evento."
+                  className="w-full px-4 py-3 rounded-xl bg-[#0B0F17] border border-white/15 text-white focus:outline-none focus:border-[#D4AF37] text-xs resize-y"
+                />
+              </div>
+
+              <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/20 text-xs text-gray-300">
+                <strong className="text-amber-300">Importante:</strong> enviar la solicitud no confirma ni bloquea la fecha. Primero se valida disponibilidad y se continúa la atención directamente contigo.
+              </div>
+
+              <div className="flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-white/10">
                 <button
+                  type="button"
                   onClick={() => setCurrentStep(1)}
-                  className="px-5 py-3 rounded-xl bg-white/5 text-gray-300 text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer"
+                  className="px-5 py-2.5 rounded-xl bg-white/5 text-gray-300 text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <ArrowLeft className="w-4 h-4" />
-                  <span>Regresar a Fecha</span>
+                  <span>Regresar</span>
                 </button>
 
                 <button
-                  onClick={onSendWhatsApp}
+                  type="button"
+                  onClick={handleSendRequest}
                   disabled={!bookingState.clientName || !bookingState.clientEmail || !bookingState.clientPhone}
-                  className="px-6 py-3.5 rounded-xl gold-gradient-bg text-black font-bold text-xs flex items-center justify-center gap-2 disabled:opacity-40 cursor-pointer"
+                  className="px-6 py-3 rounded-xl gold-gradient-bg text-black font-bold text-xs flex items-center justify-center gap-2 disabled:opacity-40 cursor-pointer"
                 >
-                  <i className="fa-brands fa-whatsapp text-sm" />
-                  <span>Agendar por WhatsApp</span>
+                  <MessageCircle className="w-4 h-4" />
+                  <span>Enviar solicitud por WhatsApp</span>
                 </button>
               </div>
             </div>
           )}
-
         </div>
       </div>
     </section>
