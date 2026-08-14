@@ -4,8 +4,18 @@
   "framework": "vite",
   "installCommand": "npm install",
   "env": {
-    "VITE_GOOGLE_APPS_SCRIPT_URL": "https://script.google.com/macros/s/AKfycby_fFhp_OTT46hZP2F8goSUktnwMkvjnUtje5CAursQOBH7kHQofea4uhoUCfq3tSy9/exec",
+    "VITE_GOOGLE_APPS_SCRIPT_URL": "https://script.google.com/macros/s/AKfycbzcabU0-P7RCW04G-MMFds6m4JeQKpiPl6_IaAA40KGQsp73ZsaJx6PuwbcmhBCa4Br/exec",
     "VITE_GOOGLE_DRIVE_API_KEY": "AIzaSyAkYYkiVk8qRrKdA8V3a1kGxxeAWMlWLCc",
     "VITE_GOOGLE_DRIVE_FOLDER_ID": "1UyN3m72kG4liDumQYxlO03cKtJJpYG62"
-  }
+  },
+  "functions": {
+    "api/proxy.js": {
+      "runtime": "nodejs20.x",
+      "maxDuration": 30
+    }
+  },
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/api/:path*" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }
