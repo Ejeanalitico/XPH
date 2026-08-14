@@ -72,6 +72,7 @@ const hasManagedAddons = (value: any): value is AddOnOption[] =>
 export default function App() {
   const [currentRoute, setCurrentRoute] = useState<RoutePath>('inicio');
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([]);
+  const [heroCovers, setHeroCovers] = useState<Partial<Record<RoutePath, string>>>({});
   const [footerContact, setFooterContact] = useState<FooterContact>(defaultContact);
   const [packagesState, setPackagesState] = useState<Record<EventType, PackageOption[]>>(PACKAGES_BY_EVENT);
   const [addonsState, setAddonsState] = useState<AddOnOption[]>(ADDONS_CATALOG);
@@ -106,11 +107,18 @@ export default function App() {
             image?.url &&
             image?.category &&
             image.visibility !== 'private' &&
+            image.visibility !== 'cover' &&
             image.mediaType !== 'gallery-meta' &&
+            image.mediaType !== 'cover-meta' &&
+            image.mediaType !== 'video' &&
             image.category !== 'private'
           )
         );
         setGalleryImages(realGallery);
+      }
+
+      if (cloudData.heroCovers && typeof cloudData.heroCovers === 'object') {
+        setHeroCovers(cloudData.heroCovers as Partial<Record<RoutePath, string>>);
       }
 
       if (hasManagedPackages(cloudData.packages)) {
@@ -203,7 +211,13 @@ export default function App() {
 
       <Navbar currentRoute={currentRoute} onNavigateRoute={handleNavigateRoute} isDarkMode={isDarkMode} onToggleTheme={() => setIsDarkMode((prev) => !prev)} />
 
-      <Hero currentRoute={currentRoute} onQuoteClick={() => handleScrollTo('cotizador')} onGalleryClick={() => handleScrollTo('galerias')} onCitaClick={() => handleScrollTo('solicitud')} />
+      <Hero
+        currentRoute={currentRoute}
+        onQuoteClick={() => handleScrollTo('cotizador')}
+        onGalleryClick={() => handleScrollTo('galerias')}
+        onCitaClick={() => handleScrollTo('solicitud')}
+        heroCovers={heroCovers}
+      />
 
       <GallerySection
         currentRoute={currentRoute}
