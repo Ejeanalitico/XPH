@@ -11,7 +11,7 @@ var FOLDER_ID = "1UyN3m72kG4liDumQYxlO03cKtJJpYG62";
 var SPREADSHEET_NAME = "XPH_DATABASE_PRODUCCION";
 
 /**
- * Función de inicialización y prueba manual (Ejecuta esta función una vez para autorizar)
+ * Función de inicialización y prueba manual (Ejecuta esta función una vez en el editor para autorizar)
  */
 function initDatabase() {
   var ss = getDatabaseSpreadsheet();
@@ -67,7 +67,7 @@ function initSpreadsheetSheets(ss) {
       'Historial_Auditoria': ['Fecha_Hora', 'Accion', 'Detalles_Cambio', 'ID_Elemento', 'Usuario', 'Estado'],
       'Galeria_Fotos': ['ID_Foto', 'Titulo', 'Categoria', 'URL_Google_Drive', 'Ubicacion', 'Fecha_Carga', 'Estado'],
       'Cotizaciones_Citas': ['ID_Cotizacion', 'Fecha_Registro', 'Cliente', 'Email', 'WhatsApp', 'Evento', 'Paquete', 'Total_MXN', 'Anticipo_40_MXN', 'Saldo_60_MXN', 'Fecha_Evento', 'Ciudad', 'Estado_Cotizacion', 'Notas'],
-      'Paquetes_Precios': ['Categoria', 'ID_Paquete', 'Nombre', 'Precio_MXN', 'Anticipo_40_MXN', 'Horas_Cobertura', 'Fotos_Entregables', 'Incluye', 'Ultima_Modificacion']
+      'Paquetes_Precios': ['Categoria', 'ID_Paquete', 'Nombre_Paquete', 'Precio_Base_MXN', 'Anticipo_40_MXN', 'Insignia_Badge', 'Descripcion', 'Que_Incluye', 'No_Incluye', 'Ultima_Modificacion']
     };
 
     for (var sheetName in sheetsMap) {
@@ -82,6 +82,21 @@ function initSpreadsheetSheets(ss) {
           .setFontWeight('bold')
           .setFontFamily('Arial');
         sheet.setFrozenRows(1);
+      } else {
+        // Asegurar encabezados actualizados en Paquetes_Precios
+        if (sheetName === 'Paquetes_Precios') {
+          var expected = sheetsMap[sheetName];
+          var currentHeaders = sheet.getRange(1, 1, 1, expected.length).getValues()[0];
+          if (currentHeaders[2] !== 'Nombre_Paquete' || currentHeaders[7] !== 'Que_Incluye') {
+            sheet.getRange(1, 1, 1, expected.length).setValues([expected]);
+            sheet.getRange(1, 1, 1, expected.length)
+              .setBackground('#161C28')
+              .setFontColor('#D4AF37')
+              .setFontWeight('bold')
+              .setFontFamily('Arial');
+            sheet.setFrozenRows(1);
+          }
+        }
       }
     }
 
@@ -153,7 +168,8 @@ function syncGalleryTable(ss, galleryImages) {
 }
 
 /**
- * Sincroniza la tabla Paquetes_Precios en Google Sheets
+ * Sincroniza la tabla Paquetes_Precios en Google Sheets con las columnas solicitadas:
+ * Categoria | ID_Paquete | Nombre_Paquete | Precio_Base_MXN | Anticipo_40_MXN | Insignia_Badge | Descripcion | Que_Incluye (en una sola columna multilínea) | No_Incluye | Ultima_Modificacion
  */
 function syncPackagesTable(ss, packages) {
   if (!ss) return;
@@ -168,28 +184,56 @@ function syncPackagesTable(ss, packages) {
 
     if (packages && typeof packages === 'object') {
       var rows = [];
-      var now = new Date().toISOString().split('T')[0];
+      var now = new Date().toISOString().replace('T', ' ').substring(0, 19);
+
+      var categoryDisplayNames = {
+        'bodas': 'BODAS DESTINATION & CDMX',
+        'xv-anos': 'QUINCEAÑERAS (XV AÑOS)',
+        'bautizos': 'BAUTIZOS & EVENTOS FAMILIARES',
+        'retratos': 'RETRATOS & EDITORIAL',
+        'empresarial': 'EMPRESARIAL & BRANDING'
+      };
 
       for (var cat in packages) {
         var list = packages[cat];
         if (Array.isArray(list)) {
+          var catLabel = categoryDisplayNames[cat] || cat.toUpperCase();
           list.forEach(function(pkg) {
+            var rawFeats = pkg.features || pkg.includes || [];
+            var rawNotIncludes = pkg.notIncludes || [];
+
+            // Todos los 'Que Incluye' van juntos en UNA SOLA COLUMNA formateados con viñetas
+            var includesFormatted = Array.isArray(rawFeats)
+              ? rawFeats.map(function(f) { return '• ' + f; }).join('\n')
+              : (rawFeats ? '• ' + rawFeats : '');
+
+            var notIncludesFormatted = Array.isArray(rawNotIncludes)
+              ? rawNotIncludes.map(function(f) { return '✕ ' + f; }).join('\n')
+              : '';
+
+            var priceNum = Number(pkg.price) || 0;
+            var depositNum = Math.round(priceNum * 0.4);
+
             rows.push([
-              cat.toUpperCase(),
+              catLabel,
               pkg.id || '',
               pkg.name || '',
-              pkg.price || 0,
-              Math.round((pkg.price || 0) * 0.4),
-              pkg.hours || '',
-              pkg.photosCount || '',
-              Array.isArray(pkg.features) ? pkg.features.join(' | ') : '',
+              priceNum,
+              depositNum,
+              pkg.badge || '',
+              pkg.description || '',
+              includesFormatted,
+              notIncludesFormatted,
               now
             ]);
           });
         }
       }
       if (rows.length > 0) {
-        sheet.getRange(2, 1, rows.length, 9).setValues(rows);
+        var range = sheet.getRange(2, 1, rows.length, 10);
+        range.setValues(rows);
+        range.setWrap(true);
+        range.setVerticalAlignment('top');
       }
     }
   } catch (e) {
@@ -214,6 +258,8 @@ function syncQuotesTable(ss, quotes) {
     if (Array.isArray(quotes)) {
       var rows = [];
       quotes.forEach(function(q) {
+        var totalNum = Number(q.total) || 0;
+        var depNum = Number(q.depositAmount) || Math.round(totalNum * 0.4);
         rows.push([
           q.id || '',
           q.createdAt || new Date().toISOString().split('T')[0],
@@ -222,9 +268,9 @@ function syncQuotesTable(ss, quotes) {
           q.clientPhone || '',
           q.eventType || '',
           q.packageName || '',
-          q.total || 0,
-          q.depositAmount || Math.round((q.total || 0) * 0.4),
-          (q.total || 0) - (q.depositAmount || Math.round((q.total || 0) * 0.4)),
+          totalNum,
+          depNum,
+          totalNum - depNum,
           q.eventDate || '',
           q.eventCity || 'CDMX',
           q.status || 'Pendiente',
@@ -484,13 +530,44 @@ function doPost(e) {
 
 /**
  * =========================================================================
- * ENDPOINT GET: Carga + Guarda configuración en Tiempo Real
- * GET sin body nunca pierde datos por redirect 302 — es el método más confiable
+ * ENDPOINT GET: Carga + Guarda configuración + Lista archivos de Drive
  * =========================================================================
  */
 function doGet(e) {
   try {
     var action = (e && e.parameter && e.parameter['action']) ? e.parameter['action'] : 'loadConfig';
+
+    // ── ACCIÓN: LISTAR FOTOS DIRECTAMENTE DESDE LA CARPETA DE GOOGLE DRIVE ────
+    if (action === 'listDriveFolder') {
+      var targetFolder;
+      try {
+        targetFolder = DriveApp.getFolderById(FOLDER_ID);
+      } catch (_) {
+        targetFolder = DriveApp.getRootFolder();
+      }
+
+      var files = targetFolder.getFiles();
+      var images = [];
+      while (files.hasNext()) {
+        var file = files.next();
+        var mime = file.getMimeType();
+        if (mime.indexOf('image/') > -1) {
+          images.push({
+            id: file.getId(),
+            name: file.getName(),
+            url: 'https://lh3.googleusercontent.com/d/' + file.getId(),
+            driveUrl: 'https://drive.google.com/file/d/' + file.getId() + '/view',
+            createdTime: file.getDateCreated().toISOString()
+          });
+        }
+      }
+
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success',
+        images: images,
+        count: images.length
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
 
     // ── ACCIÓN: GUARDAR CONFIGURACIÓN VIA GET PARAMS ─────────────────────────
     if (action === 'saveConfig') {

@@ -214,31 +214,41 @@ export default function App() {
   useEffect(() => {
     loadSiteDataFromCloud().then((cloudData) => {
       if (cloudData) {
-        if (cloudData.packages) {
-          setPackagesState(cloudData.packages);
-          try { localStorage.setItem('xph_packages', JSON.stringify(cloudData.packages)); } catch (_) {}
+        if (cloudData.packages && typeof cloudData.packages === 'object') {
+          const mergedPackages: Record<EventType, PackageOption[]> = { ...PACKAGES_BY_EVENT };
+          (Object.keys(cloudData.packages) as EventType[]).forEach((cat) => {
+            if (Array.isArray(cloudData.packages[cat]) && cloudData.packages[cat].length > 0) {
+              mergedPackages[cat] = cloudData.packages[cat].map((p: any) => ({
+                ...p,
+                features: Array.isArray(p.features) ? p.features : (Array.isArray(p.includes) ? p.includes : []),
+                notIncludes: Array.isArray(p.notIncludes) ? p.notIncludes : []
+              }));
+            }
+          });
+          setPackagesState(mergedPackages);
+          try { localStorage.setItem('xph_packages', JSON.stringify(mergedPackages)); } catch (_) {}
         }
-        if (cloudData.addons) {
+        if (cloudData.addons && Array.isArray(cloudData.addons) && cloudData.addons.length > 0) {
           setAddonsState(cloudData.addons);
           try { localStorage.setItem('xph_addons', JSON.stringify(cloudData.addons)); } catch (_) {}
         }
-        if (cloudData.footerContact) {
+        if (cloudData.footerContact && Object.keys(cloudData.footerContact).length > 0) {
           setFooterContact(cloudData.footerContact);
           try { localStorage.setItem('xph_footer_contact', JSON.stringify(cloudData.footerContact)); } catch (_) {}
         }
-        if (cloudData.testimonials) {
+        if (cloudData.testimonials && Array.isArray(cloudData.testimonials) && cloudData.testimonials.length > 0) {
           setTestimonials(cloudData.testimonials);
           try { localStorage.setItem('xph_testimonials', JSON.stringify(cloudData.testimonials)); } catch (_) {}
         }
-        if (cloudData.galleryImages) {
+        if (cloudData.galleryImages && Array.isArray(cloudData.galleryImages) && cloudData.galleryImages.length > 0) {
           setGalleryImages(cloudData.galleryImages);
           try { localStorage.setItem('xph_gallery_images', JSON.stringify(cloudData.galleryImages)); } catch (_) {}
         }
-        if (cloudData.quotes) {
+        if (cloudData.quotes && Array.isArray(cloudData.quotes) && cloudData.quotes.length > 0) {
           setQuotesState(cloudData.quotes);
           try { localStorage.setItem('xph_quotes', JSON.stringify(cloudData.quotes)); } catch (_) {}
         }
-        if (cloudData.adminCredentials) {
+        if (cloudData.adminCredentials && Object.keys(cloudData.adminCredentials).length > 0) {
           setAdminCredentials(cloudData.adminCredentials);
           try { localStorage.setItem('xph_admin_credentials', JSON.stringify(cloudData.adminCredentials)); } catch (_) {}
         }

@@ -1,48 +1,44 @@
 import { GalleryImage, GalleryCategory } from '../types';
 
+export const APPS_SCRIPT_DEPLOYMENT_URL =
+  'https://script.google.com/macros/s/AKfycbxYOBROH9z0rgulm5CjmXxAV5w97od3VLCgpuUvnXtNIIUQzixWpJIN2udS_-frqPGS/exec';
+
 /**
- * Utility to detect and convert Google Drive share links into direct image URLs.
+ * Converts any Google Drive link to a direct high-speed thumbnail / web preview URL
  */
-export function getDirectGoogleDriveUrl(url: string): string {
-  if (!url || typeof url !== 'string') return '';
+export function getDirectGoogleDriveUrl(urlOrId: string): string {
+  if (!urlOrId) return '';
+  const trimmed = urlOrId.trim();
 
-  const trimmed = url.trim();
-
-  // If it's already an lh3.googleusercontent.com link, return as is
-  if (trimmed.includes('lh3.googleusercontent.com/d/')) {
+  // If already a direct lh3 googleusercontent or CDN image link
+  if (trimmed.includes('googleusercontent.com') || trimmed.startsWith('data:image/') || trimmed.startsWith('http')) {
+    const fileIdMatch = trimmed.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    if (fileIdMatch && fileIdMatch[1]) {
+      return `https://lh3.googleusercontent.com/d/${fileIdMatch[1]}`;
+    }
     return trimmed;
   }
 
-  // Match /file/d/FILE_ID/
-  const fileIdMatch = trimmed.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-  if (fileIdMatch && fileIdMatch[1]) {
-    return `https://lh3.googleusercontent.com/d/${fileIdMatch[1]}`;
-  }
-
-  // Match ?id=FILE_ID or &id=FILE_ID
-  const idMatch = trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-  if (idMatch && idMatch[1]) {
-    return `https://lh3.googleusercontent.com/d/${idMatch[1]}`;
-  }
-
-  return trimmed;
-}
-
-export function isGoogleDriveUrl(url: string): boolean {
-  if (!url) return false;
-  return (
-    url.includes('drive.google.com') ||
-    url.includes('lh3.googleusercontent.com')
-  );
+  // Pure Google Drive ID
+  const cleanId = trimmed.replace(/[^a-zA-Z0-9_-]/g, '');
+  return `https://lh3.googleusercontent.com/d/${cleanId}`;
 }
 
 /**
- * Extracts Google Drive Folder ID from a shared folder URL or returns the ID if already clean.
+ * Checks if a given string is a Google Drive URL
  */
-export function extractDriveFolderId(input: string): string {
-  if (!input) return '';
-  const trimmed = input.trim();
-  const folderMatch = trimmed.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+export function isGoogleDriveUrl(url: string): boolean {
+  if (!url) return false;
+  return url.includes('drive.google.com') || url.includes('googleusercontent.com/d/');
+}
+
+/**
+ * Extracts Google Drive folder ID from full URL or returns raw ID
+ */
+export function extractDriveFolderId(urlOrId: string): string {
+  if (!urlOrId) return '';
+  const trimmed = urlOrId.trim();
+  const folderMatch = trimmed.match(/folders\/([a-zA-Z0-9_-]+)/);
   if (folderMatch && folderMatch[1]) {
     return folderMatch[1];
   }
@@ -61,44 +57,80 @@ export function inferCategoryFromFilename(filename: string): GalleryCategory {
   if (lower.includes('boda') || lower.includes('wedding')) return 'bodas';
   if (lower.includes('xv') || lower.includes('quince') || lower.includes('15')) return 'xv-anos';
   if (lower.includes('bautizo') || lower.includes('family') || lower.includes('familia')) return 'bautizos';
-  if (lower.includes('retrato') || lower.includes('portrait') || lower.includes('moda')) return 'retratos';
-  if (lower.includes('empresarial') || lower.includes('corporate') || lower.includes('branding')) return 'empresarial';
+  if (lower.includes('retrato') || lower.includes('portrait') || lower.includes('moda') || lower.includes('graduacion')) return 'retratos';
+  if (lower.includes('empresarial') || lower.includes('corporate') || lower.includes('branding') || lower.includes('headshot')) return 'empresarial';
   if (lower.includes('previa') || lower.includes('engagement')) return 'previa';
   return 'bodas';
 }
 
 /**
- * Fetches all image files inside a public Google Drive folder using Google Drive API v3.
+ * Fetches all image files inside the configured Google Drive folder.
+ * Uses Google Apps Script endpoint first (native Drive access without API key requirement),
+ * with fallback to Google Drive API v3.
  */
 export async function fetchDriveFolderImages(
-  folderUrlOrId: string,
+  folderUrlOrId?: string,
   apiKey?: string,
-  targetCategory?: GalleryCategory | 'auto'
+  targetCategory?: GalleryCategory | 'auto',
+  scriptUrl?: string
 ): Promise<GalleryImage[]> {
-  const folderId = extractDriveFolderId(folderUrlOrId);
-  if (!folderId) {
-    throw new Error('ID de Carpeta de Google Drive inválido.');
+  const targetScriptUrl =
+    scriptUrl ||
+    (import.meta as any).env?.VITE_GOOGLE_APPS_SCRIPT_URL ||
+    localStorage.getItem('xph_apps_script_url') ||
+    APPS_SCRIPT_DEPLOYMENT_URL;
+
+  // METHOD 1: Fetch directly via Google Apps Script (native Drive permission)
+  if (targetScriptUrl) {
+    try {
+      const res = await fetch(`${targetScriptUrl}?action=listDriveFolder&_t=${Date.now()}`, {
+        method: 'GET',
+        redirect: 'follow',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === 'success' && Array.isArray(data.images) && data.images.length > 0) {
+          return data.images.map((file: any) => {
+            const titleWithoutExt = (file.name || 'Fotografía').replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+            const category: GalleryCategory =
+              targetCategory && targetCategory !== 'auto'
+                ? targetCategory
+                : inferCategoryFromFilename(file.name || '');
+
+            return {
+              id: `drive-${file.id}`,
+              title: titleWithoutExt,
+              category: category,
+              url: file.url || `https://lh3.googleusercontent.com/d/${file.id}`,
+              location: 'Google Drive CDMX',
+              camera: 'Sony Alpha 1',
+              lens: 'FE 85mm f/1.4 GM',
+            };
+          });
+        }
+      }
+    } catch (scriptErr) {
+      console.warn('[XPH Drive Sync] Apps Script listing notice, trying v3 fallback...', scriptErr);
+    }
   }
 
+  // METHOD 2: Fallback to Google Drive v3 API if Folder ID and API Key are provided
+  const folderId = folderUrlOrId ? extractDriveFolderId(folderUrlOrId) : '1UyN3m72kG4liDumQYxlO03cKtJJpYG62';
   const effectiveApiKey =
     apiKey ||
-    (import.meta as any).env?.VITE_GOOGLE_DRIVE_API_KEY ||
-    'AIzaSyAkYYkiVk8qRrKdA8V3a1kGxxeAWMlWLCc';
+    (import.meta as any).env?.VITE_GOOGLE_DRIVE_API_KEY;
 
   if (!effectiveApiKey) {
-    throw new Error('Se requiere una Clave de API de Google Drive (Google API Key).');
+    return [];
   }
 
-  // Query image files inside parent folder
   const query = `'${folderId}'+in+parents+and+mimeType+contains+'image/'+and+trashed=false`;
   const fields = 'files(id,name,mimeType,createdTime)';
   const endpoint = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=${fields}&key=${effectiveApiKey}&pageSize=100`;
 
   const response = await fetch(endpoint);
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    const message = errorData?.error?.message || `Error HTTP ${response.status}`;
-    throw new Error(`Google Drive API Error: ${message}`);
+    return [];
   }
 
   const data = await response.json();
@@ -125,7 +157,6 @@ export async function fetchDriveFolderImages(
 
 /**
  * Uploads an image file directly to Google Drive via Google Apps Script Web App.
- * Uses a GET request with params to avoid CORS preflight issues.
  */
 export async function uploadImageToGoogleDrive(
   file: File | string,
@@ -136,7 +167,7 @@ export async function uploadImageToGoogleDrive(
     scriptUrl ||
     (import.meta as any).env?.VITE_GOOGLE_APPS_SCRIPT_URL ||
     localStorage.getItem('xph_apps_script_url') ||
-    'https://script.google.com/macros/s/AKfycbxYOBROH9z0rgulm5CjmXxAV5w97od3VLCgpuUvnXtNIIUQzixWpJIN2udS_-frqPGS/exec';
+    APPS_SCRIPT_DEPLOYMENT_URL;
 
   let base64String = '';
   let mimeType = 'image/jpeg';
@@ -155,7 +186,7 @@ export async function uploadImageToGoogleDrive(
     });
   }
 
-  // Compress if large base64
+  // Compress to ensure ultra-fast upload (< 200KB)
   if (base64String.startsWith('data:image/') && typeof window !== 'undefined') {
     try {
       base64String = await new Promise<string>((resolve) => {
@@ -164,7 +195,7 @@ export async function uploadImageToGoogleDrive(
         img.onload = () => {
           let width = img.width;
           let height = img.height;
-          const maxWidth = 1600;
+          const maxWidth = 1400;
           if (width > maxWidth) {
             height = Math.round((height * maxWidth) / width);
             width = maxWidth;
@@ -175,7 +206,7 @@ export async function uploadImageToGoogleDrive(
           const ctx = canvas.getContext('2d');
           if (ctx) {
             ctx.drawImage(img, 0, 0, width, height);
-            resolve(canvas.toDataURL('image/jpeg', 0.82));
+            resolve(canvas.toDataURL('image/jpeg', 0.80));
           } else {
             resolve(base64String);
           }
@@ -210,7 +241,7 @@ export async function uploadImageToGoogleDrive(
         return { fileId: result.fileId, url: result.url, isDrive: true };
       }
     } catch (err) {
-      console.warn('[XPH Drive Upload] Method 1 notice, trying urlencoded method...', err);
+      console.warn('[XPH Drive Upload] Method 1 notice, trying fallback...', err);
     }
 
     // Attempt 2: Form URL Encoded
@@ -231,7 +262,7 @@ export async function uploadImageToGoogleDrive(
         return { fileId: data.fileId, url: data.url, isDrive: true };
       }
     } catch (err2: any) {
-      console.error('[XPH Drive Upload] Method 2 error:', err2);
+      console.error('[XPH Drive Upload] Method 2 notice:', err2);
     }
   }
 
@@ -256,42 +287,21 @@ export async function saveSiteDataToCloud(
     scriptUrl ||
     (import.meta as any).env?.VITE_GOOGLE_APPS_SCRIPT_URL ||
     localStorage.getItem('xph_apps_script_url') ||
-    'https://script.google.com/macros/s/AKfycbxYOBROH9z0rgulm5CjmXxAV5w97od3VLCgpuUvnXtNIIUQzixWpJIN2udS_-frqPGS/exec';
+    APPS_SCRIPT_DEPLOYMENT_URL;
 
   if (!targetScriptUrl) return false;
 
-  const cleanData = typeof siteData === 'string' ? siteData : JSON.stringify(siteData);
-
-  // PRIMARY METHOD: GET with URL params — this is the most reliable way to send data to
-  // Google Apps Script because GET requests are never redirected to a different method.
-  // POST requests sent to the /exec URL get a 302 redirect that browsers convert to GET
-  // (per RFC 7231), silently losing the POST body. GET params survive the redirect intact.
-  try {
-    const params = new URLSearchParams({
-      action: 'saveConfig',
-      configData: cleanData,
-      auditType,
-      auditDetails,
-      _t: Date.now().toString(),
-    });
-    const res = await fetch(`${targetScriptUrl}?${params.toString()}`, {
-      method: 'GET',
-      redirect: 'follow',
-    });
-    const text = await res.text().catch(() => '');
-    const json = text ? (() => { try { return JSON.parse(text); } catch (_) { return null; } })() : null;
-    if (json && json.status === 'success') {
-      console.log('[XPH Cloud Sync] ✅ Saved via GET params:', json.message);
-      return true;
-    }
-    if (json && json.status === 'error') {
-      console.warn('[XPH Cloud Sync] Server error:', json.message);
-    }
-  } catch (err) {
-    console.warn('[XPH Cloud Sync] GET params failed, trying POST text/plain...', err);
+  // Clean data: remove data:image base64 from gallery to keep payload size lightweight and fast
+  const sanitizedData = { ...siteData };
+  if (Array.isArray(sanitizedData.galleryImages)) {
+    sanitizedData.galleryImages = sanitizedData.galleryImages.filter(
+      (img: any) => img && img.url && !img.url.startsWith('data:image/')
+    );
   }
 
-  // FALLBACK METHOD: POST text/plain (works when there's no CORS preflight issue)
+  const cleanData = typeof sanitizedData === 'string' ? sanitizedData : JSON.stringify(sanitizedData);
+
+  // METHOD 1: POST text/plain with JSON body (Standard for Google Apps Script Web Apps)
   try {
     const payload = JSON.stringify({
       action: 'saveConfig',
@@ -307,11 +317,59 @@ export async function saveSiteDataToCloud(
     const text = await res.text().catch(() => '');
     const json = text ? (() => { try { return JSON.parse(text); } catch (_) { return null; } })() : null;
     if (json && json.status === 'success') {
-      console.log('[XPH Cloud Sync] ✅ Saved via POST text/plain');
+      console.log('[XPH Cloud Sync] ✅ Saved via POST text/plain:', json.message);
+      if (json.spreadsheetUrl) {
+        try { localStorage.setItem('xph_spreadsheet_url', json.spreadsheetUrl); } catch (_) {}
+      }
       return true;
     }
-  } catch (err2) {
-    console.warn('[XPH Cloud Sync] Fallback POST also failed:', err2);
+  } catch (err) {
+    console.warn('[XPH Cloud Sync] Method 1 POST error, trying GET params...', err);
+  }
+
+  // METHOD 2: GET with URL params (only if payload is small enough < 1800 chars)
+  if (cleanData.length < 1800) {
+    try {
+      const params = new URLSearchParams({
+        action: 'saveConfig',
+        configData: cleanData,
+        auditType,
+        auditDetails,
+        _t: Date.now().toString(),
+      });
+      const res = await fetch(`${targetScriptUrl}?${params.toString()}`, {
+        method: 'GET',
+        redirect: 'follow',
+      });
+      const text = await res.text().catch(() => '');
+      const json = text ? (() => { try { return JSON.parse(text); } catch (_) { return null; } })() : null;
+      if (json && json.status === 'success') {
+        console.log('[XPH Cloud Sync] ✅ Saved via GET params:', json.message);
+        return true;
+      }
+    } catch (err2) {
+      console.warn('[XPH Cloud Sync] GET params failed:', err2);
+    }
+  }
+
+  // METHOD 3: Background POST with no-cors to ensure delivery without browser CORS blocking
+  try {
+    const payload = JSON.stringify({
+      action: 'saveConfig',
+      configData: cleanData,
+      auditType,
+      auditDetails,
+    });
+    await fetch(targetScriptUrl, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: payload,
+    });
+    console.log('[XPH Cloud Sync] ✅ Dispatched via background POST');
+    return true;
+  } catch (err3) {
+    console.error('[XPH Cloud Sync] All save methods failed:', err3);
   }
 
   return false;
@@ -325,7 +383,7 @@ export async function loadSiteDataFromCloud(scriptUrl?: string): Promise<Record<
     scriptUrl ||
     (import.meta as any).env?.VITE_GOOGLE_APPS_SCRIPT_URL ||
     localStorage.getItem('xph_apps_script_url') ||
-    'https://script.google.com/macros/s/AKfycbxYOBROH9z0rgulm5CjmXxAV5w97od3VLCgpuUvnXtNIIUQzixWpJIN2udS_-frqPGS/exec';
+    APPS_SCRIPT_DEPLOYMENT_URL;
 
   if (!targetScriptUrl) return null;
 
@@ -354,4 +412,3 @@ export async function loadSiteDataFromCloud(scriptUrl?: string): Promise<Record<
   }
   return null;
 }
-

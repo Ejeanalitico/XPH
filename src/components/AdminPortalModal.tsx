@@ -219,19 +219,9 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       onShowToast('Carpeta requerida', 'Ingresa la URL o ID de la carpeta de Google Drive.', 'warning');
       return;
     }
-    if (!driveApiKey) {
-      onShowToast(
-        'Clave de API Requerida',
-        'Ingresa tu Google API Key (gratuita en Google Cloud Console) para la sincronización automática.',
-        'warning'
-      );
-      return;
-    }
-
-    localStorage.setItem('xph_drive_api_key', driveApiKey);
     setIsSyncingDrive(true);
     try {
-      const fetchedImages = await fetchDriveFolderImages(driveFolderUrl, driveApiKey, driveTargetCategory as any);
+      const fetchedImages = await fetchDriveFolderImages(driveFolderUrl, driveApiKey || undefined, driveTargetCategory as any);
       if (fetchedImages.length === 0) {
         onShowToast('Sin imágenes', 'No se encontraron archivos de imagen en la carpeta especificada.', 'info');
       } else {
