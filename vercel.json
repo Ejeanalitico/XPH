@@ -9,6 +9,7 @@
     "VITE_GOOGLE_DRIVE_FOLDER_ID": "1UyN3m72kG4liDumQYxlO03cKtJJpYG62"
   },
   "rewrites": [
+    { "source": "/xph-logo.png", "destination": "/api/xph-logo-png" },
     { "source": "/api/:path*", "destination": "/api/:path*" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
