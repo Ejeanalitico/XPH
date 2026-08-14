@@ -1,7 +1,7 @@
 import { GalleryImage, GalleryCategory } from '../types';
 
 export const APPS_SCRIPT_DEPLOYMENT_URL =
-  'https://script.google.com/macros/s/AKfycbxYOBROH9z0rgulm5CjmXxAV5w97od3VLCgpuUvnXtNIIUQzixWpJIN2udS_-frqPGS/exec';
+  'https://script.google.com/macros/s/AKfycbzcabU0-P7RCW04G-MMFds6m4JeQKpiPl6_IaAA40KGQsp73ZsaJx6PuwbcmhBCa4Br/exec';
 
 /**
  * Converts any Google Drive link to a direct high-speed thumbnail / web preview URL
