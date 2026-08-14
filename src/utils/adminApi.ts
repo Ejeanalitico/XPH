@@ -43,12 +43,79 @@ export async function saveAdminConfig(
   const res = await fetch('/api/proxy?action=adminSaveConfig', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...session, patch, auditType, auditDetails }),
+  });
+  await parseResponse(res);
+}
+
+async function fileToDataUrl(file: File): Promise<string> {
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function compressImage(dataUrl: string): Promise<string> {
+  if (!dataUrl.startsWith('data:image/')) return dataUrl;
+  return await new Promise<string>((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      let width = img.width;
+      let height = img.height;
+      const maxWidth = 1600;
+      if (width > maxWidth) {
+        height = Math.round((height * maxWidth) / width);
+        width = maxWidth;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return resolve(dataUrl);
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', 0.84));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
+export async function adminUploadMedia(
+  session: AdminSession,
+  file: File,
+  options: { title: string; category: string; location: string }
+): Promise<{ fileId: string; url: string }> {
+  let dataUrl = await fileToDataUrl(file);
+  let mimeType = file.type || 'application/octet-stream';
+  if (file.type.startsWith('image/')) {
+    dataUrl = await compressImage(dataUrl);
+    mimeType = 'image/jpeg';
+  }
+
+  const res = await fetch('/api/proxy?action=adminUpload', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       ...session,
-      patch,
-      auditType,
-      auditDetails,
+      filename: file.name,
+      title: options.title,
+      category: options.category,
+      location: options.location,
+      mimeType,
+      base64: dataUrl,
     }),
+  });
+  const data = await parseResponse(res);
+  return { fileId: data.fileId, url: data.url };
+}
+
+export async function submitPublicLead(lead: Record<string, any>): Promise<void> {
+  const res = await fetch('/api/proxy?action=submitLead', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lead }),
   });
   await parseResponse(res);
 }
