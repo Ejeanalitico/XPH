@@ -9,7 +9,7 @@ interface FooterProps {
   footerContact?: FooterContact;
 }
 
-const XPH_LOGO = '/api/logo?v=20260814-2';
+const XPH_LOGO = '/api/logo?v=20260814-3';
 
 export const Footer: React.FC<FooterProps> = ({
   onNavigateRoute,
