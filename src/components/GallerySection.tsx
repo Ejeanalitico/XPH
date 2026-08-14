@@ -4,8 +4,11 @@ import { Maximize2, X, ChevronLeft, ChevronRight, Camera, MapPin } from 'lucide-
 
 interface GallerySectionProps {
   currentRoute: RoutePath;
-  onNavigateRoute: (route: RoutePath) => void;
+  onNavigateRoute?: (route: RoutePath) => void;
   images: GalleryImage[];
+  favorites?: string[];
+  onToggleFavorite?: (imageId: string) => void;
+  onShowToast?: (title: string, description?: string) => void;
 }
 
 export const GallerySection: React.FC<GallerySectionProps> = ({
@@ -27,7 +30,7 @@ export const GallerySection: React.FC<GallerySectionProps> = ({
   const handleSelectCategory = (category: GalleryCategory) => {
     setActiveCategory(category);
     if (category !== 'all' && category !== 'previa') {
-      onNavigateRoute(category as RoutePath);
+      onNavigateRoute?.(category as RoutePath);
     }
   };
 
@@ -65,7 +68,7 @@ export const GallerySection: React.FC<GallerySectionProps> = ({
             Estilos y tipos de cobertura
           </h2>
           <p className="text-gray-300 text-sm sm:text-base leading-relaxed">
-            Estas imágenes son referencias visuales de estilo y categoría; no se presentan como fotografías realizadas por Xavi.Ph. El portafolio propio se integrará por separado.
+            Estas imágenes son referencias visuales de estilo y categoría; no se presentan como fotografías realizadas por XPH. El portafolio propio se integrará por separado.
           </p>
         </div>
 
@@ -195,7 +198,7 @@ export const GallerySection: React.FC<GallerySectionProps> = ({
                 <span>{activeImage.location}</span>
               </div>
               <p className="text-xs text-gray-500 leading-relaxed">
-                Esta imagen sirve únicamente como referencia visual y no forma parte del portafolio propio de Xavi.Ph.
+                Esta imagen sirve únicamente como referencia visual y no forma parte del portafolio propio de XPH.
               </p>
             </div>
           </div>
