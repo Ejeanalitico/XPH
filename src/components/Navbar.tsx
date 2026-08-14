@@ -13,7 +13,7 @@ interface NavbarProps {
   onToggleTheme: () => void;
 }
 
-const XPH_LOGO = 'https://lh3.googleusercontent.com/d/1n-I-KcfYTHYzJZrND4rFHz4rCgLGekJq';
+const XPH_LOGO = '/api/logo?v=20260814-2';
 
 export const Navbar: React.FC<NavbarProps> = ({
   currentRoute,
