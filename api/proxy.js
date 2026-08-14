@@ -1,9 +1,10 @@
-/**
- * api/proxy.js — Vercel Serverless Proxy for Google Apps Script (ES Module)
- */
+import { createHmac, timingSafeEqual } from 'node:crypto';
 
 const APPS_SCRIPT_URL =
   'https://script.google.com/macros/s/AKfycbzcabU0-P7RCW04G-MMFds6m4JeQKpiPl6_IaAA40KGQsp73ZsaJx6PuwbcmhBCa4Br/exec';
+
+const SESSION_COOKIE = 'xph_admin_session';
+const SESSION_DAYS = 30;
 
 async function readBody(req) {
   if (typeof req.body === 'string') return req.body;
@@ -51,7 +52,7 @@ async function fetchDriveListFromScript() {
   return parsed;
 }
 
-function validAdmin(config, submitted) {
+function validAdminCredentials(config, submitted) {
   const credentials = config?.adminCredentials || {};
   return (
     String(credentials.email || '').trim().toLowerCase() === String(submitted.email || '').trim().toLowerCase() &&
@@ -59,12 +60,85 @@ function validAdmin(config, submitted) {
   );
 }
 
+function b64url(value) {
+  return Buffer.from(value).toString('base64url');
+}
+
+function sessionSecret(config) {
+  const credentials = config?.adminCredentials || {};
+  return `${String(credentials.email || '').toLowerCase()}::${String(credentials.pass || '')}::xph-admin-session-v2`;
+}
+
+function signSession(config, email) {
+  const payload = JSON.stringify({
+    email: String(email || '').trim().toLowerCase(),
+    exp: Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000,
+  });
+  const encoded = b64url(payload);
+  const signature = createHmac('sha256', sessionSecret(config)).update(encoded).digest('base64url');
+  return `${encoded}.${signature}`;
+}
+
+function readCookies(req) {
+  const raw = String(req.headers?.cookie || '');
+  return raw.split(';').reduce((acc, part) => {
+    const index = part.indexOf('=');
+    if (index < 0) return acc;
+    acc[part.slice(0, index).trim()] = decodeURIComponent(part.slice(index + 1).trim());
+    return acc;
+  }, {});
+}
+
+function verifySession(config, req) {
+  const token = readCookies(req)[SESSION_COOKIE];
+  if (!token || !token.includes('.')) return null;
+  const [encoded, signature] = token.split('.');
+  const expected = createHmac('sha256', sessionSecret(config)).update(encoded).digest('base64url');
+  try {
+    const left = Buffer.from(signature);
+    const right = Buffer.from(expected);
+    if (left.length !== right.length || !timingSafeEqual(left, right)) return null;
+    const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+    if (!payload?.email || Number(payload.exp) < Date.now()) return null;
+    const configuredEmail = String(config?.adminCredentials?.email || '').trim().toLowerCase();
+    if (String(payload.email).toLowerCase() !== configuredEmail) return null;
+    return payload;
+  } catch (_) {
+    return null;
+  }
+}
+
+function setSessionCookie(res, token) {
+  res.setHeader(
+    'Set-Cookie',
+    `${SESSION_COOKIE}=${encodeURIComponent(token)}; Max-Age=${SESSION_DAYS * 24 * 60 * 60}; Path=/; HttpOnly; Secure; SameSite=Lax`
+  );
+}
+
+function clearSessionCookie(res) {
+  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax`);
+}
+
 function heroCoverMap(items) {
   if (!Array.isArray(items)) return {};
   return items.reduce((acc, item) => {
-    if (item?.mediaType === 'cover-meta' && item?.heroFor && item?.url) {
-      acc[String(item.heroFor)] = item.url;
-    }
+    if (item?.mediaType === 'cover-meta' && item?.heroFor && item?.url) acc[String(item.heroFor)] = item.url;
+    return acc;
+  }, {});
+}
+
+function heroCoverSettingsMap(items) {
+  if (!Array.isArray(items)) return {};
+  return items.reduce((acc, item) => {
+    if (item?.mediaType !== 'cover-meta' || !item?.heroFor || !item?.url) return acc;
+    acc[String(item.heroFor)] = {
+      url: item.url,
+      label: item.heroLabel || item.title || '',
+      description: item.heroDescription || '',
+      positionX: Number.isFinite(Number(item.positionX)) ? Number(item.positionX) : 50,
+      positionY: Number.isFinite(Number(item.positionY)) ? Number(item.positionY) : 50,
+      zoom: Number.isFinite(Number(item.zoom)) ? Number(item.zoom) : 100,
+    };
     return acc;
   }, {});
 }
@@ -95,18 +169,60 @@ function sanitizePublicConfig(payload) {
   if (copy.config && typeof copy.config === 'object') {
     const allGalleryItems = Array.isArray(copy.config.galleryImages) ? copy.config.galleryImages : [];
     copy.config.heroCovers = heroCoverMap(allGalleryItems);
+    copy.config.heroCoverSettings = heroCoverSettingsMap(allGalleryItems);
     copy.config.galleryImages = publicGalleryOnly(allGalleryItems);
     delete copy.config.adminCredentials;
     delete copy.config.quotes;
+    delete copy.config.testimonials;
   }
   return copy;
 }
 
 function sanitizeAdminConfig(config) {
   const copy = JSON.parse(JSON.stringify(config || {}));
+  const allGalleryItems = Array.isArray(copy.galleryImages) ? copy.galleryImages : [];
+  copy.heroCovers = heroCoverMap(allGalleryItems);
+  copy.heroCoverSettings = heroCoverSettingsMap(allGalleryItems);
   delete copy.adminCredentials;
   delete copy.quotes;
   return copy;
+}
+
+function encodeHeroSettingsIntoGallery(config, patch) {
+  if (!patch?.heroCoverSettings || typeof patch.heroCoverSettings !== 'object') return patch;
+  const next = { ...patch };
+  const baseGallery = Array.isArray(patch.galleryImages)
+    ? [...patch.galleryImages]
+    : Array.isArray(config.galleryImages)
+      ? [...config.galleryImages]
+      : [];
+
+  Object.entries(patch.heroCoverSettings).forEach(([route, setting]) => {
+    if (!setting || !setting.url) return;
+    const cover = {
+      id: `cover-${route}`,
+      title: setting.label || route,
+      category: route === 'inicio' ? 'bodas' : route,
+      url: setting.url,
+      location: 'Portada XPH',
+      visibility: 'cover',
+      mediaType: 'cover-meta',
+      heroFor: route,
+      heroLabel: setting.label || '',
+      heroDescription: setting.description || '',
+      positionX: Number(setting.positionX) || 50,
+      positionY: Number(setting.positionY) || 50,
+      zoom: Number(setting.zoom) || 100,
+      createdAt: new Date().toISOString(),
+    };
+    const index = baseGallery.findIndex((item) => item?.mediaType === 'cover-meta' && item?.heroFor === route);
+    if (index >= 0) baseGallery[index] = { ...baseGallery[index], ...cover };
+    else baseGallery.unshift(cover);
+  });
+
+  next.galleryImages = baseGallery;
+  delete next.heroCoverSettings;
+  return next;
 }
 
 async function forwardSaveConfig(patch, auditType, auditDetails) {
@@ -164,20 +280,45 @@ export default async function handler(req, res) {
   try {
     const action = String(req.query?.action || '');
 
-    if (req.method === 'POST' && ['adminLogin', 'adminConfig', 'adminSaveConfig', 'adminUpload', 'adminDriveList'].includes(action)) {
+    if (req.method === 'GET' && action === 'adminSession') {
+      const payload = await fetchConfigFromScript();
+      const config = normalizeConfig(payload);
+      const session = verifySession(config, req);
+      return res.status(200).json({ status: 'success', authenticated: Boolean(session), email: session?.email || '' });
+    }
+
+    if (req.method === 'POST' && action === 'adminLogout') {
+      clearSessionCookie(res);
+      return res.status(200).json({ status: 'success' });
+    }
+
+    if (req.method === 'POST' && action === 'adminLogin') {
+      const raw = await readBody(req);
+      let submitted = {};
+      try { submitted = JSON.parse(raw || '{}'); } catch (_) {}
+      const payload = await fetchConfigFromScript();
+      const config = normalizeConfig(payload);
+      if (!validAdminCredentials(config, submitted)) {
+        return res.status(401).json({ status: 'error', authenticated: false, message: 'Credenciales incorrectas.' });
+      }
+      const email = String(config.adminCredentials?.email || submitted.email || '').trim().toLowerCase();
+      setSessionCookie(res, signSession(config, email));
+      return res.status(200).json({ status: 'success', authenticated: true, email });
+    }
+
+    if (req.method === 'POST' && ['adminConfig', 'adminSaveConfig', 'adminUpload', 'adminDriveList'].includes(action)) {
       const raw = await readBody(req);
       let submitted = {};
       try { submitted = JSON.parse(raw || '{}'); } catch (_) {}
 
       const payload = await fetchConfigFromScript();
       const config = normalizeConfig(payload);
-      if (!validAdmin(config, submitted)) {
-        return res.status(401).json({ status: 'error', authenticated: false, message: 'Credenciales incorrectas.' });
+      const session = verifySession(config, req);
+      const legacyValid = validAdminCredentials(config, submitted);
+      if (!session && !legacyValid) {
+        return res.status(401).json({ status: 'error', authenticated: false, message: 'La sesión expiró. Inicia sesión nuevamente.' });
       }
 
-      if (action === 'adminLogin') {
-        return res.status(200).json({ status: 'success', authenticated: true });
-      }
       if (action === 'adminConfig') {
         return res.status(200).json({ status: 'success', config: sanitizeAdminConfig(config) });
       }
@@ -186,20 +327,22 @@ export default async function handler(req, res) {
         return res.status(200).json({ status: 'success', images: Array.isArray(drive.images) ? drive.images : [] });
       }
       if (action === 'adminSaveConfig') {
-        const patch = submitted.patch && typeof submitted.patch === 'object' ? submitted.patch : {};
-        if ('adminCredentials' in patch) delete patch.adminCredentials;
-        if ('quotes' in patch) delete patch.quotes;
-        const result = await forwardSaveConfig(patch, submitted.auditType, submitted.auditDetails);
-        return res.status(200).json({ status: 'success', message: result.message || 'Cambios guardados.' });
+        let patch = submitted.patch && typeof submitted.patch === 'object' ? { ...submitted.patch } : {};
+        delete patch.adminCredentials;
+        delete patch.quotes;
+        patch = encodeHeroSettingsIntoGallery(config, patch);
+        await forwardSaveConfig(patch, submitted.auditType, submitted.auditDetails);
+        const confirmedPayload = await fetchConfigFromScript();
+        const confirmedConfig = normalizeConfig(confirmedPayload);
+        return res.status(200).json({
+          status: 'success',
+          message: 'Cambios guardados y verificados.',
+          config: sanitizeAdminConfig(confirmedConfig),
+        });
       }
       if (action === 'adminUpload') {
         const uploaded = await forwardUpload(submitted);
-        return res.status(200).json({
-          status: 'success',
-          fileId: uploaded.fileId,
-          url: uploaded.url,
-          driveUrl: uploaded.driveUrl,
-        });
+        return res.status(200).json({ status: 'success', fileId: uploaded.fileId, url: uploaded.url, driveUrl: uploaded.driveUrl });
       }
     }
 
@@ -238,10 +381,8 @@ export default async function handler(req, res) {
       const config = normalizeConfig(payload);
       const items = Array.isArray(config.galleryImages) ? config.galleryImages : [];
       const meta = items.find((item) =>
-        item?.visibility === 'private' &&
-        item?.mediaType === 'gallery-meta' &&
-        String(item.gallerySlug || '') === slug &&
-        String(item.galleryToken || '') === token
+        item?.visibility === 'private' && item?.mediaType === 'gallery-meta' &&
+        String(item.gallerySlug || '') === slug && String(item.galleryToken || '') === token
       );
       if (!meta) return res.status(404).json({ status: 'error', message: 'Galería privada no encontrada o liga inválida.' });
 
