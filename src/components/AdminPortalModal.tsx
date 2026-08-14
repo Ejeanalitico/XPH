@@ -295,7 +295,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   };
 
   // Save Packages and Addons
-  const handleSavePrices = () => {
+  const handleSavePrices = async () => {
     setSaveProgressModal({
       isOpen: true,
       status: 'saving',
@@ -309,26 +309,37 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       ],
     });
 
-    if (onSavePrices) {
-      onSavePrices(editingPackages, editingAddons);
-    } else {
-      onUpdatePackages(editingPackages);
-      onUpdateAddons(editingAddons);
-    }
+    try {
+      if (onSavePrices) {
+        await onSavePrices(editingPackages, editingAddons);
+      } else {
+        onUpdatePackages(editingPackages);
+        onUpdateAddons(editingAddons);
+      }
 
-    setTimeout(() => {
       setSaveProgressModal({
         isOpen: true,
         status: 'success',
         title: '¡Cambios Guardados con Éxito!',
-        description: 'La información se actualizó en la base de datos de Google Sheets y está activa en tiempo real en la página web.',
+        description: 'La información se actualizó físicamente en Google Sheets y está activa en tiempo real en la página web.',
         details: [
           'Catálogo de servicios y precios actualizado',
           'Tabla Paquetes_Precios sincronizada en Google Sheets',
           'Registro de auditoría guardado con fecha y hora',
         ],
       });
-    }, 1200);
+    } catch (err: any) {
+      setSaveProgressModal({
+        isOpen: true,
+        status: 'error',
+        title: 'Error al Guardar en Google Sheets',
+        description: err?.message || 'No se pudo completar la sincronización con Google Sheets.',
+        details: [
+          'Verifica la conexión a internet y que el Apps Script esté desplegado.',
+          'Intenta de nuevo.',
+        ],
+      });
+    }
   };
 
   // Package Field Handlers
@@ -584,32 +595,34 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
 
     try {
       const cleanImages = galleryImages.filter((img) => !img.url.startsWith('data:image/'));
-      await saveSiteDataToCloud(
+      const success = await saveSiteDataToCloud(
         { galleryImages: cleanImages },
         'SINCRONIZACION_MANUAL_GALERIA',
         `Sincronización forzada de ${cleanImages.length} fotos con Google Sheets`
       );
 
-      setTimeout(() => {
-        setSaveProgressModal({
-          isOpen: true,
-          status: 'success',
-          title: '¡Galería Sincronizada con Éxito!',
-          description: `Las ${cleanImages.length} fotografías activas fueron registradas y validadas en Google Sheets.`,
-          details: [
-            `${cleanImages.length} fotos actualizadas en Galeria_Fotos`,
-            'Base de datos Config_Activa sincronizada',
-            'Bitácora de auditoría actualizada con fecha y hora',
-          ],
-        });
-      }, 1000);
+      if (!success) {
+        throw new Error('La sincronización de la galería con Google Sheets no pudo completarse.');
+      }
+
+      setSaveProgressModal({
+        isOpen: true,
+        status: 'success',
+        title: '¡Galería Sincronizada con Éxito!',
+        description: `Las ${cleanImages.length} fotografías activas fueron registradas y validadas físicamente en Google Sheets.`,
+        details: [
+          `${cleanImages.length} fotos actualizadas en Galeria_Fotos`,
+          'Base de datos Config_Activa sincronizada',
+          'Bitácora de auditoría actualizada con fecha y hora',
+        ],
+      });
     } catch (err: any) {
       setSaveProgressModal({
         isOpen: true,
         status: 'error',
-        title: 'Error al Sincronizar',
+        title: 'Error al Sincronizar Galería',
         description: err?.message || 'No se pudo completar la sincronización con Google Sheets.',
-        details: ['Verifica tu conexión a internet o intenta de nuevo.'],
+        details: ['Verifica la conexión a internet o el despliegue del script.'],
       });
     } finally {
       setIsSyncingSheetsGallery(false);
@@ -617,7 +630,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   };
 
   // Footer Save
-  const handleSaveFooter = (e: React.FormEvent) => {
+  const handleSaveFooter = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaveProgressModal({
       isOpen: true,
@@ -631,9 +644,9 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       ],
     });
 
-    onUpdateFooterContact(editingFooter);
+    try {
+      await onUpdateFooterContact(editingFooter);
 
-    setTimeout(() => {
       setSaveProgressModal({
         isOpen: true,
         status: 'success',
@@ -645,7 +658,15 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
           'Registro en Google Sheets completado',
         ],
       });
-    }, 1000);
+    } catch (err: any) {
+      setSaveProgressModal({
+        isOpen: true,
+        status: 'error',
+        title: 'Error al Guardar Contacto',
+        description: err?.message || 'No se pudo guardar la información en Google Sheets.',
+        details: ['Verifica la conexión a internet o intenta de nuevo.'],
+      });
+    }
   };
 
   // Testimonial Toggle Verification

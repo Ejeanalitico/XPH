@@ -460,7 +460,11 @@ export default function App() {
   };
 
   // Helper to sync cloud config
-  const syncToCloud = (overrides?: Record<string, any>, auditType = 'ACTUALIZACION_GENERAL', auditDetails = 'Modificación guardada desde panel Admin') => {
+  const syncToCloud = async (
+    overrides?: Record<string, any>,
+    auditType = 'ACTUALIZACION_GENERAL',
+    auditDetails = 'Modificación guardada desde panel Admin'
+  ): Promise<boolean> => {
     const dataToSync = {
       packages: packagesState,
       addons: addonsState,
@@ -471,79 +475,83 @@ export default function App() {
       galleryImages: galleryImages.filter((img) => !img.url.startsWith('data:image/')),
       ...overrides,
     };
-    saveSiteDataToCloud(dataToSync, auditType, auditDetails);
+    return await saveSiteDataToCloud(dataToSync, auditType, auditDetails);
   };
 
-  const handleSavePrices = (newPackages: Record<EventType, PackageOption[]>, newAddons: AddOnOption[]) => {
+  const handleSavePrices = async (newPackages: Record<EventType, PackageOption[]>, newAddons: AddOnOption[]) => {
     setPackagesState(newPackages);
     setAddonsState(newAddons);
     try {
       localStorage.setItem('xph_packages', JSON.stringify(newPackages));
       localStorage.setItem('xph_addons', JSON.stringify(newAddons));
     } catch (_) {}
-    syncToCloud(
+    const ok = await syncToCloud(
       { packages: newPackages, addons: newAddons },
       'ACTUALIZACION_PAQUETES_PRECIOS',
       'Catálogo de paquetes, precios y adicionales actualizado en Google Sheets'
     );
+    if (!ok) {
+      throw new Error('La sincronización con Google Sheets no pudo completarse. Revisa la conexión.');
+    }
+    return ok;
   };
 
-  const handleUpdatePackages = (newPackages: Record<EventType, PackageOption[]>) => {
+  const handleUpdatePackages = async (newPackages: Record<EventType, PackageOption[]>) => {
     setPackagesState(newPackages);
     try { localStorage.setItem('xph_packages', JSON.stringify(newPackages)); } catch (_) {}
-    syncToCloud({ packages: newPackages }, 'ACTUALIZACION_PAQUETES', 'Catálogo de paquetes y precios actualizado');
+    return await syncToCloud({ packages: newPackages }, 'ACTUALIZACION_PAQUETES', 'Catálogo de paquetes y precios actualizado');
   };
 
-  const handleUpdateAddons = (newAddons: AddOnOption[]) => {
+  const handleUpdateAddons = async (newAddons: AddOnOption[]) => {
     setAddonsState(newAddons);
     try { localStorage.setItem('xph_addons', JSON.stringify(newAddons)); } catch (_) {}
-    syncToCloud({ addons: newAddons }, 'ACTUALIZACION_ADDONS', 'Catálogo de servicios adicionales actualizado');
+    return await syncToCloud({ addons: newAddons }, 'ACTUALIZACION_ADDONS', 'Catálogo de servicios adicionales actualizado');
   };
 
-  const handleUpdateFooterContact = (newFooter: FooterContact) => {
+  const handleUpdateFooterContact = async (newFooter: FooterContact) => {
     setFooterContact(newFooter);
     try { localStorage.setItem('xph_footer_contact', JSON.stringify(newFooter)); } catch (_) {}
-    syncToCloud({ footerContact: newFooter }, 'ACTUALIZACION_CONTACTO', `Teléfono: ${newFooter.phone} | Email: ${newFooter.email}`);
+    return await syncToCloud({ footerContact: newFooter }, 'ACTUALIZACION_CONTACTO', `Teléfono: ${newFooter.phone} | Email: ${newFooter.email}`);
   };
 
-  const handleUpdateTestimonials = (newTestimonials: Testimonial[]) => {
+  const handleUpdateTestimonials = async (newTestimonials: Testimonial[]) => {
     setTestimonials(newTestimonials);
     try { localStorage.setItem('xph_testimonials', JSON.stringify(newTestimonials)); } catch (_) {}
-    syncToCloud({ testimonials: newTestimonials }, 'ACTUALIZACION_TESTIMONIOS', `Total testimonios activos: ${newTestimonials.length}`);
+    return await syncToCloud({ testimonials: newTestimonials }, 'ACTUALIZACION_TESTIMONIOS', `Total testimonios activos: ${newTestimonials.length}`);
   };
 
-  const handleUpdateQuotes = (newQuotes: QuoteRecord[]) => {
+  const handleUpdateQuotes = async (newQuotes: QuoteRecord[]) => {
     setQuotesState(newQuotes);
     try { localStorage.setItem('xph_quotes', JSON.stringify(newQuotes)); } catch (_) {}
-    syncToCloud({ quotes: newQuotes }, 'ACTUALIZACION_COTIZACIONES', `Total cotizaciones registradas: ${newQuotes.length}`);
+    return await syncToCloud({ quotes: newQuotes }, 'ACTUALIZACION_COTIZACIONES', `Total cotizaciones registradas: ${newQuotes.length}`);
   };
 
-  const handleUpdateAdminCredentials = (newCreds: AdminCredentials) => {
+  const handleUpdateAdminCredentials = async (newCreds: AdminCredentials) => {
     setAdminCredentials(newCreds);
     try { localStorage.setItem('xph_admin_credentials', JSON.stringify(newCreds)); } catch (_) {}
-    syncToCloud({ adminCredentials: newCreds }, 'ACTUALIZACION_CREDENCIALES', `Email administrador actualizado a: ${newCreds.email}`);
+    return await syncToCloud({ adminCredentials: newCreds }, 'ACTUALIZACION_CREDENCIALES', `Email administrador actualizado a: ${newCreds.email}`);
   };
 
   // Handlers for Gallery Images Admin
-  const handleAddGalleryImage = (image: GalleryImage) => {
+  const handleAddGalleryImage = async (image: GalleryImage) => {
     const next = [image, ...galleryImages.filter((img) => img.id !== image.id)];
     const toSave = next.filter((img) => !img.url.startsWith('data:image/'));
     setGalleryImages(next);
     try { localStorage.setItem('xph_gallery_images', JSON.stringify(toSave)); } catch (_) {}
-    syncToCloud(
+    return await syncToCloud(
       { galleryImages: toSave },
       'FOTO_AGREGADA',
       `Foto "${image.title}" (${image.category}) agregada al portafolio`
     );
   };
 
-  const handleDeleteGalleryImage = (id: string) => {
+  const handleDeleteGalleryImage = async (id: string) => {
     const deletedItem = galleryImages.find((img) => img.id === id);
     const next = galleryImages.filter((img) => img.id !== id);
     const toSave = next.filter((img) => !img.url.startsWith('data:image/'));
     setGalleryImages(next);
     try { localStorage.setItem('xph_gallery_images', JSON.stringify(toSave)); } catch (_) {}
-    syncToCloud(
+    return await syncToCloud(
       { galleryImages: toSave },
       'FOTO_ELIMINADA',
       `Foto "${deletedItem?.title || id}" eliminada de la galería`
