@@ -78,7 +78,6 @@ export default function App() {
   const [footerContact, setFooterContact] = useState<FooterContact>(defaultContact);
   const [packagesState, setPackagesState] = useState<Record<EventType, PackageOption[]>>(PACKAGES_BY_EVENT);
   const [addonsState, setAddonsState] = useState<AddOnOption[]>(ADDONS_CATALOG);
-  const [isDarkMode, setIsDarkMode] = useState(true);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   const [bookingState, setBookingState] = useState<BookingState>({
@@ -97,6 +96,11 @@ export default function App() {
     total: 9990,
     depositAmount: 0,
   });
+
+  useEffect(() => {
+    document.documentElement.classList.add('dark');
+    document.documentElement.classList.remove('light');
+  }, []);
 
   useEffect(() => {
     loadSiteDataFromCloud().then((cloudData) => {
@@ -164,11 +168,6 @@ export default function App() {
     };
   }, []);
 
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', isDarkMode);
-    document.documentElement.classList.toggle('light', !isDarkMode);
-  }, [isDarkMode]);
-
   const showToast = (
     title: string,
     description?: string,
@@ -212,10 +211,10 @@ export default function App() {
   const whatsappNumber = cleanWhatsApp(footerContact.whatsapp || footerContact.phone);
 
   return (
-    <div className={`min-h-screen ${isDarkMode ? 'bg-[#0B0F17] text-[#F9FAFB]' : 'bg-[#F8FAFC] text-[#0F172A]'} font-sans antialiased transition-colors duration-300`}>
+    <div className="min-h-screen bg-[#0B0F17] text-[#F9FAFB] font-sans antialiased">
       <ToastContainer toasts={toasts} onDismiss={(id) => setToasts((prev) => prev.filter((toast) => toast.id !== id))} />
 
-      <Navbar currentRoute={currentRoute} onNavigateRoute={handleNavigateRoute} isDarkMode={isDarkMode} onToggleTheme={() => setIsDarkMode((prev) => !prev)} />
+      <Navbar currentRoute={currentRoute} onNavigateRoute={handleNavigateRoute} />
 
       <Hero
         currentRoute={currentRoute}
