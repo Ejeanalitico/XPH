@@ -7,6 +7,15 @@ export type GalleryCategory = 'all' | 'bodas' | 'xv-anos' | 'bautizos' | 'retrat
 export type GalleryVisibility = 'public' | 'private' | 'cover';
 export type GalleryMediaType = 'image' | 'video' | 'gallery-meta' | 'cover-meta';
 
+export interface HeroCoverSetting {
+  url: string;
+  label: string;
+  description: string;
+  positionX: number;
+  positionY: number;
+  zoom: number;
+}
+
 export interface GalleryImage {
   id: string;
   title: string;
