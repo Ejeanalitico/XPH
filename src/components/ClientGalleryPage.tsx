@@ -1,17 +1,38 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Camera, ChevronLeft, ChevronRight, Download, FileVideo2, Loader2, LockKeyhole, X } from 'lucide-react';
 import { GalleryImage } from '../types';
-import { fetchClientGallery } from '../utils/adminApi';
 
 interface ClientGalleryPageProps {
   slug: string;
   token: string;
 }
 
+interface ClientGalleryResponse {
+  status: string;
+  title: string;
+  clientName: string;
+  allowDownloads: boolean;
+  media: GalleryImage[];
+  message?: string;
+}
+
+const fetchPrivateGallery = async (slug: string, token: string): Promise<ClientGalleryResponse> => {
+  const response = await fetch(`/api/client-gallery?slug=${encodeURIComponent(slug)}&token=${encodeURIComponent(token)}&_t=${Date.now()}`, {
+    method: 'GET',
+    cache: 'no-store',
+  });
+  const data = await response.json();
+  if (!response.ok || data?.status !== 'success') {
+    throw new Error(data?.message || 'No se pudo abrir la galería.');
+  }
+  return data;
+};
+
 export const ClientGalleryPage: React.FC<ClientGalleryPageProps> = ({ slug, token }) => {
   const [title, setTitle] = useState('Galería privada');
   const [clientName, setClientName] = useState('Cliente XPH');
   const [media, setMedia] = useState<GalleryImage[]>([]);
+  const [downloadsEnabled, setDownloadsEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [activePhotoIndex, setActivePhotoIndex] = useState<number | null>(null);
@@ -30,11 +51,12 @@ export const ClientGalleryPage: React.FC<ClientGalleryPageProps> = ({ slug, toke
 
   useEffect(() => {
     setLoading(true);
-    fetchClientGallery(slug, token)
+    fetchPrivateGallery(slug, token)
       .then((data) => {
         setTitle(data.title);
         setClientName(data.clientName);
-        setMedia(data.media);
+        setDownloadsEnabled(data.allowDownloads !== false);
+        setMedia(data.media || []);
       })
       .catch((err) => setError(err?.message || 'No se pudo abrir la galería.'))
       .finally(() => setLoading(false));
@@ -42,10 +64,6 @@ export const ClientGalleryPage: React.FC<ClientGalleryPageProps> = ({ slug, toke
 
   const photos = useMemo(() => media.filter((item) => item.mediaType !== 'video'), [media]);
   const videos = useMemo(() => media.filter((item) => item.mediaType === 'video'), [media]);
-  const allowDownloads = useMemo(
-    () => !media.some((item) => item.galleryAllowDownloads === false),
-    [media]
-  );
   const activePhoto = activePhotoIndex !== null ? photos[activePhotoIndex] : null;
 
   const showPrevious = () => {
@@ -91,7 +109,7 @@ export const ClientGalleryPage: React.FC<ClientGalleryPageProps> = ({ slug, toke
           <p className="text-xs uppercase tracking-widest text-[#D4AF37] font-mono">{clientName}</p>
           <h1 className="text-3xl sm:text-5xl font-bold font-serif-luxury">{title}</h1>
           <p className="text-sm text-gray-400">
-            {allowDownloads
+            {downloadsEnabled
               ? 'Puedes visualizar y descargar los archivos habilitados en esta galería.'
               : 'Esta galería está habilitada únicamente para visualización.'}
           </p>
@@ -106,8 +124,8 @@ export const ClientGalleryPage: React.FC<ClientGalleryPageProps> = ({ slug, toke
                   <button onClick={() => setActivePhotoIndex(index)} className="block w-full">
                     <img src={item.url} alt={`Fotografía ${index + 1}`} className="w-full object-cover" loading="lazy" />
                   </button>
-                  {allowDownloads && (
-                    <a href={item.downloadUrl || item.url} target="_blank" rel="noreferrer" className="absolute bottom-3 right-3 p-2.5 rounded-full bg-[#D4AF37] text-black shadow-xl opacity-0 group-hover:opacity-100 transition-opacity" title="Descargar fotografía" aria-label={`Descargar fotografía ${index + 1}`}>
+                  {downloadsEnabled && item.downloadUrl && (
+                    <a href={item.downloadUrl} target="_blank" rel="noreferrer" className="absolute bottom-3 right-3 p-2.5 rounded-full bg-[#D4AF37] text-black shadow-xl opacity-0 group-hover:opacity-100 transition-opacity" title="Descargar fotografía" aria-label={`Descargar fotografía ${index + 1}`}>
                       <Download className="w-4 h-4" />
                     </a>
                   )}
@@ -126,9 +144,9 @@ export const ClientGalleryPage: React.FC<ClientGalleryPageProps> = ({ slug, toke
                   <div className="aspect-video bg-black">
                     {item.previewUrl ? <iframe src={item.previewUrl} title={`Video ${index + 1}`} className="w-full h-full border-0" allow="autoplay" /> : <div className="w-full h-full flex items-center justify-center"><FileVideo2 className="w-12 h-12 text-[#D4AF37]" /></div>}
                   </div>
-                  {allowDownloads && (
+                  {downloadsEnabled && item.downloadUrl && (
                     <div className="p-4 flex justify-end">
-                      <a href={item.downloadUrl || item.url} target="_blank" rel="noreferrer" className="px-4 py-2.5 rounded-xl bg-[#D4AF37] text-black text-xs font-bold flex items-center gap-2">
+                      <a href={item.downloadUrl} target="_blank" rel="noreferrer" className="px-4 py-2.5 rounded-xl bg-[#D4AF37] text-black text-xs font-bold flex items-center gap-2">
                         <Download className="w-4 h-4" />Descargar video
                       </a>
                     </div>
@@ -157,8 +175,8 @@ export const ClientGalleryPage: React.FC<ClientGalleryPageProps> = ({ slug, toke
             <img src={activePhoto.url} alt={`Fotografía ${activePhotoIndex + 1}`} className="max-w-full max-h-[82vh] object-contain mx-auto" />
             <div className="mt-3 flex items-center justify-center gap-4 min-h-10">
               <span className="text-xs text-gray-500">{activePhotoIndex + 1} / {photos.length}</span>
-              {allowDownloads && (
-                <a href={activePhoto.downloadUrl || activePhoto.url} target="_blank" rel="noreferrer" className="px-4 py-2.5 rounded-xl bg-[#D4AF37] text-black text-xs font-bold flex items-center gap-2">
+              {downloadsEnabled && activePhoto.downloadUrl && (
+                <a href={activePhoto.downloadUrl} target="_blank" rel="noreferrer" className="px-4 py-2.5 rounded-xl bg-[#D4AF37] text-black text-xs font-bold flex items-center gap-2">
                   <Download className="w-4 h-4" />Descargar
                 </a>
               )}
