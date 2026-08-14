@@ -484,11 +484,61 @@ function doPost(e) {
 
 /**
  * =========================================================================
- * ENDPOINT GET: Consulta en Tiempo Real de la Última Versión de Sheets
+ * ENDPOINT GET: Carga + Guarda configuración en Tiempo Real
+ * GET sin body nunca pierde datos por redirect 302 — es el método más confiable
  * =========================================================================
  */
 function doGet(e) {
   try {
+    var action = (e && e.parameter && e.parameter['action']) ? e.parameter['action'] : 'loadConfig';
+
+    // ── ACCIÓN: GUARDAR CONFIGURACIÓN VIA GET PARAMS ─────────────────────────
+    if (action === 'saveConfig') {
+      var configData   = (e.parameter && e.parameter['configData'])   || '';
+      var auditType    = (e.parameter && e.parameter['auditType'])    || 'ACTUALIZACION_GENERAL';
+      var auditDetails = (e.parameter && e.parameter['auditDetails']) || 'Cambios guardados desde Admin';
+
+      var configObj = {};
+      try { configObj = JSON.parse(configData); } catch (_) {}
+
+      var ss = null;
+      try { ss = getDatabaseSpreadsheet(); } catch (_) {}
+
+      var prevConfig = {};
+      try {
+        var prevRaw = loadActiveConfig();
+        if (prevRaw) prevConfig = JSON.parse(prevRaw);
+      } catch (_) {}
+
+      var mergedConfig = {
+        packages:         configObj.packages !== undefined         ? configObj.packages         : (prevConfig.packages         || {}),
+        addons:           configObj.addons !== undefined           ? configObj.addons           : (prevConfig.addons           || []),
+        footerContact:    configObj.footerContact !== undefined    ? configObj.footerContact    : (prevConfig.footerContact    || {}),
+        testimonials:     configObj.testimonials !== undefined     ? configObj.testimonials     : (prevConfig.testimonials     || []),
+        quotes:           configObj.quotes !== undefined           ? configObj.quotes           : (prevConfig.quotes           || []),
+        adminCredentials: configObj.adminCredentials !== undefined ? configObj.adminCredentials : (prevConfig.adminCredentials || {}),
+        galleryImages:    configObj.galleryImages !== undefined    ? configObj.galleryImages    : (prevConfig.galleryImages    || [])
+      };
+
+      var jsonStr = JSON.stringify(mergedConfig);
+      saveActiveConfig(ss, jsonStr);
+
+      if (ss) {
+        if (mergedConfig.galleryImages) syncGalleryTable(ss, mergedConfig.galleryImages);
+        if (mergedConfig.packages) syncPackagesTable(ss, mergedConfig.packages);
+        if (mergedConfig.quotes) syncQuotesTable(ss, mergedConfig.quotes);
+        logAudit(ss, auditType, auditDetails, '-', 'Admin XPH');
+      }
+
+      var props2 = PropertiesService.getScriptProperties();
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success',
+        spreadsheetUrl: ss ? ss.getUrl() : (props2.getProperty('xph_spreadsheet_url') || ''),
+        message: 'Base de datos sincronizada en Google Sheets con exito'
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // ── ACCIÓN: CARGAR CONFIGURACIÓN (DEFAULT) ────────────────────────────────
     var content = loadActiveConfig();
     var parsed = {};
     

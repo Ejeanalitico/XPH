@@ -262,51 +262,59 @@ export async function saveSiteDataToCloud(
 
   const cleanData = typeof siteData === 'string' ? siteData : JSON.stringify(siteData);
 
-  // IMPORTANT: We use Content-Type: text/plain so the browser sends a CORS simple request.
-  // mode: 'no-cors' was removed because it sends an opaque request with an empty body —
-  // the Apps Script receives nothing and silently does not save any data.
-  // text/plain bypasses preflight and delivers the full JSON body to e.postData.contents.
-  const payload = JSON.stringify({
-    action: 'saveConfig',
-    configData: cleanData,
-    auditType,
-    auditDetails,
-  });
-
+  // PRIMARY METHOD: GET with URL params — this is the most reliable way to send data to
+  // Google Apps Script because GET requests are never redirected to a different method.
+  // POST requests sent to the /exec URL get a 302 redirect that browsers convert to GET
+  // (per RFC 7231), silently losing the POST body. GET params survive the redirect intact.
   try {
+    const params = new URLSearchParams({
+      action: 'saveConfig',
+      configData: cleanData,
+      auditType,
+      auditDetails,
+      _t: Date.now().toString(),
+    });
+    const res = await fetch(`${targetScriptUrl}?${params.toString()}`, {
+      method: 'GET',
+      redirect: 'follow',
+    });
+    const text = await res.text().catch(() => '');
+    const json = text ? (() => { try { return JSON.parse(text); } catch (_) { return null; } })() : null;
+    if (json && json.status === 'success') {
+      console.log('[XPH Cloud Sync] ✅ Saved via GET params:', json.message);
+      return true;
+    }
+    if (json && json.status === 'error') {
+      console.warn('[XPH Cloud Sync] Server error:', json.message);
+    }
+  } catch (err) {
+    console.warn('[XPH Cloud Sync] GET params failed, trying POST text/plain...', err);
+  }
+
+  // FALLBACK METHOD: POST text/plain (works when there's no CORS preflight issue)
+  try {
+    const payload = JSON.stringify({
+      action: 'saveConfig',
+      configData: cleanData,
+      auditType,
+      auditDetails,
+    });
     const res = await fetch(targetScriptUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: payload,
     });
-    // Apps Script redirects (302) — response may be opaque but data was sent with the body
     const text = await res.text().catch(() => '');
     const json = text ? (() => { try { return JSON.parse(text); } catch (_) { return null; } })() : null;
-    if (json && json.status === 'error') {
-      console.warn('[XPH Cloud Sync] Server error:', json.message);
-      return false;
-    }
-    return true;
-  } catch (err) {
-    // Fallback: URLSearchParams (form-encoded) — Apps Script also handles this format
-    try {
-      const body = new URLSearchParams({
-        action: 'saveConfig',
-        configData: cleanData,
-        auditType,
-        auditDetails,
-      });
-      await fetch(targetScriptUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: body.toString(),
-      });
+    if (json && json.status === 'success') {
+      console.log('[XPH Cloud Sync] ✅ Saved via POST text/plain');
       return true;
-    } catch (err2) {
-      console.warn('[XPH Cloud Sync] Fallback save error:', err2);
-      return false;
     }
+  } catch (err2) {
+    console.warn('[XPH Cloud Sync] Fallback POST also failed:', err2);
   }
+
+  return false;
 }
 
 /**
