@@ -70,6 +70,21 @@ const hasManagedPackages = (value: any): value is Record<EventType, PackageOptio
 const hasManagedAddons = (value: any): value is AddOnOption[] =>
   Array.isArray(value) && value.some((addon) => addon?.managedByAdmin);
 
+const loadPackagesFromSheet = async (): Promise<Record<EventType, PackageOption[]> | null> => {
+  try {
+    const response = await fetch(`/api/packages-sheet?_t=${Date.now()}`, {
+      method: 'GET',
+      cache: 'no-store',
+    });
+    const data = await response.json();
+    if (!response.ok || data?.status !== 'success' || !hasManagedPackages(data.packages)) return null;
+    return data.packages;
+  } catch (error) {
+    console.warn('[XPH Packages] No se pudo leer Paquetes_Precios:', error);
+    return null;
+  }
+};
+
 export default function App() {
   const [currentRoute, setCurrentRoute] = useState<RoutePath>('inicio');
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([]);
@@ -103,11 +118,11 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    loadSiteDataFromCloud().then((cloudData) => {
-      if (!cloudData) return;
+    Promise.all([loadSiteDataFromCloud(), loadPackagesFromSheet()]).then(([cloudData, sheetPackages]) => {
+      const data = cloudData || {};
 
-      if (Array.isArray(cloudData.galleryImages)) {
-        const realGallery = cloudData.galleryImages.filter((image: GalleryImage) =>
+      if (Array.isArray(data.galleryImages)) {
+        const realGallery = data.galleryImages.filter((image: GalleryImage) =>
           Boolean(
             image?.id &&
             image?.url &&
@@ -123,17 +138,23 @@ export default function App() {
         setGalleryImages(realGallery);
       }
 
-      if (cloudData.heroCovers && typeof cloudData.heroCovers === 'object') {
-        setHeroCovers(cloudData.heroCovers as Partial<Record<RoutePath, string>>);
+      if (data.heroCovers && typeof data.heroCovers === 'object') {
+        setHeroCovers(data.heroCovers as Partial<Record<RoutePath, string>>);
       }
 
-      if (cloudData.heroCoverSettings && typeof cloudData.heroCoverSettings === 'object') {
-        setHeroCoverSettings(cloudData.heroCoverSettings as Partial<Record<RoutePath, HeroCoverSetting>>);
+      if (data.heroCoverSettings && typeof data.heroCoverSettings === 'object') {
+        setHeroCoverSettings(data.heroCoverSettings as Partial<Record<RoutePath, HeroCoverSetting>>);
       }
 
-      if (hasManagedPackages(cloudData.packages)) {
-        setPackagesState(cloudData.packages);
-        const available = cloudData.packages.bodas || [];
+      const effectivePackages = hasManagedPackages(sheetPackages)
+        ? sheetPackages
+        : hasManagedPackages(data.packages)
+          ? data.packages
+          : null;
+
+      if (effectivePackages) {
+        setPackagesState(effectivePackages);
+        const available = effectivePackages.bodas || [];
         const selected = available.find((pkg) => pkg.popular) || available[0];
         if (selected) {
           setBookingState((prev) => ({
@@ -148,8 +169,8 @@ export default function App() {
         }
       }
 
-      if (hasManagedAddons(cloudData.addons)) setAddonsState(cloudData.addons);
-      if (cloudData.footerContact) setFooterContact(sanitizePublicContact(cloudData.footerContact));
+      if (hasManagedAddons(data.addons)) setAddonsState(data.addons);
+      if (data.footerContact) setFooterContact(sanitizePublicContact(data.footerContact));
     });
   }, []);
 
