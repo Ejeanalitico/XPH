@@ -31,7 +31,7 @@ export const Footer: React.FC<FooterProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           <div className="space-y-4 md:col-span-1">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 flex items-center justify-center shrink-0">
+              <div className="w-14 h-14 flex items-center justify-center shrink-0">
                 <img src={XPH_LOGO} alt="XPH Fotografía & Video" className="w-full h-full object-contain" />
               </div>
               <div>
