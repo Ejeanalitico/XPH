@@ -260,26 +260,52 @@ export async function saveSiteDataToCloud(
 
   if (!targetScriptUrl) return false;
 
-  try {
-    const cleanData = typeof siteData === 'string' ? siteData : JSON.stringify(siteData);
-    const body = new URLSearchParams({
-      action: 'saveConfig',
-      configData: cleanData,
-      auditType,
-      auditDetails,
-    });
+  const cleanData = typeof siteData === 'string' ? siteData : JSON.stringify(siteData);
 
-    // Send with mode: 'no-cors' so browser executes POST through 302 redirect without CORS failure
-    await fetch(targetScriptUrl, {
+  // IMPORTANT: We use Content-Type: text/plain so the browser sends a CORS simple request.
+  // mode: 'no-cors' was removed because it sends an opaque request with an empty body —
+  // the Apps Script receives nothing and silently does not save any data.
+  // text/plain bypasses preflight and delivers the full JSON body to e.postData.contents.
+  const payload = JSON.stringify({
+    action: 'saveConfig',
+    configData: cleanData,
+    auditType,
+    auditDetails,
+  });
+
+  try {
+    const res = await fetch(targetScriptUrl, {
       method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: body.toString(),
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: payload,
     });
+    // Apps Script redirects (302) — response may be opaque but data was sent with the body
+    const text = await res.text().catch(() => '');
+    const json = text ? (() => { try { return JSON.parse(text); } catch (_) { return null; } })() : null;
+    if (json && json.status === 'error') {
+      console.warn('[XPH Cloud Sync] Server error:', json.message);
+      return false;
+    }
     return true;
   } catch (err) {
-    console.warn('[XPH Cloud Sync] Background save error:', err);
-    return false;
+    // Fallback: URLSearchParams (form-encoded) — Apps Script also handles this format
+    try {
+      const body = new URLSearchParams({
+        action: 'saveConfig',
+        configData: cleanData,
+        auditType,
+        auditDetails,
+      });
+      await fetch(targetScriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString(),
+      });
+      return true;
+    } catch (err2) {
+      console.warn('[XPH Cloud Sync] Fallback save error:', err2);
+      return false;
+    }
   }
 }
 
