@@ -68,10 +68,28 @@ export async function loadAdminConfig(_session?: AdminSession | null): Promise<R
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
+    cache: 'no-store',
     body: '{}',
   });
   const data = await parseResponse(res);
-  return data.config || {};
+  const config = data.config || {};
+
+  // Paquetes_Precios is the package source of truth. Overlay it in the
+  // administrator too, so manual Sheet edits are never hidden by Config_Activa.
+  try {
+    const packagesRes = await fetch(`/api/packages-sheet?_t=${Date.now()}`, {
+      method: 'GET',
+      cache: 'no-store',
+    });
+    const packagesData = await packagesRes.json();
+    if (packagesRes.ok && packagesData?.status === 'success' && packagesData?.packages) {
+      config.packages = packagesData.packages;
+    }
+  } catch (error) {
+    console.warn('[XPH Admin] No se pudo sincronizar Paquetes_Precios:', error);
+  }
+
+  return config;
 }
 
 export async function loadDriveImages(_session?: AdminSession | null): Promise<DriveImageRecord[]> {
@@ -199,7 +217,7 @@ export function extractDriveFileId(value: string): string {
 }
 
 export function driveDownloadUrl(fileId: string) {
-  return `https://drive.google.com/uc?export=download&id=${fileId}`;
+  return `https://drive.usercontent.google.com/download?id=${encodeURIComponent(fileId)}&export=download&confirm=t`;
 }
 
 export function drivePreviewUrl(fileId: string) {
