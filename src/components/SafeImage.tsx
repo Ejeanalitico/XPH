@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AlertTriangle, ExternalLink } from 'lucide-react';
 import { getDirectGoogleDriveUrl, extractDriveFolderId } from '../utils/googleDrive';
 
@@ -19,6 +19,12 @@ export const SafeImage: React.FC<SafeImageProps> = ({ src, alt, className = '', 
   const [hasError, setHasError] = useState(false);
   const [attemptedFallback, setAttemptedFallback] = useState(false);
   const [currentSrc, setCurrentSrc] = useState<string>(() => getDirectGoogleDriveUrl(src));
+
+  useEffect(() => {
+    setCurrentSrc(getDirectGoogleDriveUrl(src));
+    setHasError(false);
+    setAttemptedFallback(false);
+  }, [src]);
 
   const handleError = () => {
     const fileId = extractDriveFileId(src);

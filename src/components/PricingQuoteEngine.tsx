@@ -237,7 +237,7 @@ export const PricingQuoteEngine: React.FC<PricingQuoteEngineProps> = ({
                       ✓ Incluye:
                     </span>
                     <ul className="space-y-2 text-xs text-gray-300">
-                      {pkg.features.map((feat, idx) => (
+                      {(pkg.features || (pkg as any).includes || []).map((feat: string, idx: number) => (
                         <li key={idx} className="flex items-start gap-2.5">
                           <Check className="w-4 h-4 text-[#D4AF37] shrink-0 mt-0.5" />
                           <span>{feat}</span>
@@ -247,7 +247,7 @@ export const PricingQuoteEngine: React.FC<PricingQuoteEngineProps> = ({
                   </div>
 
                   {/* Exclusions List (No Incluye) */}
-                  {pkg.notIncludes && pkg.notIncludes.length > 0 && (
+                  {Array.isArray(pkg.notIncludes) && pkg.notIncludes.length > 0 && (
                     <div className="space-y-2 pt-3 border-t border-white/10">
                       <span className="text-[10px] uppercase font-mono font-bold tracking-wider text-rose-400 block">
                         ✕ No Incluye:

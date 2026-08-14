@@ -354,9 +354,11 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   const handlePackageFeatureAdd = (category: EventType, pkgId: string) => {
     setEditingPackages((prev) => {
       const list = prev[category] || [];
-      const updatedList = list.map((p) =>
-        p.id === pkgId ? { ...p, features: [...p.features, 'Nuevo beneficio incluido'] } : p
-      );
+      const updatedList = list.map((p) => {
+        if (p.id !== pkgId) return p;
+        const currentFeats = p.features || (p as any).includes || [];
+        return { ...p, features: [...currentFeats, 'Nuevo beneficio incluido'] };
+      });
       return { ...prev, [category]: updatedList };
     });
   };
@@ -366,9 +368,9 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       const list = prev[category] || [];
       const updatedList = list.map((p) => {
         if (p.id !== pkgId) return p;
-        const newFeats = [...p.features];
-        newFeats[index] = value;
-        return { ...p, features: newFeats };
+        const currentFeats = [...(p.features || (p as any).includes || [])];
+        currentFeats[index] = value;
+        return { ...p, features: currentFeats };
       });
       return { ...prev, [category]: updatedList };
     });
@@ -379,8 +381,8 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       const list = prev[category] || [];
       const updatedList = list.map((p) => {
         if (p.id !== pkgId) return p;
-        const newFeats = p.features.filter((_, i) => i !== index);
-        return { ...p, features: newFeats };
+        const currentFeats = (p.features || (p as any).includes || []).filter((_, i) => i !== index);
+        return { ...p, features: currentFeats };
       });
       return { ...prev, [category]: updatedList };
     });

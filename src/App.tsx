@@ -442,7 +442,14 @@ export default function App() {
       signatureDataUrl: bookingState.signatureDataUrl,
     };
 
-    setQuotesState((prev) => [newQuoteRecord, ...prev]);
+    const updatedQuotes = [newQuoteRecord, ...quotesState];
+    setQuotesState(updatedQuotes);
+    try { localStorage.setItem('xph_quotes', JSON.stringify(updatedQuotes)); } catch (_) {}
+    syncToCloud(
+      { quotes: updatedQuotes },
+      'NUEVA_COTIZACION_WHATSAPP',
+      `Cotización registrada para ${bookingState.clientName || 'Cliente'} (${categoryLabel} - ${selectedPkg.name})`
+    );
 
     const messageText = `Hola Xavi.Ph! 👋 Quisiera agendar una cita presencial y reservar mi fecha:
 
@@ -456,7 +463,7 @@ export default function App() {
 
     const encodedUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(messageText)}`;
     window.open(encodedUrl, '_blank');
-    showToast('Cita Registrada', 'La solicitud de cita fue guardada en el sistema de administración.');
+    showToast('Cita Registrada', 'La solicitud de cita fue guardada y registrada en el sistema de administración.');
   };
 
   // Helper to sync cloud config

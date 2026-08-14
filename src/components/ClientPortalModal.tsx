@@ -23,9 +23,9 @@ export const ClientPortalModal: React.FC<ClientPortalModalProps> = ({
     e.preventDefault();
     if (pin === '1234' || pin.length >= 4) {
       setIsUnlocked(true);
-      onShowToast('Acceso Concedido', 'Galería privada desbloqueada para Valeria & Carlos.');
+      onShowToast('Acceso Concedido', 'Galería privada desbloqueada.');
     } else {
-      onShowToast('PIN Incorrecto', 'Prueba ingresando el PIN de prueba: 1234');
+      onShowToast('PIN Incorrecto', 'Verifica el PIN de 4 dígitos proporcionado para tu evento.');
     }
   };
 
@@ -68,7 +68,7 @@ export const ClientPortalModal: React.FC<ClientPortalModalProps> = ({
                 <input
                   type="password"
                   maxLength={6}
-                  placeholder="PIN de Acceso (Prueba: 1234)"
+                  placeholder="PIN de Acceso (4 dígitos)"
                   value={pin}
                   onChange={(e) => setPin(e.target.value)}
                   className="w-full text-center tracking-[0.5em] text-xl font-mono py-3 px-4 rounded-xl bg-[#0B0F17] border border-white/15 text-white focus:outline-none focus:border-[#D4AF37]"
