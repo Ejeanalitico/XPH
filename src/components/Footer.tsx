@@ -9,7 +9,7 @@ interface FooterProps {
   footerContact?: FooterContact;
 }
 
-const XPH_LOGO = '/xph-logo.svg?v=20260814-4';
+const XPH_LOGO = '/xph-logo.png?v=20260814-6';
 
 export const Footer: React.FC<FooterProps> = ({
   onNavigateRoute,
