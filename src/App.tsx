@@ -10,6 +10,7 @@ import {
   EventType,
   FooterContact,
   GalleryImage,
+  HeroCoverSetting,
   PackageOption,
   RoutePath,
   ToastMessage,
@@ -73,6 +74,7 @@ export default function App() {
   const [currentRoute, setCurrentRoute] = useState<RoutePath>('inicio');
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([]);
   const [heroCovers, setHeroCovers] = useState<Partial<Record<RoutePath, string>>>({});
+  const [heroCoverSettings, setHeroCoverSettings] = useState<Partial<Record<RoutePath, HeroCoverSetting>>>({});
   const [footerContact, setFooterContact] = useState<FooterContact>(defaultContact);
   const [packagesState, setPackagesState] = useState<Record<EventType, PackageOption[]>>(PACKAGES_BY_EVENT);
   const [addonsState, setAddonsState] = useState<AddOnOption[]>(ADDONS_CATALOG);
@@ -119,6 +121,10 @@ export default function App() {
 
       if (cloudData.heroCovers && typeof cloudData.heroCovers === 'object') {
         setHeroCovers(cloudData.heroCovers as Partial<Record<RoutePath, string>>);
+      }
+
+      if (cloudData.heroCoverSettings && typeof cloudData.heroCoverSettings === 'object') {
+        setHeroCoverSettings(cloudData.heroCoverSettings as Partial<Record<RoutePath, HeroCoverSetting>>);
       }
 
       if (hasManagedPackages(cloudData.packages)) {
@@ -217,6 +223,7 @@ export default function App() {
         onGalleryClick={() => handleScrollTo('galerias')}
         onCitaClick={() => handleScrollTo('solicitud')}
         heroCovers={heroCovers}
+        heroCoverSettings={heroCoverSettings}
       />
 
       <GallerySection
