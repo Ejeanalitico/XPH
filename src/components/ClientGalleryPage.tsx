@@ -115,26 +115,6 @@ export const ClientGalleryPage: React.FC<ClientGalleryPageProps> = ({ slug, toke
           </p>
         </div>
 
-        {photos.length > 0 && (
-          <section className="space-y-4">
-            <div className="flex items-center justify-between"><h2 className="text-xl font-bold">Fotografías</h2><span className="text-xs text-gray-500">{photos.length} archivos</span></div>
-            <div className="columns-2 md:columns-3 lg:columns-4 gap-3">
-              {photos.map((item, index) => (
-                <article key={item.id} className="break-inside-avoid mb-3 rounded-xl overflow-hidden bg-[#161C28] border border-white/10 group relative">
-                  <button onClick={() => setActivePhotoIndex(index)} className="block w-full">
-                    <img src={item.url} alt={`Fotografía ${index + 1}`} className="w-full object-cover" loading="lazy" />
-                  </button>
-                  {downloadsEnabled && item.downloadUrl && (
-                    <a href={item.downloadUrl} target="_blank" rel="noreferrer" className="absolute bottom-3 right-3 p-2.5 rounded-full bg-[#D4AF37] text-black shadow-xl opacity-0 group-hover:opacity-100 transition-opacity" title="Descargar fotografía" aria-label={`Descargar fotografía ${index + 1}`}>
-                      <Download className="w-4 h-4" />
-                    </a>
-                  )}
-                </article>
-              ))}
-            </div>
-          </section>
-        )}
-
         {videos.length > 0 && (
           <section className="space-y-4">
             <div className="flex items-center justify-between"><h2 className="text-xl font-bold">Videos</h2><span className="text-xs text-gray-500">{videos.length} archivos</span></div>
@@ -150,6 +130,26 @@ export const ClientGalleryPage: React.FC<ClientGalleryPageProps> = ({ slug, toke
                         <Download className="w-4 h-4" />Descargar video
                       </a>
                     </div>
+                  )}
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {photos.length > 0 && (
+          <section className="space-y-4">
+            <div className="flex items-center justify-between"><h2 className="text-xl font-bold">Fotografías</h2><span className="text-xs text-gray-500">{photos.length} archivos</span></div>
+            <div className="columns-2 md:columns-3 lg:columns-4 gap-3">
+              {photos.map((item, index) => (
+                <article key={item.id} className="break-inside-avoid mb-3 rounded-xl overflow-hidden bg-[#161C28] border border-white/10 group relative">
+                  <button onClick={() => setActivePhotoIndex(index)} className="block w-full">
+                    <img src={item.url} alt={`Fotografía ${index + 1}`} className="w-full object-cover" loading="lazy" />
+                  </button>
+                  {downloadsEnabled && item.downloadUrl && (
+                    <a href={item.downloadUrl} target="_blank" rel="noreferrer" className="absolute bottom-3 right-3 p-2.5 rounded-full bg-[#D4AF37] text-black shadow-xl opacity-0 group-hover:opacity-100 transition-opacity" title="Descargar fotografía" aria-label={`Descargar fotografía ${index + 1}`}>
+                      <Download className="w-4 h-4" />
+                    </a>
                   )}
                 </article>
               ))}
