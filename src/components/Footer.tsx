@@ -1,5 +1,5 @@
 import React from 'react';
-import { Camera, MapPin, Mail, Phone, HeartHandshake, Clock, MessageSquare, Sparkles } from 'lucide-react';
+import { MapPin, Mail, Phone, HeartHandshake, Clock, MessageSquare, Sparkles } from 'lucide-react';
 import { RoutePath, FooterContact } from '../types';
 
 interface FooterProps {
@@ -8,6 +8,8 @@ interface FooterProps {
   onOpenAdminPortal?: () => void;
   footerContact?: FooterContact;
 }
+
+const XPH_LOGO = 'https://lh3.googleusercontent.com/d/1n-I-KcfYTHYzJZrND4rFHz4rCgLGekJq';
 
 export const Footer: React.FC<FooterProps> = ({
   onNavigateRoute,
@@ -29,10 +31,8 @@ export const Footer: React.FC<FooterProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           <div className="space-y-4 md:col-span-1">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#D4AF37] to-[#AA771C] p-0.5 flex items-center justify-center">
-                <div className="w-full h-full bg-[#0B0F17] rounded-[10px] flex items-center justify-center">
-                  <Camera className="w-4 h-4 text-[#D4AF37]" />
-                </div>
+              <div className="w-12 h-12 flex items-center justify-center shrink-0">
+                <img src={XPH_LOGO} alt="XPH Fotografía & Video" className="w-full h-full object-contain" />
               </div>
               <div>
                 <div className="text-base font-bold font-serif-luxury text-white">
