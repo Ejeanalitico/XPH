@@ -1,6 +1,6 @@
 import React from 'react';
 import { Sparkles, ChevronRight, HeartHandshake, MapPin, CalendarCheck, Camera } from 'lucide-react';
-import { RoutePath } from '../types';
+import { HeroCoverSetting, RoutePath } from '../types';
 
 interface HeroProps {
   currentRoute: RoutePath;
@@ -8,9 +8,17 @@ interface HeroProps {
   onGalleryClick: () => void;
   onCitaClick: () => void;
   heroCovers?: Partial<Record<RoutePath, string>>;
+  heroCoverSettings?: Partial<Record<RoutePath, HeroCoverSetting>>;
 }
 
-export const Hero: React.FC<HeroProps> = ({ currentRoute, onQuoteClick, onGalleryClick, onCitaClick, heroCovers = {} }) => {
+export const Hero: React.FC<HeroProps> = ({
+  currentRoute,
+  onQuoteClick,
+  onGalleryClick,
+  onCitaClick,
+  heroCovers = {},
+  heroCoverSettings = {},
+}) => {
   const routeContent: Record<RoutePath, { badge: string; title: string; highlight: string; subtitle: string; imageUrl: string; imageTag: string }> = {
     inicio: {
       badge: 'Fotografía & video en CDMX, Estado de México y zona centro',
@@ -63,8 +71,16 @@ export const Hero: React.FC<HeroProps> = ({ currentRoute, onQuoteClick, onGaller
   };
 
   const current = routeContent[currentRoute];
-  const imageUrl = heroCovers[currentRoute] || current.imageUrl;
-  const managedCover = Boolean(heroCovers[currentRoute]);
+  const setting = heroCoverSettings[currentRoute];
+  const imageUrl = setting?.url || heroCovers[currentRoute] || current.imageUrl;
+  const managedCover = Boolean(setting?.url || heroCovers[currentRoute]);
+  const coverLabel = setting?.label || current.imageTag;
+  const coverDescription = setting?.description || (managedCover
+    ? 'Portada seleccionada desde el administrador.'
+    : 'Puedes sustituir esta portada desde Administrador → Portadas.');
+  const positionX = setting?.positionX ?? 50;
+  const positionY = setting?.positionY ?? 50;
+  const zoom = Math.max(100, setting?.zoom ?? 100);
 
   return (
     <section className="relative overflow-hidden bg-[#0B0F17] pt-8 pb-14 lg:pt-16 lg:pb-28 border-b border-white/5">
@@ -89,10 +105,21 @@ export const Hero: React.FC<HeroProps> = ({ currentRoute, onQuoteClick, onGaller
 
           <div className="lg:col-span-5 relative">
             <div className="relative mx-auto max-w-md lg:max-w-none rounded-2xl overflow-hidden border border-white/15 bg-[#161C28] p-2 shadow-2xl shadow-black/80">
-              <div className="relative h-[420px] sm:h-[460px] rounded-xl overflow-hidden">
-                <img src={imageUrl} alt={current.imageTag} className="w-full h-full object-cover object-center" />
+              <div className="relative h-[420px] sm:h-[460px] rounded-xl overflow-hidden bg-black">
+                <img
+                  src={imageUrl}
+                  alt={coverLabel}
+                  className="absolute inset-0 w-full h-full object-cover transition-transform duration-300"
+                  style={{
+                    objectPosition: `${positionX}% ${positionY}%`,
+                    transform: `scale(${zoom / 100})`,
+                  }}
+                />
                 <div className="absolute inset-0 bg-gradient-to-t from-[#0B0F17] via-transparent to-transparent opacity-80" />
-                <div className="absolute bottom-4 left-4 right-4 p-4 rounded-xl bg-[#0B0F17]/80 backdrop-blur-md border border-white/10"><p className="text-xs uppercase tracking-widest text-[#D4AF37] font-semibold">{current.imageTag}</p><p className="text-xs text-gray-400 mt-1">{managedCover ? 'Portada seleccionada desde el administrador.' : 'Puedes sustituir esta portada desde Administrador → Portadas.'}</p></div>
+                <div className="absolute bottom-4 left-4 right-4 p-4 rounded-xl bg-[#0B0F17]/80 backdrop-blur-md border border-white/10">
+                  <p className="text-xs uppercase tracking-widest text-[#D4AF37] font-semibold">{coverLabel}</p>
+                  <p className="text-xs text-gray-400 mt-1">{coverDescription}</p>
+                </div>
               </div>
             </div>
           </div>
