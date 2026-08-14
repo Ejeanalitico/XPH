@@ -5,6 +5,14 @@ export type AdminSession = {
   password: string;
 };
 
+export type DriveImageRecord = {
+  id: string;
+  name: string;
+  url: string;
+  driveUrl?: string;
+  createdTime?: string;
+};
+
 let activeAdminSession: AdminSession | null = null;
 
 export function getCurrentAdminSession(): AdminSession | null {
@@ -39,6 +47,16 @@ export async function loadAdminConfig(session: AdminSession): Promise<Record<str
   });
   const data = await parseResponse(res);
   return data.config || {};
+}
+
+export async function loadDriveImages(session: AdminSession): Promise<DriveImageRecord[]> {
+  const res = await fetch('/api/proxy?action=adminDriveList', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(session),
+  });
+  const data = await parseResponse(res);
+  return Array.isArray(data.images) ? data.images : [];
 }
 
 export async function saveAdminConfig(
