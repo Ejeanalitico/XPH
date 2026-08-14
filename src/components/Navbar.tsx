@@ -53,11 +53,11 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
             </div>
             <div>
-              <span className="text-xl font-bold tracking-wider font-serif-luxury text-white flex items-center gap-1.5">
-                XAVI<span className="text-[#D4AF37] font-sans font-light">.PH</span>
+              <span className="text-lg sm:text-xl font-bold tracking-wider font-serif-luxury text-white flex items-center gap-1.5">
+                XPH <span className="text-[#D4AF37] font-sans font-light">Fotografía & Video</span>
               </span>
-              <span className="text-[10px] tracking-widest text-gray-400 uppercase block font-mono">
-                Fotografía & Video
+              <span className="text-[9px] sm:text-[10px] tracking-widest text-gray-400 uppercase block font-mono">
+                Producción Audiovisual
               </span>
             </div>
           </button>
@@ -144,10 +144,10 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         <div className="flex items-center gap-2 lg:hidden">
-          <button onClick={onToggleTheme} className="p-2 rounded-lg bg-white/5 text-gray-300">
+          <button onClick={onToggleTheme} className="p-2 rounded-lg bg-white/5 text-gray-300" aria-label="Cambiar tema">
             {isDarkMode ? <Sun className="w-4 h-4 text-[#D4AF37]" /> : <Moon className="w-4 h-4 text-indigo-600" />}
           </button>
-          <button onClick={() => setMobileMenuOpen((prev) => !prev)} className="p-2 rounded-lg bg-white/5 text-gray-300">
+          <button onClick={() => setMobileMenuOpen((prev) => !prev)} className="p-2 rounded-lg bg-white/5 text-gray-300" aria-label="Abrir menú">
             {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
           </button>
         </div>
