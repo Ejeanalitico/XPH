@@ -57,7 +57,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
         <div className="flex items-center gap-4 min-w-0">
           <button onClick={() => handleSelectRoute('inicio')} className="flex items-center gap-3 group text-left cursor-pointer min-w-0">
-            <div className="w-14 h-14 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
+            <div className="w-16 h-16 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
               <img src={XPH_LOGO} alt="XPH Fotografía & Video" className="w-full h-full object-contain" />
             </div>
             <div className="min-w-0">
