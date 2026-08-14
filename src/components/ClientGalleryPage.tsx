@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Camera, ChevronLeft, ChevronRight, Download, FileVideo2, Loader2, LockKeyhole, X } from 'lucide-react';
 import { GalleryImage } from '../types';
 
+type ClientGalleryMedia = GalleryImage & { streamUrl?: string };
+
 interface ClientGalleryPageProps {
   slug: string;
   token: string;
@@ -12,9 +14,47 @@ interface ClientGalleryResponse {
   title: string;
   clientName: string;
   allowDownloads: boolean;
-  media: GalleryImage[];
+  media: ClientGalleryMedia[];
   message?: string;
 }
+
+interface DriveVideoProps {
+  item: ClientGalleryMedia;
+  index: number;
+}
+
+const DriveVideo: React.FC<DriveVideoProps> = ({ item, index }) => {
+  const [usePreviewFallback, setUsePreviewFallback] = useState(false);
+  const originalSource = item.streamUrl || item.downloadUrl || '';
+
+  if (!usePreviewFallback && originalSource) {
+    return (
+      <video
+        src={originalSource}
+        title={`Video ${index + 1}`}
+        className="w-full h-full object-contain bg-black"
+        controls
+        playsInline
+        preload="metadata"
+        onError={() => setUsePreviewFallback(true)}
+      />
+    );
+  }
+
+  if (item.previewUrl) {
+    return (
+      <iframe
+        src={item.previewUrl}
+        title={`Video ${index + 1}`}
+        className="w-full h-full border-0"
+        allow="autoplay; fullscreen"
+        allowFullScreen
+      />
+    );
+  }
+
+  return <div className="w-full h-full flex items-center justify-center"><FileVideo2 className="w-12 h-12 text-[#D4AF37]" /></div>;
+};
 
 const fetchPrivateGallery = async (slug: string, token: string): Promise<ClientGalleryResponse> => {
   const response = await fetch(`/api/client-gallery?slug=${encodeURIComponent(slug)}&token=${encodeURIComponent(token)}&_t=${Date.now()}`, {
@@ -31,7 +71,7 @@ const fetchPrivateGallery = async (slug: string, token: string): Promise<ClientG
 export const ClientGalleryPage: React.FC<ClientGalleryPageProps> = ({ slug, token }) => {
   const [title, setTitle] = useState('Galería privada');
   const [clientName, setClientName] = useState('Cliente XPH');
-  const [media, setMedia] = useState<GalleryImage[]>([]);
+  const [media, setMedia] = useState<ClientGalleryMedia[]>([]);
   const [downloadsEnabled, setDownloadsEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -122,7 +162,7 @@ export const ClientGalleryPage: React.FC<ClientGalleryPageProps> = ({ slug, toke
               {videos.map((item, index) => (
                 <article key={item.id} className="rounded-2xl overflow-hidden bg-[#161C28] border border-white/10">
                   <div className="aspect-video bg-black">
-                    {item.previewUrl ? <iframe src={item.previewUrl} title={`Video ${index + 1}`} className="w-full h-full border-0" allow="autoplay" /> : <div className="w-full h-full flex items-center justify-center"><FileVideo2 className="w-12 h-12 text-[#D4AF37]" /></div>}
+                    <DriveVideo item={item} index={index} />
                   </div>
                   {downloadsEnabled && item.downloadUrl && (
                     <div className="p-4 flex justify-end">
