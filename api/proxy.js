@@ -38,6 +38,19 @@ async function fetchConfigFromScript() {
   return parsed;
 }
 
+async function fetchDriveListFromScript() {
+  const response = await fetch(`${APPS_SCRIPT_URL}?action=listDriveFolder&_t=${Date.now()}`, {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+    redirect: 'follow',
+  });
+  const text = await response.text();
+  let parsed;
+  try { parsed = JSON.parse(text); } catch (_) { throw new Error('Apps Script no devolvió la carpeta de Drive correctamente.'); }
+  if (!parsed || parsed.status !== 'success') throw new Error(parsed?.message || 'No se pudo leer Google Drive.');
+  return parsed;
+}
+
 function validAdmin(config, submitted) {
   const credentials = config?.adminCredentials || {};
   return (
@@ -46,14 +59,24 @@ function validAdmin(config, submitted) {
   );
 }
 
+function heroCoverMap(items) {
+  if (!Array.isArray(items)) return {};
+  return items.reduce((acc, item) => {
+    if (item?.mediaType === 'cover-meta' && item?.heroFor && item?.url) {
+      acc[String(item.heroFor)] = item.url;
+    }
+    return acc;
+  }, {});
+}
+
 function publicGalleryOnly(items) {
   if (!Array.isArray(items)) return [];
   return items
     .filter((item) => {
       if (!item || !item.url) return false;
-      if (item.visibility === 'private') return false;
+      if (item.visibility === 'private' || item.visibility === 'cover') return false;
       if (item.galleryId || item.gallerySlug || item.galleryToken) return false;
-      if (item.mediaType === 'gallery-meta') return false;
+      if (item.mediaType === 'gallery-meta' || item.mediaType === 'cover-meta' || item.mediaType === 'video') return false;
       if (String(item.category || '').toLowerCase() === 'private') return false;
       return true;
     })
@@ -70,9 +93,11 @@ function sanitizePublicConfig(payload) {
   if (!payload || typeof payload !== 'object') return payload;
   const copy = JSON.parse(JSON.stringify(payload));
   if (copy.config && typeof copy.config === 'object') {
+    const allGalleryItems = Array.isArray(copy.config.galleryImages) ? copy.config.galleryImages : [];
+    copy.config.heroCovers = heroCoverMap(allGalleryItems);
+    copy.config.galleryImages = publicGalleryOnly(allGalleryItems);
     delete copy.config.adminCredentials;
     delete copy.config.quotes;
-    copy.config.galleryImages = publicGalleryOnly(copy.config.galleryImages);
   }
   return copy;
 }
@@ -139,7 +164,7 @@ export default async function handler(req, res) {
   try {
     const action = String(req.query?.action || '');
 
-    if (req.method === 'POST' && ['adminLogin', 'adminConfig', 'adminSaveConfig', 'adminUpload'].includes(action)) {
+    if (req.method === 'POST' && ['adminLogin', 'adminConfig', 'adminSaveConfig', 'adminUpload', 'adminDriveList'].includes(action)) {
       const raw = await readBody(req);
       let submitted = {};
       try { submitted = JSON.parse(raw || '{}'); } catch (_) {}
@@ -155,6 +180,10 @@ export default async function handler(req, res) {
       }
       if (action === 'adminConfig') {
         return res.status(200).json({ status: 'success', config: sanitizeAdminConfig(config) });
+      }
+      if (action === 'adminDriveList') {
+        const drive = await fetchDriveListFromScript();
+        return res.status(200).json({ status: 'success', images: Array.isArray(drive.images) ? drive.images : [] });
       }
       if (action === 'adminSaveConfig') {
         const patch = submitted.patch && typeof submitted.patch === 'object' ? submitted.patch : {};
