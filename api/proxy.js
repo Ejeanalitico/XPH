@@ -71,8 +71,8 @@ function sanitizePublicConfig(payload) {
   const copy = JSON.parse(JSON.stringify(payload));
   if (copy.config && typeof copy.config === 'object') {
     delete copy.config.adminCredentials;
-    copy.config.galleryImages = publicGalleryOnly(copy.config.galleryImages);
     delete copy.config.quotes;
+    copy.config.galleryImages = publicGalleryOnly(copy.config.galleryImages);
   }
   return copy;
 }
@@ -91,7 +91,6 @@ async function forwardSaveConfig(patch, auditType, auditDetails) {
     auditType: auditType || 'ACTUALIZACION_ADMIN',
     auditDetails: auditDetails || 'Cambios guardados desde panel administrador',
   });
-
   const response = await fetch(APPS_SCRIPT_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -102,6 +101,29 @@ async function forwardSaveConfig(patch, auditType, auditDetails) {
   let parsed;
   try { parsed = JSON.parse(text); } catch (_) { throw new Error('Apps Script no confirmó el guardado.'); }
   if (!parsed || parsed.status !== 'success') throw new Error(parsed?.message || 'No se pudo guardar en Apps Script.');
+  return parsed;
+}
+
+async function forwardUpload(submitted) {
+  const body = JSON.stringify({
+    action: 'uploadPhoto',
+    filename: submitted.filename,
+    title: submitted.title,
+    category: submitted.category,
+    location: submitted.location,
+    mimeType: submitted.mimeType,
+    base64: submitted.base64,
+  });
+  const response = await fetch(APPS_SCRIPT_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body,
+    redirect: 'follow',
+  });
+  const text = await response.text();
+  let parsed;
+  try { parsed = JSON.parse(text); } catch (_) { throw new Error('Apps Script no confirmó la carga.'); }
+  if (!parsed || parsed.status !== 'success' || !parsed.fileId) throw new Error(parsed?.message || 'No se pudo subir el archivo a Drive.');
   return parsed;
 }
 
@@ -117,31 +139,65 @@ export default async function handler(req, res) {
   try {
     const action = String(req.query?.action || '');
 
-    if (req.method === 'POST' && ['adminLogin', 'adminConfig', 'adminSaveConfig'].includes(action)) {
+    if (req.method === 'POST' && ['adminLogin', 'adminConfig', 'adminSaveConfig', 'adminUpload'].includes(action)) {
       const raw = await readBody(req);
       let submitted = {};
       try { submitted = JSON.parse(raw || '{}'); } catch (_) {}
 
       const payload = await fetchConfigFromScript();
       const config = normalizeConfig(payload);
-      const authenticated = validAdmin(config, submitted);
-      if (!authenticated) {
+      if (!validAdmin(config, submitted)) {
         return res.status(401).json({ status: 'error', authenticated: false, message: 'Credenciales incorrectas.' });
       }
 
       if (action === 'adminLogin') {
         return res.status(200).json({ status: 'success', authenticated: true });
       }
-
       if (action === 'adminConfig') {
         return res.status(200).json({ status: 'success', config: sanitizeAdminConfig(config) });
       }
+      if (action === 'adminSaveConfig') {
+        const patch = submitted.patch && typeof submitted.patch === 'object' ? submitted.patch : {};
+        if ('adminCredentials' in patch) delete patch.adminCredentials;
+        if ('quotes' in patch) delete patch.quotes;
+        const result = await forwardSaveConfig(patch, submitted.auditType, submitted.auditDetails);
+        return res.status(200).json({ status: 'success', message: result.message || 'Cambios guardados.' });
+      }
+      if (action === 'adminUpload') {
+        const uploaded = await forwardUpload(submitted);
+        return res.status(200).json({
+          status: 'success',
+          fileId: uploaded.fileId,
+          url: uploaded.url,
+          driveUrl: uploaded.driveUrl,
+        });
+      }
+    }
 
-      const patch = submitted.patch && typeof submitted.patch === 'object' ? submitted.patch : {};
-      if ('adminCredentials' in patch) delete patch.adminCredentials;
-      if ('quotes' in patch) delete patch.quotes;
-      const result = await forwardSaveConfig(patch, submitted.auditType, submitted.auditDetails);
-      return res.status(200).json({ status: 'success', message: result.message || 'Cambios guardados.' });
+    if (req.method === 'POST' && action === 'submitLead') {
+      const raw = await readBody(req);
+      let submitted = {};
+      try { submitted = JSON.parse(raw || '{}'); } catch (_) {}
+      const lead = submitted.lead && typeof submitted.lead === 'object' ? submitted.lead : null;
+      if (!lead || !lead.clientName || !lead.clientPhone || !lead.eventDate) {
+        return res.status(400).json({ status: 'error', message: 'Solicitud incompleta.' });
+      }
+      const payload = await fetchConfigFromScript();
+      const config = normalizeConfig(payload);
+      const quotes = Array.isArray(config.quotes) ? config.quotes : [];
+      const safeLead = {
+        ...lead,
+        id: lead.id || `quote-${Date.now()}`,
+        status: 'Pendiente',
+        depositAmount: 0,
+        createdAt: lead.createdAt || new Date().toISOString().split('T')[0],
+      };
+      await forwardSaveConfig(
+        { quotes: [safeLead, ...quotes] },
+        'NUEVA_SOLICITUD_DISPONIBILIDAD',
+        `Solicitud web de ${String(safeLead.clientName).slice(0, 120)} para ${String(safeLead.eventDate).slice(0, 30)}`
+      );
+      return res.status(200).json({ status: 'success', message: 'Solicitud registrada.' });
     }
 
     if (req.method === 'GET' && action === 'clientGallery') {
@@ -158,7 +214,6 @@ export default async function handler(req, res) {
         String(item.gallerySlug || '') === slug &&
         String(item.galleryToken || '') === token
       );
-
       if (!meta) return res.status(404).json({ status: 'error', message: 'Galería privada no encontrada o liga inválida.' });
 
       const media = items
@@ -177,38 +232,12 @@ export default async function handler(req, res) {
       });
     }
 
-    let scriptRes;
-
-    if (req.method === 'POST') {
-      const bodyStr = await readBody(req);
-      scriptRes = await fetch(APPS_SCRIPT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: bodyStr,
-        redirect: 'follow',
-      });
-    } else {
-      const params = new URLSearchParams();
-      if (req.query && typeof req.query === 'object') {
-        for (const [key, value] of Object.entries(req.query)) params.set(key, String(value));
-      }
-      if (!params.has('_t')) params.set('_t', Date.now().toString());
-      scriptRes = await fetch(`${APPS_SCRIPT_URL}?${params.toString()}`, {
-        method: 'GET',
-        headers: { Accept: 'application/json' },
-        redirect: 'follow',
-      });
-    }
-
-    const text = await scriptRes.text();
-    let parsed;
-    try { parsed = JSON.parse(text); } catch (_) { throw new Error('Apps Script devolvió una respuesta no válida.'); }
-
     if (req.method === 'GET' && (!action || action === 'loadConfig')) {
-      parsed = sanitizePublicConfig(parsed);
+      const payload = await fetchConfigFromScript();
+      return res.status(200).json(sanitizePublicConfig(payload));
     }
 
-    return res.status(200).json(parsed);
+    return res.status(403).json({ status: 'error', message: 'Acción no permitida.' });
   } catch (err) {
     console.error('[XPH Proxy] Error:', err);
     return res.status(502).json({ status: 'error', message: err.message || 'Proxy error' });
