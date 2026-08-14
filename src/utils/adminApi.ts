@@ -1,8 +1,8 @@
 import { GalleryImage } from '../types';
 
 export type AdminSession = {
-  email: string;
-  password: string;
+  authenticated: true;
+  email?: string;
 };
 
 export type DriveImageRecord = {
@@ -27,50 +27,78 @@ async function parseResponse(res: Response) {
   return data;
 }
 
+export async function resumeAdminSession(): Promise<AdminSession | null> {
+  const res = await fetch('/api/proxy?action=adminSession', {
+    method: 'GET',
+    credentials: 'include',
+    cache: 'no-store',
+  });
+  const data = await parseResponse(res);
+  if (!data.authenticated) {
+    activeAdminSession = null;
+    return null;
+  }
+  activeAdminSession = { authenticated: true, email: data.email || '' };
+  return activeAdminSession;
+}
+
 export async function adminLogin(email: string, password: string): Promise<AdminSession> {
   const res = await fetch('/api/proxy?action=adminLogin', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify({ email, password }),
   });
   const data = await parseResponse(res);
   if (!data.authenticated) throw new Error('Credenciales incorrectas.');
-  activeAdminSession = { email, password };
+  activeAdminSession = { authenticated: true, email: data.email || email };
   return activeAdminSession;
 }
 
-export async function loadAdminConfig(session: AdminSession): Promise<Record<string, any>> {
+export async function adminLogout(): Promise<void> {
+  await fetch('/api/proxy?action=adminLogout', {
+    method: 'POST',
+    credentials: 'include',
+  }).catch(() => null);
+  activeAdminSession = null;
+}
+
+export async function loadAdminConfig(_session?: AdminSession | null): Promise<Record<string, any>> {
   const res = await fetch('/api/proxy?action=adminConfig', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(session),
+    credentials: 'include',
+    body: '{}',
   });
   const data = await parseResponse(res);
   return data.config || {};
 }
 
-export async function loadDriveImages(session: AdminSession): Promise<DriveImageRecord[]> {
+export async function loadDriveImages(_session?: AdminSession | null): Promise<DriveImageRecord[]> {
   const res = await fetch('/api/proxy?action=adminDriveList', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(session),
+    credentials: 'include',
+    body: '{}',
   });
   const data = await parseResponse(res);
   return Array.isArray(data.images) ? data.images : [];
 }
 
 export async function saveAdminConfig(
-  session: AdminSession,
+  _session: AdminSession | null | undefined,
   patch: Record<string, any>,
   auditType = 'ACTUALIZACION_ADMIN',
   auditDetails = 'Cambios guardados desde el panel administrador'
-): Promise<void> {
+): Promise<Record<string, any>> {
   const res = await fetch('/api/proxy?action=adminSaveConfig', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...session, patch, auditType, auditDetails }),
+    credentials: 'include',
+    body: JSON.stringify({ patch, auditType, auditDetails }),
   });
-  await parseResponse(res);
+  const data = await parseResponse(res);
+  return data.config || {};
 }
 
 async function fileToDataUrl(file: File): Promise<string> {
@@ -108,7 +136,7 @@ async function compressImage(dataUrl: string): Promise<string> {
 }
 
 export async function adminUploadMedia(
-  session: AdminSession,
+  _session: AdminSession | null | undefined,
   file: File,
   options: { title: string; category: string; location: string }
 ): Promise<{ fileId: string; url: string }> {
@@ -122,8 +150,8 @@ export async function adminUploadMedia(
   const res = await fetch('/api/proxy?action=adminUpload', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify({
-      ...session,
       filename: file.name,
       title: options.title,
       category: options.category,
