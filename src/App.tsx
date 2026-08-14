@@ -4,7 +4,16 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { BookingState, FooterContact, GalleryImage, RoutePath, EventType, ToastMessage } from './types';
+import {
+  AddOnOption,
+  BookingState,
+  EventType,
+  FooterContact,
+  GalleryImage,
+  PackageOption,
+  RoutePath,
+  ToastMessage,
+} from './types';
 import { PACKAGES_BY_EVENT, ADDONS_CATALOG } from './data/packages';
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
@@ -44,7 +53,6 @@ const sanitizePublicContact = (cloudContact?: Partial<FooterContact>): FooterCon
   const whatsapp = cleanWhatsApp(cloudContact?.whatsapp || cloudContact?.phone || DEFAULT_WHATSAPP);
   const cloudPhone = String(cloudContact?.phone || '');
   const looksLikePlaceholder = /1234\s*5678/.test(cloudPhone) || !cloudPhone.trim();
-
   return {
     phone: looksLikePlaceholder ? displayPhoneFromWhatsApp(whatsapp) : cloudPhone,
     whatsapp,
@@ -55,10 +63,18 @@ const sanitizePublicContact = (cloudContact?: Partial<FooterContact>): FooterCon
   };
 };
 
+const hasManagedPackages = (value: any): value is Record<EventType, PackageOption[]> =>
+  Boolean(value && typeof value === 'object' && Object.values(value).flat().some((pkg: any) => pkg?.managedByAdmin));
+
+const hasManagedAddons = (value: any): value is AddOnOption[] =>
+  Array.isArray(value) && value.some((addon) => addon?.managedByAdmin);
+
 export default function App() {
   const [currentRoute, setCurrentRoute] = useState<RoutePath>('inicio');
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([]);
   const [footerContact, setFooterContact] = useState<FooterContact>(defaultContact);
+  const [packagesState, setPackagesState] = useState<Record<EventType, PackageOption[]>>(PACKAGES_BY_EVENT);
+  const [addonsState, setAddonsState] = useState<AddOnOption[]>(ADDONS_CATALOG);
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
@@ -85,14 +101,37 @@ export default function App() {
 
       if (Array.isArray(cloudData.galleryImages)) {
         const realGallery = cloudData.galleryImages.filter((image: GalleryImage) =>
-          Boolean(image?.id && image?.url && image?.category)
+          Boolean(
+            image?.id &&
+            image?.url &&
+            image?.category &&
+            image.visibility !== 'private' &&
+            image.mediaType !== 'gallery-meta' &&
+            image.category !== 'private'
+          )
         );
         setGalleryImages(realGallery);
       }
 
-      if (cloudData.footerContact) {
-        setFooterContact(sanitizePublicContact(cloudData.footerContact));
+      if (hasManagedPackages(cloudData.packages)) {
+        setPackagesState(cloudData.packages);
+        const available = cloudData.packages.bodas || [];
+        const selected = available.find((pkg) => pkg.popular) || available[0];
+        if (selected) {
+          setBookingState((prev) => ({
+            ...prev,
+            eventType: 'bodas',
+            selectedPackageId: selected.id,
+            selectedAddons: [],
+            extraHours: 0,
+            total: selected.price,
+            depositAmount: 0,
+          }));
+        }
       }
+
+      if (hasManagedAddons(cloudData.addons)) setAddonsState(cloudData.addons);
+      if (cloudData.footerContact) setFooterContact(sanitizePublicContact(cloudData.footerContact));
     });
   }, []);
 
@@ -102,7 +141,6 @@ export default function App() {
       const validRoutes: RoutePath[] = ['inicio', 'bodas', 'xv-anos', 'bautizos', 'retratos', 'empresarial'];
       if (validRoutes.includes(hash as RoutePath)) setCurrentRoute(hash as RoutePath);
     };
-
     handleHashChange();
     window.addEventListener('hashchange', handleHashChange);
     window.addEventListener('popstate', handleHashChange);
@@ -138,50 +176,40 @@ export default function App() {
 
     if (route !== 'inicio') {
       const eventType = route as EventType;
-      const available = PACKAGES_BY_EVENT[eventType] || PACKAGES_BY_EVENT.bodas;
+      const available = packagesState[eventType] || packagesState.bodas || [];
       const selected = available.find((pkg) => pkg.popular) || available[0];
-      setBookingState((prev) => ({
-        ...prev,
-        eventType,
-        selectedPackageId: selected.id,
-        selectedAddons: selected.price === 0 ? [] : prev.selectedAddons,
-        extraHours: selected.price === 0 ? 0 : prev.extraHours,
-        total: selected.price,
-        depositAmount: 0,
-      }));
+      if (selected) {
+        setBookingState((prev) => ({
+          ...prev,
+          eventType,
+          selectedPackageId: selected.id,
+          selectedAddons: selected.price === 0 ? [] : prev.selectedAddons.filter((id) => addonsState.some((addon) => addon.id === id)),
+          extraHours: selected.price === 0 ? 0 : prev.extraHours,
+          total: selected.price,
+          depositAmount: 0,
+        }));
+      }
     }
 
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleScrollTo = (id: string) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
-  };
-
+  const handleScrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
   const whatsappNumber = cleanWhatsApp(footerContact.whatsapp || footerContact.phone);
 
   return (
     <div className={`min-h-screen ${isDarkMode ? 'bg-[#0B0F17] text-[#F9FAFB]' : 'bg-[#F8FAFC] text-[#0F172A]'} font-sans antialiased transition-colors duration-300`}>
       <ToastContainer toasts={toasts} onDismiss={(id) => setToasts((prev) => prev.filter((toast) => toast.id !== id))} />
 
-      <Navbar
-        currentRoute={currentRoute}
-        onNavigateRoute={handleNavigateRoute}
-        isDarkMode={isDarkMode}
-        onToggleTheme={() => setIsDarkMode((prev) => !prev)}
-      />
+      <Navbar currentRoute={currentRoute} onNavigateRoute={handleNavigateRoute} isDarkMode={isDarkMode} onToggleTheme={() => setIsDarkMode((prev) => !prev)} />
 
-      <Hero
-        currentRoute={currentRoute}
-        onQuoteClick={() => handleScrollTo('cotizador')}
-        onGalleryClick={() => handleScrollTo('galerias')}
-        onCitaClick={() => handleScrollTo('solicitud')}
-      />
+      <Hero currentRoute={currentRoute} onQuoteClick={() => handleScrollTo('cotizador')} onGalleryClick={() => handleScrollTo('galerias')} onCitaClick={() => handleScrollTo('solicitud')} />
 
       <GallerySection
         currentRoute={currentRoute}
         onNavigateRoute={handleNavigateRoute}
         images={galleryImages}
+        onShowToast={showToast}
       />
 
       <PricingQuoteEngine
@@ -190,22 +218,18 @@ export default function App() {
         bookingState={bookingState}
         onUpdateBookingState={setBookingState}
         onProceedToBooking={() => handleScrollTo('solicitud')}
-        packages={PACKAGES_BY_EVENT}
-        addons={ADDONS_CATALOG}
+        packages={packagesState}
+        addons={addonsState}
       />
 
-      <InPersonConsultation
-        bookingState={bookingState}
-        onNavigateToQuote={() => handleScrollTo('cotizador')}
-        onShowToast={showToast}
-      />
+      <InPersonConsultation bookingState={bookingState} onNavigateToQuote={() => handleScrollTo('cotizador')} onShowToast={showToast} />
 
       <BookingWizard
         bookingState={bookingState}
         onUpdateBookingState={setBookingState}
         onShowToast={showToast}
-        packages={PACKAGES_BY_EVENT}
-        addons={ADDONS_CATALOG}
+        packages={packagesState}
+        addons={addonsState}
       />
 
       <Footer onNavigateRoute={handleNavigateRoute} footerContact={footerContact} />
