@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Sun, Moon, Menu, X, Sparkles, ChevronDown, MapPin, CalendarCheck, Shield } from 'lucide-react';
+import { Menu, X, Sparkles, ChevronDown, MapPin, CalendarCheck, Shield } from 'lucide-react';
 import { RoutePath } from '../types';
 
 interface NavbarProps {
@@ -9,8 +9,6 @@ interface NavbarProps {
   onOpenAdminPortal?: () => void;
   favoritesCount?: number;
   onOpenFavorites?: () => void;
-  isDarkMode: boolean;
-  onToggleTheme: () => void;
 }
 
 const XPH_LOGO = '/xph-logo.png?v=20260814-6';
@@ -18,8 +16,6 @@ const XPH_LOGO = '/xph-logo.png?v=20260814-6';
 export const Navbar: React.FC<NavbarProps> = ({
   currentRoute,
   onNavigateRoute,
-  isDarkMode,
-  onToggleTheme,
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [routeDropdownOpen, setRouteDropdownOpen] = useState(false);
@@ -53,11 +49,11 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   return (
-    <header className="sticky top-0 z-40 w-full backdrop-blur-xl bg-[#0B0F17]/90 border-b border-white/10 transition-colors duration-300">
+    <header className="sticky top-0 z-40 w-full backdrop-blur-xl bg-[#0B0F17]/95 border-b border-white/10">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
         <div className="flex items-center gap-4 min-w-0">
           <button onClick={() => handleSelectRoute('inicio')} className="flex items-center gap-3 group text-left cursor-pointer min-w-0">
-            <div className="w-16 h-16 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
+            <div className="w-16 h-16 p-1.5 rounded-2xl bg-[#0B0F17] border border-white/10 shadow-inner flex items-center justify-center group-hover:border-[#D4AF37]/30 group-hover:scale-105 transition-all shrink-0 overflow-hidden">
               <img src={XPH_LOGO} alt="XPH Fotografía & Video" className="w-full h-full object-contain" />
             </div>
             <div className="min-w-0">
@@ -85,12 +81,12 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button onClick={openAdmin} className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-[#D4AF37]/40 hover:text-[#D4AF37] transition-all flex items-center gap-1.5"><Shield className="w-3.5 h-3.5" />Administrador</button>
         </nav>
 
-        <div className="hidden lg:flex items-center gap-3"><button onClick={onToggleTheme} className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-gray-300 hover:text-[#D4AF37] hover:border-[#D4AF37]/30 transition-all cursor-pointer" title={isDarkMode ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}>{isDarkMode ? <Sun className="w-4 h-4 text-[#D4AF37]" /> : <Moon className="w-4 h-4 text-indigo-600" />}</button></div>
-
-        <div className="flex items-center gap-2 lg:hidden"><button onClick={onToggleTheme} className="p-2 rounded-lg bg-white/5 text-gray-300" aria-label="Cambiar tema">{isDarkMode ? <Sun className="w-4 h-4 text-[#D4AF37]" /> : <Moon className="w-4 h-4 text-indigo-600" />}</button><button onClick={() => setMobileMenuOpen((prev) => !prev)} className="p-2 rounded-lg bg-white/5 text-gray-300" aria-label="Abrir menú">{mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}</button></div>
+        <div className="flex items-center gap-2 md:hidden">
+          <button onClick={() => setMobileMenuOpen((prev) => !prev)} className="p-2 rounded-lg bg-white/5 text-gray-300" aria-label="Abrir menú">{mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}</button>
+        </div>
       </div>
 
-      {mobileMenuOpen && <div className="lg:hidden bg-[#0B0F17] border-b border-white/10 px-4 pt-3 pb-6 space-y-4"><div className="text-[10px] font-bold tracking-wider uppercase text-gray-400 font-mono">Especialidades</div><div className="grid grid-cols-1 gap-2">{selectableRoutes.map((route) => <button key={route} onClick={() => handleSelectRoute(route)} className={`p-2.5 rounded-xl text-left flex items-center gap-3 cursor-pointer ${currentRoute === route ? 'bg-[#D4AF37]/20 border border-[#D4AF37]/40 text-[#D4AF37] font-bold' : 'bg-white/5 text-gray-300'}`}><span>{routeLabels[route].icon}</span><span className="text-sm">{routeLabels[route].title}</span></button>)}</div><div className="pt-2 border-t border-white/10 flex flex-col gap-2 font-medium text-gray-300"><button onClick={() => scrollToSection('galerias')} className="text-left py-2 border-b border-white/5 hover:text-[#D4AF37]">Galería</button><button onClick={() => scrollToSection('cotizador')} className="text-left py-2 border-b border-white/5 hover:text-[#D4AF37] text-[#D4AF37]">Cotizador</button><button onClick={() => scrollToSection('solicitud')} className="text-left py-2 border-b border-white/5 hover:text-[#D4AF37] font-semibold">Solicitar disponibilidad</button><button onClick={openAdmin} className="text-left py-2 flex items-center gap-2 text-[#D4AF37]"><Shield className="w-4 h-4" />Administrador</button></div></div>}
+      {mobileMenuOpen && <div className="md:hidden bg-[#0B0F17] border-b border-white/10 px-4 pt-3 pb-6 space-y-4"><div className="text-[10px] font-bold tracking-wider uppercase text-gray-400 font-mono">Especialidades</div><div className="grid grid-cols-1 gap-2">{selectableRoutes.map((route) => <button key={route} onClick={() => handleSelectRoute(route)} className={`p-2.5 rounded-xl text-left flex items-center gap-3 cursor-pointer ${currentRoute === route ? 'bg-[#D4AF37]/20 border border-[#D4AF37]/40 text-[#D4AF37] font-bold' : 'bg-white/5 text-gray-300'}`}><span>{routeLabels[route].icon}</span><span className="text-sm">{routeLabels[route].title}</span></button>)}</div><div className="pt-2 border-t border-white/10 flex flex-col gap-2 font-medium text-gray-300"><button onClick={() => scrollToSection('galerias')} className="text-left py-2 border-b border-white/5 hover:text-[#D4AF37]">Galería</button><button onClick={() => scrollToSection('cotizador')} className="text-left py-2 border-b border-white/5 hover:text-[#D4AF37] text-[#D4AF37]">Cotizador</button><button onClick={() => scrollToSection('solicitud')} className="text-left py-2 border-b border-white/5 hover:text-[#D4AF37] font-semibold">Solicitar disponibilidad</button><button onClick={openAdmin} className="text-left py-2 flex items-center gap-2 text-[#D4AF37]"><Shield className="w-4 h-4" />Administrador</button></div></div>}
     </header>
   );
 };
