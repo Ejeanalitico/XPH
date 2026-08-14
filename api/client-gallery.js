@@ -10,6 +10,14 @@ function normalizeConfig(payload) {
   return raw && typeof raw === 'object' ? raw : {};
 }
 
+function drivePreviewUrl(fileId) {
+  return `https://drive.google.com/file/d/${encodeURIComponent(fileId)}/preview`;
+}
+
+function driveOriginalStreamUrl(fileId) {
+  return `https://drive.usercontent.google.com/download?id=${encodeURIComponent(fileId)}&export=download&confirm=t`;
+}
+
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, max-age=0');
   res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
@@ -56,18 +64,24 @@ export default async function handler(req, res) {
         item?.galleryId === meta.galleryId &&
         item?.mediaType !== 'gallery-meta'
       )
-      .map((item) => ({
-        id: item.id,
-        category: 'private',
-        url: item.url,
-        visibility: 'private',
-        mediaType: item.mediaType === 'video' ? 'video' : 'image',
-        galleryId: item.galleryId,
-        galleryAllowDownloads: allowDownloads,
-        downloadUrl: allowDownloads ? item.downloadUrl : undefined,
-        previewUrl: item.previewUrl || item.url,
-        createdAt: item.createdAt,
-      }));
+      .map((item) => {
+        const isVideo = item.mediaType === 'video';
+        const fileId = String(item.id || '').trim();
+        return {
+          id: item.id,
+          title: item.title || '',
+          category: 'private',
+          url: item.url,
+          visibility: 'private',
+          mediaType: isVideo ? 'video' : 'image',
+          galleryId: item.galleryId,
+          galleryAllowDownloads: allowDownloads,
+          downloadUrl: allowDownloads ? item.downloadUrl : undefined,
+          previewUrl: isVideo && fileId ? drivePreviewUrl(fileId) : (item.previewUrl || item.url),
+          streamUrl: isVideo && fileId ? driveOriginalStreamUrl(fileId) : undefined,
+          createdAt: item.createdAt,
+        };
+      });
 
     return res.status(200).json({
       status: 'success',
