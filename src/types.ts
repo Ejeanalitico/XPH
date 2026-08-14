@@ -32,6 +32,7 @@ export interface GalleryImage {
   galleryTitle?: string;
   galleryClient?: string;
   galleryToken?: string;
+  galleryAllowDownloads?: boolean;
   downloadUrl?: string;
   previewUrl?: string;
   createdAt?: string;
@@ -46,6 +47,7 @@ export interface PrivateGallerySummary {
   token: string;
   createdAt: string;
   mediaCount: number;
+  allowDownloads: boolean;
 }
 
 export interface PackageOption {
