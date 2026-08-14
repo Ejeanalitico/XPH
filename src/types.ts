@@ -4,8 +4,8 @@ export type EventType = 'bodas' | 'xv-anos' | 'bautizos' | 'retratos' | 'empresa
 
 export type GalleryCategory = 'all' | 'bodas' | 'xv-anos' | 'bautizos' | 'retratos' | 'empresarial' | 'previa';
 
-export type GalleryVisibility = 'public' | 'private';
-export type GalleryMediaType = 'image' | 'video' | 'gallery-meta';
+export type GalleryVisibility = 'public' | 'private' | 'cover';
+export type GalleryMediaType = 'image' | 'video' | 'gallery-meta' | 'cover-meta';
 
 export interface GalleryImage {
   id: string;
@@ -26,6 +26,7 @@ export interface GalleryImage {
   downloadUrl?: string;
   previewUrl?: string;
   createdAt?: string;
+  heroFor?: RoutePath;
 }
 
 export interface PrivateGallerySummary {
