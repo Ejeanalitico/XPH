@@ -6,127 +6,43 @@
 import React, { useEffect, useState } from 'react';
 import {
   AddOnOption,
-  AdminCredentials,
   BookingState,
   EventType,
   FooterContact,
   GalleryImage,
   PackageOption,
-  QuoteRecord,
   RoutePath,
-  Testimonial,
   ToastMessage,
 } from './types';
 import { GALLERY_IMAGES } from './data/gallery';
 import { ADDONS_CATALOG, PACKAGES_BY_EVENT } from './data/packages';
-import { AdminPortalModal } from './components/AdminPortalModal';
 import { BookingWizard } from './components/BookingWizard';
-import { ClientPortalModal } from './components/ClientPortalModal';
 import { Footer } from './components/Footer';
 import { GallerySection } from './components/GallerySection';
 import { Hero } from './components/Hero';
 import { InPersonConsultation } from './components/InPersonConsultation';
 import { Navbar } from './components/Navbar';
 import { PricingQuoteEngine } from './components/PricingQuoteEngine';
-import { TestimonialsSection } from './components/TestimonialsSection';
 import { ToastContainer } from './components/Toast';
 import { WhatsAppFloatingButton } from './components/WhatsAppFloatingButton';
 
+const COMMERCIAL_WHATSAPP = '525516342663';
+
+const FOOTER_CONTACT: FooterContact = {
+  phone: '+52 55 1634 2663',
+  whatsapp: '+52 55 1634 2663',
+  email: 'contacto@xavi.ph',
+  address: 'CDMX, Estado de México, Morelos, Puebla, Querétaro, Tlaxcala y Pachuca',
+  schedule: 'Atención por WhatsApp y citas previamente coordinadas',
+  aboutText:
+    'Fotografía y video para bodas, XV años, sesiones y eventos, con cobertura en CDMX, Estado de México y estados de la zona centro.',
+};
+
 export default function App() {
   const [currentRoute, setCurrentRoute] = useState<RoutePath>('inicio');
-
-  const [adminCredentials, setAdminCredentials] = useState<AdminCredentials>({
-    email: 'Xavier.garcia.vp@gmail.com',
-    pass: '1234',
-  });
-
-  const [packagesState, setPackagesState] = useState<Record<EventType, PackageOption[]>>(PACKAGES_BY_EVENT);
-  const [addonsState, setAddonsState] = useState<AddOnOption[]>(ADDONS_CATALOG);
-  const [galleryImages, setGalleryImages] = useState<GalleryImage[]>(GALLERY_IMAGES);
-
-  const [footerContact, setFooterContact] = useState<FooterContact>({
-    phone: '+52 55 1234 5678',
-    whatsapp: '+52 55 1234 5678',
-    email: 'contacto@xavi.ph',
-    address: 'CDMX, Estado de México, Morelos, Puebla, Querétaro, Tlaxcala & Pachuca',
-    schedule: 'Lunes a Sábado: 09:00 - 19:00 hrs',
-    aboutText:
-      'Estudio especializado en fotografía editorial, cine documental y fotografía empresarial con cobertura en CDMX, Estado de México, Morelos, Tlaxcala, Puebla, Pachuca, Querétaro y toda la República.',
-  });
-
-  const [testimonials, setTestimonials] = useState<Testimonial[]>([
-    {
-      id: 't-1',
-      clientName: 'Renata & Mateo',
-      eventType: 'bodas',
-      date: '2026-07-15',
-      rating: 5,
-      comment:
-        'Xavi capturó la esencia pura de nuestra boda en Polanco. La luz, el profesionalismo y la calidez en la cita presencial nos dieron absoluta confianza.',
-      verified: true,
-    },
-    {
-      id: 't-2',
-      clientName: 'Familia Gómez Suárez',
-      eventType: 'bautizos',
-      date: '2026-06-20',
-      rating: 5,
-      comment:
-        'Impresionante atención y sensibilidad con nuestro bebé. La entrega del álbum físico con pasta en lino es una joya que conservaremos siempre.',
-      verified: true,
-    },
-    {
-      id: 't-3',
-      clientName: 'Grupo Financiero Lomas',
-      eventType: 'empresarial',
-      date: '2026-08-01',
-      rating: 5,
-      comment:
-        'Excelente fotografía ejecutiva y de branding para nuestra directiva en CDMX. Entregas puntuales y de nivel internacional.',
-      verified: true,
-    },
-  ]);
-
-  const [quotesState, setQuotesState] = useState<QuoteRecord[]>([
-    {
-      id: 'quote-101',
-      clientName: 'Valeria & Carlos',
-      clientEmail: 'valeria.carlos@gmail.com',
-      clientPhone: '+52 55 9876 5432',
-      eventType: 'bodas',
-      selectedPackageId: 'pro',
-      packageName: 'COBERTURA TOTAL (PRO)',
-      packagePrice: 24500,
-      addons: ['Photobook Impreso para Padres', 'Horas Extra (+2h)'],
-      extraHours: 2,
-      total: 33000,
-      depositAmount: 0,
-      eventDate: '2026-10-14',
-      eventCity: 'Oaxaca, Oax.',
-      status: 'Pendiente',
-      createdAt: '2026-08-10',
-      notes: 'Solicitud de información registrada.',
-    },
-    {
-      id: 'quote-102',
-      clientName: 'Sofía Martínez',
-      clientEmail: 'sofia.xv@gmail.com',
-      clientPhone: '+52 55 1234 9988',
-      eventType: 'xv-anos',
-      selectedPackageId: 'pro',
-      packageName: 'PAQUETE XV PRO',
-      packagePrice: 21500,
-      addons: ['Cuadro Impreso 50x70cm'],
-      extraHours: 0,
-      total: 24000,
-      depositAmount: 0,
-      eventDate: '2026-11-28',
-      eventCity: 'CDMX',
-      status: 'Pendiente',
-      createdAt: '2026-08-11',
-      notes: 'Solicitud de disponibilidad pendiente de confirmación.',
-    },
-  ]);
+  const [packagesState] = useState<Record<EventType, PackageOption[]>>(PACKAGES_BY_EVENT);
+  const [addonsState] = useState<AddOnOption[]>(ADDONS_CATALOG);
+  const [galleryImages] = useState<GalleryImage[]>(GALLERY_IMAGES);
 
   const [bookingState, setBookingState] = useState<BookingState>({
     eventType: 'bodas',
@@ -141,20 +57,25 @@ export default function App() {
     notes: '',
     signatureDataUrl: '',
     paymentMethod: 'stripe',
-    total: 24500,
+    total: 9990,
     depositAmount: 0,
   });
 
-  const [favorites, setFavorites] = useState<string[]>(['img-1', 'img-4']);
-  const [clientPortalOpen, setClientPortalOpen] = useState(false);
-  const [adminPortalOpen, setAdminPortalOpen] = useState(false);
+  const [favorites, setFavorites] = useState<string[]>([]);
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#/', '').replace('#', '');
-      const validRoutes: RoutePath[] = ['inicio', 'bodas', 'xv-anos', 'bautizos', 'retratos'];
+      const validRoutes: RoutePath[] = [
+        'inicio',
+        'bodas',
+        'xv-anos',
+        'bautizos',
+        'retratos',
+        'empresarial',
+      ];
       if (validRoutes.includes(hash as RoutePath)) {
         setCurrentRoute(hash as RoutePath);
       }
@@ -213,20 +134,27 @@ export default function App() {
       const defaultPackage = availablePackages.find((pkg) => pkg.popular) || availablePackages[0];
 
       setBookingState((prev) => {
-        let addonsSum = 0;
-        prev.selectedAddons.forEach((addonId) => {
+        const customQuote = defaultPackage.price === 0;
+        const nextSelectedAddons = customQuote ? [] : prev.selectedAddons;
+        const nextExtraHours = customQuote ? 0 : prev.extraHours;
+
+        const addonsSum = nextSelectedAddons.reduce((sum, addonId) => {
           const item = addonsState.find((addon) => addon.id === addonId);
-          if (item && item.type === 'checkbox') addonsSum += item.price;
-        });
+          return item && item.type === 'checkbox' ? sum + item.price : sum;
+        }, 0);
 
         const extraHoursAddon = addonsState.find((addon) => addon.id === 'extra_hours');
-        const extraHoursRate = extraHoursAddon ? extraHoursAddon.price : 0;
-        const total = defaultPackage.price + addonsSum + prev.extraHours * extraHoursRate;
+        const extraHoursRate = extraHoursAddon?.price || 0;
+        const total = customQuote
+          ? 0
+          : defaultPackage.price + addonsSum + nextExtraHours * extraHoursRate;
 
         return {
           ...prev,
           eventType: eventTypeKey,
           selectedPackageId: defaultPackage.id,
+          selectedAddons: nextSelectedAddons,
+          extraHours: nextExtraHours,
           total,
           depositAmount: 0,
         };
@@ -242,17 +170,11 @@ export default function App() {
     );
   };
 
-  const handleToggleTheme = () => {
-    setIsDarkMode((prev) => !prev);
-  };
-
   const handleScrollTo = (id: string) => {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
   };
 
   const handleSendWhatsApp = () => {
-    const phoneNumber = '525512345678';
-
     const categoryNames: Record<string, string> = {
       bodas: 'BODAS',
       'xv-anos': 'XV AÑOS',
@@ -263,7 +185,8 @@ export default function App() {
 
     const categoryLabel = categoryNames[bookingState.eventType] || bookingState.eventType.toUpperCase();
     const activePackages = packagesState[bookingState.eventType] || packagesState.bodas;
-    const selectedPkg = activePackages.find((pkg) => pkg.id === bookingState.selectedPackageId) || activePackages[0];
+    const selectedPkg =
+      activePackages.find((pkg) => pkg.id === bookingState.selectedPackageId) || activePackages[0];
 
     const activeAddonsNames = bookingState.selectedAddons
       .map((id) => addonsState.find((addon) => addon.id === id)?.name || '')
@@ -273,53 +196,29 @@ export default function App() {
       activeAddonsNames.push(`${bookingState.extraHours} Horas Extra de Cobertura`);
     }
 
-    const newQuoteRecord: QuoteRecord = {
-      id: `quote-${Date.now()}`,
-      clientName: bookingState.clientName || 'Prospecto web',
-      clientEmail: bookingState.clientEmail || 'Sin correo',
-      clientPhone: bookingState.clientPhone || 'Sin teléfono',
-      eventType: bookingState.eventType,
-      selectedPackageId: bookingState.selectedPackageId,
-      packageName: selectedPkg.name,
-      packagePrice: selectedPkg.price,
-      addons: activeAddonsNames,
-      extraHours: bookingState.extraHours,
-      total: bookingState.total,
-      depositAmount: 0,
-      eventDate: bookingState.date || 'Por definir',
-      eventCity: bookingState.eventCity || 'Por definir',
-      status: 'Pendiente',
-      createdAt: new Date().toISOString().split('T')[0],
-      notes: bookingState.notes || 'Solicitud de disponibilidad iniciada desde la web.',
-    };
+    const packagePriceText =
+      selectedPkg.price > 0
+        ? `${selectedPkg.name} ($${selectedPkg.price.toLocaleString('es-MX')} MXN)`
+        : `${selectedPkg.name} (cotización personalizada)`;
 
-    setQuotesState((prev) => [newQuoteRecord, ...prev]);
+    const totalText =
+      bookingState.total > 0
+        ? `$${bookingState.total.toLocaleString('es-MX')} MXN`
+        : 'Por cotizar';
 
-    const messageText = `Hola Xavi.Ph. Quisiera solicitar disponibilidad e información para mi evento.\n\n📸 Tipo de evento: ${categoryLabel}\n📦 Paquete de interés: ${selectedPkg.name} ($${selectedPkg.price.toLocaleString('es-MX')} MXN)\n🗓️ Fecha tentativa: ${bookingState.date || 'Por definir'}\n📍 Lugar: ${bookingState.eventCity || 'Por definir'}\n✨ Adicionales: ${activeAddonsNames.length > 0 ? activeAddonsNames.join(', ') : 'Ninguno'}\n💰 Total estimado: $${bookingState.total.toLocaleString('es-MX')} MXN\n\nQuedo pendiente de que me confirmen disponibilidad y los siguientes pasos.`;
+    const messageText = `Hola Xavi.Ph. Quisiera solicitar disponibilidad e información para mi evento.\n\n📸 Tipo de evento: ${categoryLabel}\n📦 Paquete de interés: ${packagePriceText}\n🗓️ Fecha tentativa: ${bookingState.date || 'Por definir'}\n📍 Lugar: ${bookingState.eventCity || 'Por definir'}\n✨ Adicionales: ${activeAddonsNames.length > 0 ? activeAddonsNames.join(', ') : 'Ninguno'}\n💰 Total estimado: ${totalText}${bookingState.clientName ? `\n👤 Nombre: ${bookingState.clientName}` : ''}${bookingState.clientEmail ? `\n✉️ Correo: ${bookingState.clientEmail}` : ''}\n\nQuedo pendiente de que me confirmen disponibilidad y los siguientes pasos.`;
 
-    window.open(`https://wa.me/${phoneNumber}?text=${encodeURIComponent(messageText)}`, '_blank');
+    window.open(
+      `https://wa.me/${COMMERCIAL_WHATSAPP}?text=${encodeURIComponent(messageText)}`,
+      '_blank',
+      'noopener,noreferrer'
+    );
+
     showToast(
       'Solicitud preparada',
       'Se abrió WhatsApp con tu información. La fecha queda pendiente de confirmación.',
       'success'
     );
-  };
-
-  const handleAddGalleryImage = (image: GalleryImage) => {
-    setGalleryImages((prev) => [image, ...prev]);
-  };
-
-  const handleDeleteGalleryImage = (id: string) => {
-    setGalleryImages((prev) => prev.filter((image) => image.id !== id));
-  };
-
-  const handleAddTestimonial = (newTestimonial: Omit<Testimonial, 'id' | 'verified'>) => {
-    const created: Testimonial = {
-      id: `t-${Date.now()}`,
-      verified: false,
-      ...newTestimonial,
-    };
-    setTestimonials((prev) => [created, ...prev]);
   };
 
   return (
@@ -333,19 +232,15 @@ export default function App() {
       <Navbar
         currentRoute={currentRoute}
         onNavigateRoute={handleNavigateRoute}
-        favoritesCount={favorites.length}
-        onOpenFavorites={() => handleScrollTo('galerias')}
-        onOpenClientPortal={() => setClientPortalOpen(true)}
-        onOpenAdminPortal={() => setAdminPortalOpen(true)}
         isDarkMode={isDarkMode}
-        onToggleTheme={handleToggleTheme}
+        onToggleTheme={() => setIsDarkMode((prev) => !prev)}
       />
 
       <Hero
         currentRoute={currentRoute}
         onQuoteClick={() => handleScrollTo('cotizador')}
         onGalleryClick={() => handleScrollTo('galerias')}
-        onCitaClick={() => handleScrollTo('cierre-presencial')}
+        onCitaClick={() => handleScrollTo('solicitud')}
       />
 
       <GallerySection
@@ -361,9 +256,9 @@ export default function App() {
         bookingState={bookingState}
         onUpdateBookingState={setBookingState}
         onProceedToBooking={() => handleScrollTo('solicitud')}
-        onSendWhatsApp={handleSendWhatsApp}
         packages={packagesState}
         addons={addonsState}
+        onNavigateRoute={handleNavigateRoute}
       />
 
       <InPersonConsultation
@@ -382,46 +277,11 @@ export default function App() {
         addons={addonsState}
       />
 
-      <TestimonialsSection
-        testimonials={testimonials}
-        onAddTestimonial={handleAddTestimonial}
-        onShowToast={showToast}
-      />
+      <Footer onNavigateRoute={handleNavigateRoute} footerContact={FOOTER_CONTACT} />
 
-      <Footer
-        onNavigateRoute={handleNavigateRoute}
-        onOpenClientPortal={() => setClientPortalOpen(true)}
-        onOpenAdminPortal={() => setAdminPortalOpen(true)}
-        footerContact={footerContact}
-      />
-
-      <WhatsAppFloatingButton bookingState={bookingState} />
-
-      <ClientPortalModal
-        isOpen={clientPortalOpen}
-        onClose={() => setClientPortalOpen(false)}
-        onShowToast={showToast}
-      />
-
-      <AdminPortalModal
-        isOpen={adminPortalOpen}
-        onClose={() => setAdminPortalOpen(false)}
-        onShowToast={showToast}
-        adminCredentials={adminCredentials}
-        onUpdateAdminCredentials={setAdminCredentials}
-        packages={packagesState}
-        onUpdatePackages={setPackagesState}
-        addons={addonsState}
-        onUpdateAddons={setAddonsState}
-        quotes={quotesState}
-        onUpdateQuotes={setQuotesState}
-        galleryImages={galleryImages}
-        onAddGalleryImage={handleAddGalleryImage}
-        onDeleteGalleryImage={handleDeleteGalleryImage}
-        footerContact={footerContact}
-        onUpdateFooterContact={setFooterContact}
-        testimonials={testimonials}
-        onUpdateTestimonials={setTestimonials}
+      <WhatsAppFloatingButton
+        bookingState={bookingState}
+        phoneNumber={COMMERCIAL_WHATSAPP}
       />
     </div>
   );
