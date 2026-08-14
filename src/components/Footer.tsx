@@ -9,7 +9,7 @@ interface FooterProps {
   footerContact?: FooterContact;
 }
 
-const XPH_LOGO = 'https://lh3.googleusercontent.com/d/1n-I-KcfYTHYzJZrND4rFHz4rCgLGekJq';
+const XPH_LOGO = '/api/logo?v=20260814-2';
 
 export const Footer: React.FC<FooterProps> = ({
   onNavigateRoute,
@@ -58,50 +58,20 @@ export const Footer: React.FC<FooterProps> = ({
           <div className="space-y-3">
             <h4 className="text-xs font-bold text-white uppercase tracking-wider font-mono">Cotiza & Contacta</h4>
             <ul className="space-y-2">
-              <li>
-                <a href="#cotizador" className="hover:text-[#D4AF37] flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Cotizador</span>
-                </a>
-              </li>
-              <li>
-                <a href="#solicitud" className="hover:text-[#D4AF37] flex items-center gap-1.5 text-[#D4AF37] font-semibold">
-                  <MessageSquare className="w-3.5 h-3.5" />
-                  <span>Solicitar disponibilidad</span>
-                </a>
-              </li>
-              <li>
-                <a href="#cierre-presencial" className="hover:text-[#D4AF37] flex items-center gap-1.5 text-emerald-400 font-semibold">
-                  <HeartHandshake className="w-3.5 h-3.5" />
-                  <span>Cita presencial & asesoría</span>
-                </a>
-              </li>
+              <li><a href="#cotizador" className="hover:text-[#D4AF37] flex items-center gap-1.5"><Sparkles className="w-3.5 h-3.5" /><span>Cotizador</span></a></li>
+              <li><a href="#solicitud" className="hover:text-[#D4AF37] flex items-center gap-1.5 text-[#D4AF37] font-semibold"><MessageSquare className="w-3.5 h-3.5" /><span>Solicitar disponibilidad</span></a></li>
+              <li><a href="#cierre-presencial" className="hover:text-[#D4AF37] flex items-center gap-1.5 text-emerald-400 font-semibold"><HeartHandshake className="w-3.5 h-3.5" /><span>Cita presencial & asesoría</span></a></li>
             </ul>
           </div>
 
           <div className="space-y-3">
             <h4 className="text-xs font-bold text-white uppercase tracking-wider font-mono">Contacto & Cobertura</h4>
             <div className="space-y-2 text-gray-300">
-              <div className="flex items-start gap-2">
-                <MapPin className="w-4 h-4 text-[#D4AF37] shrink-0 mt-0.5" />
-                <span>{footerContact.address}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Mail className="w-4 h-4 text-[#D4AF37] shrink-0" />
-                <a href={`mailto:${footerContact.email}`} className="hover:text-[#D4AF37]">{footerContact.email}</a>
-              </div>
-              <div className="flex items-center gap-2">
-                <Phone className="w-4 h-4 text-[#D4AF37] shrink-0" />
-                <a href={phoneHref} className="hover:text-[#D4AF37]">{footerContact.phone}</a>
-              </div>
-              <div className="flex items-center gap-2">
-                <MessageSquare className="w-4 h-4 text-emerald-400 shrink-0" />
-                <a href={whatsappHref} target="_blank" rel="noopener noreferrer" className="hover:text-emerald-400">WhatsApp</a>
-              </div>
-              <div className="flex items-center gap-2 text-gray-400 text-[11px]">
-                <Clock className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />
-                <span>{footerContact.schedule}</span>
-              </div>
+              <div className="flex items-start gap-2"><MapPin className="w-4 h-4 text-[#D4AF37] shrink-0 mt-0.5" /><span>{footerContact.address}</span></div>
+              <div className="flex items-center gap-2"><Mail className="w-4 h-4 text-[#D4AF37] shrink-0" /><a href={`mailto:${footerContact.email}`} className="hover:text-[#D4AF37]">{footerContact.email}</a></div>
+              <div className="flex items-center gap-2"><Phone className="w-4 h-4 text-[#D4AF37] shrink-0" /><a href={phoneHref} className="hover:text-[#D4AF37]">{footerContact.phone}</a></div>
+              <div className="flex items-center gap-2"><MessageSquare className="w-4 h-4 text-emerald-400 shrink-0" /><a href={whatsappHref} target="_blank" rel="noopener noreferrer" className="hover:text-emerald-400">WhatsApp</a></div>
+              <div className="flex items-center gap-2 text-gray-400 text-[11px]"><Clock className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" /><span>{footerContact.schedule}</span></div>
             </div>
           </div>
         </div>
