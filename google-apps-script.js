@@ -543,8 +543,16 @@ function doPost(e) {
     }
 
     // ACCIÓN 2: SUBIR FOTOGRAFÍA A GOOGLE DRIVE Y REGISTRAR EN TABLA GALERIA_FOTOS
+    if (action !== 'uploadPhoto' && !rawBase64) {
+      // No es una subida de foto, retornar éxito neutro
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'error',
+        message: 'Acción no reconocida o datos de imagen faltantes.'
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
     if (!rawBase64) {
-      throw new Error('No se recibieron datos de imagen ni configuración.');
+      throw new Error('No se recibieron datos de imagen (base64).');
     }
 
     if (rawBase64.indexOf(',') > -1) rawBase64 = rawBase64.split(',')[1];

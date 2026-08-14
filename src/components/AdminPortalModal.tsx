@@ -59,7 +59,7 @@ interface AdminPortalModalProps {
   onUpdateAddons: (addons: AddOnOption[]) => void;
   onSavePrices?: (packages: Record<EventType, PackageOption[]>, addons: AddOnOption[]) => void;
   quotes: QuoteRecord[];
-  onUpdateQuotes: (updater: (prev: QuoteRecord[]) => QuoteRecord[]) => void;
+  onUpdateQuotes: (updaterOrArray: QuoteRecord[] | ((prev: QuoteRecord[]) => QuoteRecord[])) => void;
   galleryImages: GalleryImage[];
   onAddGalleryImage: (image: GalleryImage) => void;
   onDeleteGalleryImage: (id: string) => void;

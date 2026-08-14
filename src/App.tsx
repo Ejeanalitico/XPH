@@ -394,6 +394,25 @@ export default function App() {
     return digits || '5215615567863';
   };
 
+  // Helper to sync cloud config — declared before all handlers that use it
+  const syncToCloud = async (
+    overrides?: Record<string, any>,
+    auditType = 'ACTUALIZACION_GENERAL',
+    auditDetails = 'Modificación guardada desde panel Admin'
+  ): Promise<boolean> => {
+    const dataToSync = {
+      packages: packagesState,
+      addons: addonsState,
+      footerContact,
+      testimonials,
+      quotes: quotesState,
+      adminCredentials,
+      galleryImages: galleryImages.filter((img) => !img.url.startsWith('data:image/')),
+      ...overrides,
+    };
+    return await saveSiteDataToCloud(dataToSync, auditType, auditDetails);
+  };
+
   const handleSendWhatsApp = () => {
     const phoneNumber = getCleanWhatsAppNumber(footerContact);
 
@@ -466,25 +485,6 @@ export default function App() {
     showToast('Cita Registrada', 'La solicitud de cita fue guardada y registrada en el sistema de administración.');
   };
 
-  // Helper to sync cloud config
-  const syncToCloud = async (
-    overrides?: Record<string, any>,
-    auditType = 'ACTUALIZACION_GENERAL',
-    auditDetails = 'Modificación guardada desde panel Admin'
-  ): Promise<boolean> => {
-    const dataToSync = {
-      packages: packagesState,
-      addons: addonsState,
-      footerContact,
-      testimonials,
-      quotes: quotesState,
-      adminCredentials,
-      galleryImages: galleryImages.filter((img) => !img.url.startsWith('data:image/')),
-      ...overrides,
-    };
-    return await saveSiteDataToCloud(dataToSync, auditType, auditDetails);
-  };
-
   const handleSavePrices = async (newPackages: Record<EventType, PackageOption[]>, newAddons: AddOnOption[]) => {
     setPackagesState(newPackages);
     setAddonsState(newAddons);
@@ -527,7 +527,14 @@ export default function App() {
     return await syncToCloud({ testimonials: newTestimonials }, 'ACTUALIZACION_TESTIMONIOS', `Total testimonios activos: ${newTestimonials.length}`);
   };
 
-  const handleUpdateQuotes = async (newQuotes: QuoteRecord[]) => {
+  // Accepts both a plain array OR an updater function (for AdminPortalModal compatibility)
+  const handleUpdateQuotes = async (updaterOrArray: QuoteRecord[] | ((prev: QuoteRecord[]) => QuoteRecord[])) => {
+    let newQuotes: QuoteRecord[];
+    if (typeof updaterOrArray === 'function') {
+      newQuotes = updaterOrArray(quotesState);
+    } else {
+      newQuotes = updaterOrArray;
+    }
     setQuotesState(newQuotes);
     try { localStorage.setItem('xph_quotes', JSON.stringify(newQuotes)); } catch (_) {}
     return await syncToCloud({ quotes: newQuotes }, 'ACTUALIZACION_COTIZACIONES', `Total cotizaciones registradas: ${newQuotes.length}`);
