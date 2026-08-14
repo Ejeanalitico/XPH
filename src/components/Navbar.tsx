@@ -13,7 +13,7 @@ interface NavbarProps {
   onToggleTheme: () => void;
 }
 
-const ORIGINAL_XPH_LOGO = 'https://lh3.googleusercontent.com/d/1hPjzWpgGqQ0JkaMOgeERFWbt_qXiMaIg';
+const XPH_LOGO = 'https://lh3.googleusercontent.com/d/1n-I-KcfYTHYzJZrND4rFHz4rCgLGekJq';
 
 export const Navbar: React.FC<NavbarProps> = ({
   currentRoute,
@@ -57,8 +57,8 @@ export const Navbar: React.FC<NavbarProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
         <div className="flex items-center gap-4 min-w-0">
           <button onClick={() => handleSelectRoute('inicio')} className="flex items-center gap-3 group text-left cursor-pointer min-w-0">
-            <div className="w-12 h-12 rounded-xl overflow-hidden bg-black border border-white/10 flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform shrink-0">
-              <img src={ORIGINAL_XPH_LOGO} alt="XPH" className="w-full h-full object-contain" />
+            <div className="w-14 h-14 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
+              <img src={XPH_LOGO} alt="XPH Fotografía & Video" className="w-full h-full object-contain" />
             </div>
             <div className="min-w-0">
               <span className="text-base sm:text-lg xl:text-xl font-bold tracking-wide font-serif-luxury text-white block truncate">XPH <span className="text-[#D4AF37] font-sans font-light">Fotografía & Video</span></span>
