@@ -16,6 +16,7 @@ import {
   ToastMessage,
 } from './types';
 import { PACKAGES_BY_EVENT, ADDONS_CATALOG } from './data/packages';
+import { resolvePublishedAddons, resolvePublishedPackages } from './utils/catalogMerge';
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { GallerySection } from './components/GallerySection';
@@ -64,24 +65,6 @@ const sanitizePublicContact = (cloudContact?: Partial<FooterContact>): FooterCon
   };
 };
 
-const hasManagedPackages = (value: any): value is Record<EventType, PackageOption[]> =>
-  Boolean(value && typeof value === 'object' && Object.values(value).flat().some((pkg: any) => pkg?.managedByAdmin));
-
-const loadPackagesFromSheet = async (): Promise<Record<EventType, PackageOption[]> | null> => {
-  try {
-    const response = await fetch(`/api/packages-sheet?_t=${Date.now()}`, {
-      method: 'GET',
-      cache: 'no-store',
-    });
-    const data = await response.json();
-    if (!response.ok || data?.status !== 'success' || !hasManagedPackages(data.packages)) return null;
-    return data.packages;
-  } catch (error) {
-    console.warn('[XPH Packages] No se pudo leer el catálogo publicado:', error);
-    return null;
-  }
-};
-
 export default function App() {
   const [currentRoute, setCurrentRoute] = useState<RoutePath>('inicio');
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([]);
@@ -89,7 +72,7 @@ export default function App() {
   const [heroCoverSettings, setHeroCoverSettings] = useState<Partial<Record<RoutePath, HeroCoverSetting>>>({});
   const [footerContact, setFooterContact] = useState<FooterContact>(defaultContact);
   const [packagesState, setPackagesState] = useState<Record<EventType, PackageOption[]>>(PACKAGES_BY_EVENT);
-  const [addonsState] = useState<AddOnOption[]>(ADDONS_CATALOG);
+  const [addonsState, setAddonsState] = useState<AddOnOption[]>(ADDONS_CATALOG);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   const [bookingState, setBookingState] = useState<BookingState>({
@@ -115,7 +98,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    Promise.all([loadSiteDataFromCloud(), loadPackagesFromSheet()]).then(([cloudData, publishedPackages]) => {
+    loadSiteDataFromCloud().then((cloudData) => {
       const data = cloudData || {};
 
       if (Array.isArray(data.galleryImages)) {
@@ -143,11 +126,11 @@ export default function App() {
         setHeroCoverSettings(data.heroCoverSettings as Partial<Record<RoutePath, HeroCoverSetting>>);
       }
 
-      const effectivePackages = hasManagedPackages(publishedPackages)
-        ? publishedPackages
-        : PACKAGES_BY_EVENT;
-
+      const effectivePackages = resolvePublishedPackages(data);
+      const effectiveAddons = resolvePublishedAddons(data);
       setPackagesState(effectivePackages);
+      setAddonsState(effectiveAddons);
+
       const available = effectivePackages.bodas || [];
       const selected = available.find((pkg) => pkg.popular) || available[0];
       if (selected) {
