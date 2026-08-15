@@ -9,6 +9,7 @@ import { AdminExitHomeEnhancer } from './components/AdminExitHomeEnhancer';
 import './index.css';
 import './branding.css';
 
+// XPH production entry: public quote V2 + editable promotions.
 const params = new URLSearchParams(window.location.search);
 const adminMode = params.get('xph-admin');
 const gallerySlug = params.get('galeria') || '';
