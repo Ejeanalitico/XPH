@@ -142,13 +142,22 @@ export const PricingQuoteEngine: React.FC<PricingQuoteEngineProps> = ({
           })}
         </div>
 
-        {!isCustomQuote ? <div className="grid lg:grid-cols-2 gap-8">
+        {!isCustomQuote ? <div className="grid lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)] gap-6 items-start">
           <div className="rounded-2xl bg-[#161C28] border border-white/10 p-6 space-y-5">
             <div><h3 className="text-xl font-bold text-white">Personaliza tu cobertura</h3></div>
             <div className="space-y-3">{addons.filter((addon) => addon.type === 'checkbox').map((addon) => { const active = selectedAddonIds.includes(addon.id); return <button key={addon.id} type="button" onClick={() => handleToggleAddon(addon.id)} className={`w-full p-4 rounded-xl border text-left flex items-start justify-between gap-4 ${active ? 'border-[#D4AF37] bg-[#D4AF37]/5' : 'border-white/10 bg-[#0B0F17]'}`}><div><p className="text-sm font-semibold text-white">{addon.name}</p><p className="text-xs text-gray-400 mt-1">{addon.description}</p></div><span className="text-sm font-bold text-[#D4AF37] font-mono whitespace-nowrap">+${addon.price.toLocaleString('es-MX')}</span></button>; })}</div>
             {extraHoursAddon && <div className="p-4 rounded-xl bg-[#0B0F17] border border-white/10 flex items-center justify-between gap-4"><div><p className="text-sm font-semibold text-white">Horas extra</p><p className="text-xs text-gray-400">${extraHoursRate.toLocaleString('es-MX')} MXN por hora completa</p></div><div className="flex items-center gap-3"><button type="button" onClick={() => handleExtraHoursChange(-1)} className="p-2 rounded-lg bg-white/10"><Minus className="w-4 h-4" /></button><span className="w-6 text-center font-mono">{bookingState.extraHours}</span><button type="button" onClick={() => handleExtraHoursChange(1)} className="p-2 rounded-lg bg-white/10"><Plus className="w-4 h-4" /></button></div></div>}
           </div>
-          <div className="rounded-2xl bg-[#161C28] border border-[#D4AF37]/30 p-6 sm:p-8 flex flex-col justify-between gap-8"><div><span className="text-[10px] uppercase tracking-widest text-gray-400 font-mono">Total estimado</span><div className="mt-2"><span className="text-4xl font-black text-[#D4AF37] font-mono">${quotedTotal.toLocaleString('es-MX')}</span><span className="text-sm text-gray-400 ml-2">MXN</span></div><p className="text-xs text-gray-400 mt-3">No confirma ni bloquea fecha.</p></div><button type="button" onClick={handleProceed} className="w-full py-4 rounded-xl gold-gradient-bg text-black font-extrabold text-sm">Solicitar disponibilidad</button></div>
+          <div className="rounded-2xl bg-[#161C28] border border-[#D4AF37]/30 p-5 sm:p-6 self-start h-fit">
+            <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+              <div className="min-w-0">
+                <span className="text-[10px] uppercase tracking-widest text-gray-400 font-mono">Total estimado</span>
+                <div className="mt-1"><span className="text-3xl sm:text-4xl font-black text-[#D4AF37] font-mono">${quotedTotal.toLocaleString('es-MX')}</span><span className="text-sm text-gray-400 ml-2">MXN</span></div>
+                <p className="text-xs text-gray-400 mt-2">No confirma ni bloquea fecha.</p>
+              </div>
+              <button type="button" onClick={handleProceed} className="w-full xl:w-auto xl:min-w-[220px] px-6 py-3.5 rounded-xl gold-gradient-bg text-black font-extrabold text-sm whitespace-nowrap">Solicitar disponibilidad</button>
+            </div>
+          </div>
         </div> : <div className="max-w-2xl mx-auto rounded-2xl bg-[#161C28] border border-[#D4AF37]/30 p-6 sm:p-8 text-center space-y-4"><h3 className="text-2xl font-bold text-white">Cuéntanos qué necesitas</h3><p className="text-sm text-gray-400">Para este servicio no mostramos un precio genérico.</p><button type="button" onClick={handleProceed} className="px-8 py-4 rounded-xl gold-gradient-bg text-black font-extrabold text-sm">Solicitar cotización y disponibilidad</button></div>}
       </div>
     </section>
