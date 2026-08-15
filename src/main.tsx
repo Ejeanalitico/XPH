@@ -1,9 +1,11 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import App from './App.tsx';
+import AppV2 from './AppV2';
 import { ClientGalleryPage } from './components/ClientGalleryPage';
 import { PrivateGalleryDownloadSettings } from './components/PrivateGalleryDownloadSettings';
 import { UnifiedAdminDashboard } from './components/UnifiedAdminDashboard';
+import { PromotionAdminSettings } from './components/PromotionAdminSettings';
+import { AdminExitHomeEnhancer } from './components/AdminExitHomeEnhancer';
 import './index.css';
 import './branding.css';
 
@@ -12,7 +14,7 @@ const adminMode = params.get('xph-admin');
 const gallerySlug = params.get('galeria') || '';
 const galleryToken = params.get('k') || '';
 
-let content = <App />;
+let content = <AppV2 />;
 
 if (adminMode === 'panel' || adminMode === 'galeria' || adminMode === 'portadas') {
   content = (
@@ -21,6 +23,8 @@ if (adminMode === 'panel' || adminMode === 'galeria' || adminMode === 'portadas'
         initialTab={adminMode === 'portadas' ? 'covers' : adminMode === 'galeria' ? 'public' : 'packages'}
       />
       <PrivateGalleryDownloadSettings />
+      <PromotionAdminSettings />
+      <AdminExitHomeEnhancer />
     </>
   );
 } else if (gallerySlug && galleryToken) {
