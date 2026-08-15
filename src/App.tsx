@@ -67,9 +67,6 @@ const sanitizePublicContact = (cloudContact?: Partial<FooterContact>): FooterCon
 const hasManagedPackages = (value: any): value is Record<EventType, PackageOption[]> =>
   Boolean(value && typeof value === 'object' && Object.values(value).flat().some((pkg: any) => pkg?.managedByAdmin));
 
-const hasManagedAddons = (value: any): value is AddOnOption[] =>
-  Array.isArray(value) && value.some((addon) => addon?.managedByAdmin);
-
 const loadPackagesFromSheet = async (): Promise<Record<EventType, PackageOption[]> | null> => {
   try {
     const response = await fetch(`/api/packages-sheet?_t=${Date.now()}`, {
@@ -80,7 +77,7 @@ const loadPackagesFromSheet = async (): Promise<Record<EventType, PackageOption[
     if (!response.ok || data?.status !== 'success' || !hasManagedPackages(data.packages)) return null;
     return data.packages;
   } catch (error) {
-    console.warn('[XPH Packages] No se pudo leer Paquetes_Precios:', error);
+    console.warn('[XPH Packages] No se pudo leer el catálogo publicado:', error);
     return null;
   }
 };
@@ -92,7 +89,7 @@ export default function App() {
   const [heroCoverSettings, setHeroCoverSettings] = useState<Partial<Record<RoutePath, HeroCoverSetting>>>({});
   const [footerContact, setFooterContact] = useState<FooterContact>(defaultContact);
   const [packagesState, setPackagesState] = useState<Record<EventType, PackageOption[]>>(PACKAGES_BY_EVENT);
-  const [addonsState, setAddonsState] = useState<AddOnOption[]>(ADDONS_CATALOG);
+  const [addonsState] = useState<AddOnOption[]>(ADDONS_CATALOG);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   const [bookingState, setBookingState] = useState<BookingState>({
@@ -118,7 +115,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    Promise.all([loadSiteDataFromCloud(), loadPackagesFromSheet()]).then(([cloudData, sheetPackages]) => {
+    Promise.all([loadSiteDataFromCloud(), loadPackagesFromSheet()]).then(([cloudData, publishedPackages]) => {
       const data = cloudData || {};
 
       if (Array.isArray(data.galleryImages)) {
@@ -146,30 +143,25 @@ export default function App() {
         setHeroCoverSettings(data.heroCoverSettings as Partial<Record<RoutePath, HeroCoverSetting>>);
       }
 
-      const effectivePackages = hasManagedPackages(sheetPackages)
-        ? sheetPackages
-        : hasManagedPackages(data.packages)
-          ? data.packages
-          : null;
+      const effectivePackages = hasManagedPackages(publishedPackages)
+        ? publishedPackages
+        : PACKAGES_BY_EVENT;
 
-      if (effectivePackages) {
-        setPackagesState(effectivePackages);
-        const available = effectivePackages.bodas || [];
-        const selected = available.find((pkg) => pkg.popular) || available[0];
-        if (selected) {
-          setBookingState((prev) => ({
-            ...prev,
-            eventType: 'bodas',
-            selectedPackageId: selected.id,
-            selectedAddons: [],
-            extraHours: 0,
-            total: selected.price,
-            depositAmount: 0,
-          }));
-        }
+      setPackagesState(effectivePackages);
+      const available = effectivePackages.bodas || [];
+      const selected = available.find((pkg) => pkg.popular) || available[0];
+      if (selected) {
+        setBookingState((prev) => ({
+          ...prev,
+          eventType: 'bodas',
+          selectedPackageId: selected.id,
+          selectedAddons: [],
+          extraHours: 0,
+          total: selected.price,
+          depositAmount: 0,
+        }));
       }
 
-      if (hasManagedAddons(data.addons)) setAddonsState(data.addons);
       if (data.footerContact) setFooterContact(sanitizePublicContact(data.footerContact));
     });
   }, []);
