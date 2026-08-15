@@ -1,0 +1,246 @@
+{
+  "bodas": [
+    {
+      "id": "civil",
+      "name": "EL PRIMER CAPÍTULO",
+      "price": 6499,
+      "description": "Cobertura para boda civil con fotografía y video, diseñada para una celebración íntima y completa.",
+      "features": [
+        "5 horas de cobertura",
+        "Fotografía ilimitada durante la cobertura",
+        "Video cinematográfico",
+        "Sesión fotográfica previa",
+        "50 fotografías editadas",
+        "Galería digital Lifetime (6 meses)",
+        "Entrega en 15 días hábiles",
+        "USB 2TB"
+      ],
+      "notIncludes": ["Servicios adicionales no especificados en el paquete"]
+    },
+    {
+      "id": "pro",
+      "name": "BODA DE ENSUEÑO",
+      "price": 9990,
+      "badge": "PAQUETE PROFESIONAL",
+      "popular": true,
+      "description": "Cobertura profesional con preparación de novia, sesión previa, fotografía y video.",
+      "features": [
+        "Fotografía ilimitada durante la cobertura",
+        "Maquillaje y peinado de novia el dia del evento",
+        "Prueba de Maquillaje y peinado",
+        "Sesión fotográfica previa",
+        "75 fotografías editadas",
+        "Video profesional a 2 cámaras",
+        "Galería digital Lifetime (Un año)",
+        "6 horas de cobertura",
+        "Video Save to date",
+        "USB 2TB"
+      ],
+      "notIncludes": ["Adicionales y horas extra fuera de la cobertura contratada"]
+    }
+  ],
+  "xv-anos": [
+    {
+      "id": "noche-estrellas",
+      "name": "NOCHE DE ESTRELLAS",
+      "price": 6499,
+      "badge": "Mis XV",
+      "description": "Cobertura de XV años con fotografía y video para documentar los momentos principales de la celebración.",
+      "features": [
+        "5 horas de fotografía y video",
+        "50 fotografías digitales editadas",
+        "Sesión fotográfica previa",
+        "Video cinematografico a 2 cámaras",
+        "Fotografía ilimitada",
+        "Galería digital Lifetime (6 meses)",
+        "USB 2TB"
+      ],
+      "notIncludes": ["Servicios adicionales no especificados en el paquete"]
+    },
+    {
+      "id": "pro",
+      "name": "XV AÑOS PROFESIONAL",
+      "price": 9990,
+      "badge": "Mas vendido",
+      "popular": true,
+      "description": "Paquete profesional con preparación de quinceañera, fotografía y video.",
+      "features": [
+        "Fotografía ilimitada",
+        "Video cinematografico a 2 cámaras",
+        "6 horas de servicio",
+        "Maquillaje y peinado el dia del evento",
+        "Prueba Maquillaje y peinado",
+        "Sesión fotográfica previa",
+        "70 fotografías editadas",
+        "USB 2TB",
+        "Galería digital Lifetime (Un año)"
+      ],
+      "notIncludes": ["Adicionales y horas extra fuera de la cobertura contratada"]
+    }
+  ],
+  "bautizos": [
+    {
+      "id": "primera-bendicion",
+      "name": "MI PRIMERA BENDICIÓN",
+      "price": 3990,
+      "description": "Cobertura esencial para bautizos y celebraciones familiares pequeñas, enfocada en la ceremonia y los retratos más importantes.",
+      "features": [
+        "2 horas de cobertura",
+        "Fotografía ilimitada durante la cobertura",
+        "Cobertura de ceremonia religiosa",
+        "Fotografías con padres, padrinos y familiares",
+        "30 fotografías editadas",
+        "Galería digital Lifetime (3 meses)"
+      ],
+      "notIncludes": ["Servicios adicionales no especificados en el paquete"]
+    },
+    {
+      "id": "recuerdos-familia",
+      "name": "RECUERDOS EN FAMILIA",
+      "price": 5490,
+      "badge": "MAS VENDIDO",
+      "popular": true,
+      "description": "Cobertura de bautizo y convivencia familiar con fotografía, video y una sesión breve para conservar los momentos principales del día.",
+      "features": [
+        "4 horas de cobertura",
+        "Fotografía ilimitada durante la cobertura",
+        "Ceremonia + recepción o convivencia",
+        "Sesión familiar el día del evento",
+        "50 fotografías editadas",
+        "Video cinematográfico",
+        "Galería digital Lifetime (6 meses)"
+      ],
+      "notIncludes": ["Adicionales y horas extra fuera de la cobertura contratada"]
+    },
+    {
+      "id": "dia-para-siempre",
+      "name": "UN DÍA PARA SIEMPRE",
+      "price": 6990,
+      "description": "Cobertura familiar completa con fotografía y video a 2 cámaras para documentar ceremonia, convivencia y retratos del festejado con su familia.",
+      "features": [
+        "5 horas de fotografía y video",
+        "Fotografía ilimitada durante la cobertura",
+        "Ceremonia + celebración",
+        "Retratos del bebé o niño",
+        "Sesión con padres, padrinos y familia",
+        "70 fotografías editadas",
+        "Video cinematográfico a 2 cámaras",
+        "Galería digital Lifetime (Un año)",
+        "USB 2TB"
+      ],
+      "notIncludes": ["Adicionales y horas extra fuera de la cobertura contratada"]
+    }
+  ],
+  "retratos": [
+    {
+      "id": "esencia",
+      "name": "ESENCIA",
+      "price": 1490,
+      "description": "Sesión breve para retratos personales, pareja, cumpleaños, graduación o contenido individual con dirección fotográfica profesional.",
+      "features": [
+        "Hasta 45 minutos de sesión",
+        "1 locación",
+        "1 cambio de vestuario",
+        "Dirección fotográfica y poses",
+        "10 fotografías profesionales editadas",
+        "Entrega digital en alta resolución"
+      ],
+      "notIncludes": ["Servicios adicionales no especificados en el paquete"]
+    },
+    {
+      "id": "historia",
+      "name": "HISTORIA",
+      "price": 2490,
+      "badge": "MAS VENDIDO",
+      "popular": true,
+      "description": "Sesión completa para crear una colección variada de retratos personales o profesionales con mayor tiempo, cambios de vestuario y contenido para redes.",
+      "features": [
+        "Hasta 90 minutos de sesión",
+        "1 locación",
+        "Hasta 3 cambios de vestuario",
+        "Dirección fotográfica durante la sesión",
+        "25 fotografías profesionales editadas",
+        "Fotografías verticales y horizontales",
+        "Versiones optimizadas para redes sociales",
+        "Galería digital Lifetime (3 meses)"
+      ],
+      "notIncludes": ["Servicios adicionales no especificados en el paquete"]
+    },
+    {
+      "id": "editorial-xph",
+      "name": "EDITORIAL XPH",
+      "price": 3990,
+      "description": "Producción editorial con planeación de concepto, mayor tiempo de sesión, distintas locaciones y contenido fotográfico y audiovisual.",
+      "features": [
+        "Hasta 3 horas de producción",
+        "Hasta 2 locaciones",
+        "Hasta 5 cambios de vestuario",
+        "Planeación y dirección de concepto",
+        "Fotografía ilimitada durante la sesión",
+        "50 fotografías editadas",
+        "Reel cinematográfico de hasta 60 segundos",
+        "Galería digital Lifetime (6 meses)"
+      ],
+      "notIncludes": ["Servicios adicionales no especificados en el paquete"]
+    }
+  ],
+  "empresarial": [
+    {
+      "id": "presencia",
+      "name": "PRESENCIA",
+      "price": 2990,
+      "description": "Producción fotográfica para negocios que necesitan renovar su presencia digital con imágenes profesionales de instalaciones, personal y servicios.",
+      "features": [
+        "Hasta 2 horas de fotografía",
+        "Fotografías de instalaciones",
+        "Personal y equipo de trabajo",
+        "Producto o servicio",
+        "25 fotografías profesionales editadas",
+        "Formatos optimizados para redes, Google Business y web",
+        "Galería digital Lifetime (3 meses)"
+      ],
+      "notIncludes": ["Servicios adicionales no especificados en el paquete"]
+    },
+    {
+      "id": "identidad-marca",
+      "name": "IDENTIDAD DE MARCA",
+      "price": 5490,
+      "badge": "MAS VENDIDO",
+      "popular": true,
+      "description": "Producción de branding para renovar el contenido visual de un negocio con fotografías profesionales y reels para comunicación digital.",
+      "features": [
+        "Hasta 4 horas de producción",
+        "Fotografía ilimitada durante la cobertura",
+        "Retratos profesionales del equipo",
+        "Fotografías de instalaciones",
+        "Procesos de trabajo",
+        "Productos y/o servicios",
+        "50 fotografías editadas",
+        "2 reels verticales",
+        "Material preparado para redes y web",
+        "Galería digital Lifetime (6 meses)"
+      ],
+      "notIncludes": ["Servicios adicionales no especificados en el paquete"]
+    },
+    {
+      "id": "produccion-empresarial-xph",
+      "name": "PRODUCCIÓN EMPRESARIAL XPH",
+      "price": 8490,
+      "description": "Producción audiovisual integral para empresas y marcas que requieren fotografía, reels y video institucional en una sola jornada de contenido.",
+      "features": [
+        "Hasta 6 horas de producción",
+        "Fotografía ilimitada durante la cobertura",
+        "Retratos ejecutivos",
+        "Personal y equipo de trabajo",
+        "Instalaciones y procesos",
+        "Producto o servicio",
+        "80 fotografías editadas",
+        "4 reels verticales",
+        "Video empresarial de 1 a 2 minutos",
+        "Galería digital Lifetime (Un año)",
+        "USB 2TB"
+      ],
+      "notIncludes": ["Adicionales y horas extra fuera de la cobertura contratada"]
+    }
+  ]
+}
