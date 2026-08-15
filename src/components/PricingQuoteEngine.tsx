@@ -25,7 +25,8 @@ export const PricingQuoteEngine: React.FC<PricingQuoteEngineProps> = ({
   const packages = providedPackages;
   const addons = providedAddons;
   const configured = packages[bookingState.eventType];
-  const currentPackages = configured?.length ? configured : PACKAGES_BY_EVENT[bookingState.eventType];
+  const basePackages = configured?.length ? configured : PACKAGES_BY_EVENT[bookingState.eventType];
+  const currentPackages = [...basePackages].sort((a, b) => a.price - b.price);
   const selectedPackage = currentPackages.find((pkg) => pkg.id === bookingState.selectedPackageId) || currentPackages[0];
   const extraHoursAddon = addons.find((addon) => addon.id === 'extra_hours');
   const extraHoursRate = extraHoursAddon?.price || 0;
@@ -58,7 +59,7 @@ export const PricingQuoteEngine: React.FC<PricingQuoteEngineProps> = ({
 
   const handleSelectEventType = (eventType: EventType) => {
     const configuredEvent = packages[eventType];
-    const eventPackages = configuredEvent?.length ? configuredEvent : PACKAGES_BY_EVENT[eventType];
+    const eventPackages = [...(configuredEvent?.length ? configuredEvent : PACKAGES_BY_EVENT[eventType])].sort((a, b) => a.price - b.price);
     const defaultPackage = eventPackages.find((pkg) => pkg.popular) || eventPackages[0];
     const custom = defaultPackage.price === 0;
     const nextAddons = custom ? [] : selectedAddonIds;
@@ -110,6 +111,12 @@ export const PricingQuoteEngine: React.FC<PricingQuoteEngineProps> = ({
     onProceedToBooking();
   };
 
+  const packageGridClass = currentPackages.length === 1
+    ? 'max-w-2xl mx-auto'
+    : currentPackages.length === 2
+      ? 'md:grid-cols-2'
+      : 'lg:grid-cols-3';
+
   return (
     <section id="cotizador" className="py-20 bg-[#0B0F17] relative border-b border-white/5">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-14">
@@ -121,12 +128,12 @@ export const PricingQuoteEngine: React.FC<PricingQuoteEngineProps> = ({
 
         <div className="flex justify-center"><div className="p-1.5 rounded-2xl bg-[#161C28] border border-white/10 inline-flex flex-wrap justify-center gap-2">{(Object.keys(categoryLabels) as EventType[]).map((category) => <button key={category} type="button" onClick={() => handleSelectEventType(category)} className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all ${bookingState.eventType === category ? 'gold-gradient-bg text-black font-bold' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>{categoryLabels[category]}</button>)}</div></div>
 
-        <div className={`grid gap-8 items-stretch ${currentPackages.length === 1 ? 'max-w-2xl mx-auto' : 'md:grid-cols-2'}`}>
+        <div className={`grid gap-6 xl:gap-8 items-stretch ${packageGridClass}`}>
           {currentPackages.map((pkg) => {
             const selected = selectedPackage.id === pkg.id;
-            return <button key={pkg.id} type="button" onClick={() => handleSelectPackage(pkg.id)} className={`relative text-left rounded-2xl p-6 sm:p-8 transition-all ${selected ? 'bg-[#161C28] border-2 border-[#D4AF37] shadow-xl' : 'bg-[#161C28]/80 border border-white/10 hover:border-white/30'}`}>
+            return <button key={pkg.id} type="button" onClick={() => handleSelectPackage(pkg.id)} className={`relative text-left rounded-2xl p-5 sm:p-6 xl:p-7 transition-all ${selected ? 'bg-[#161C28] border-2 border-[#D4AF37] shadow-xl' : 'bg-[#161C28]/80 border border-white/10 hover:border-white/30'}`}>
               {pkg.badge && <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full gold-gradient-bg text-black font-bold text-[10px] tracking-wider whitespace-nowrap">{pkg.badge}</span>}
-              <div className="flex justify-between gap-3"><h3 className="text-xl font-bold font-serif-luxury text-white">{pkg.name}</h3>{selected && <Check className="w-5 h-5 text-[#D4AF37]" />}</div>
+              <div className="flex justify-between gap-3"><h3 className="text-lg xl:text-xl font-bold font-serif-luxury text-white">{pkg.name}</h3>{selected && <Check className="w-5 h-5 text-[#D4AF37] shrink-0" />}</div>
               <p className="text-xs text-gray-400 mt-2 leading-relaxed">{pkg.description}</p>
               <div className="pt-4 mt-4 border-t border-white/10">{pkg.price > 0 ? <><span className="text-3xl font-extrabold text-white font-mono">${pkg.price.toLocaleString('es-MX')}</span><span className="text-xs text-gray-400 ml-1">MXN</span></> : <span className="text-2xl font-extrabold text-[#D4AF37]">Cotización personalizada</span>}</div>
               <ul className="space-y-2 text-xs text-gray-300 mt-5">{pkg.features.map((feature) => <li key={feature} className="flex items-start gap-2"><Check className="w-4 h-4 text-[#D4AF37] shrink-0 mt-0.5" /><span>{feature}</span></li>)}</ul>
