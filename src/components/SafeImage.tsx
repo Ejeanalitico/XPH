@@ -1,12 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AlertTriangle, ExternalLink } from 'lucide-react';
-import { getDirectGoogleDriveUrl, extractDriveFolderId } from '../utils/googleDrive';
+import { getDirectGoogleDriveUrl } from '../utils/googleDrive';
 
 interface SafeImageProps {
   src: string;
   alt: string;
   className?: string;
   onClick?: () => void;
+  preventDownload?: boolean;
 }
 
 export function extractDriveFileId(url: string): string | null {
@@ -15,7 +16,13 @@ export function extractDriveFileId(url: string): string | null {
   return match ? match[1] : null;
 }
 
-export const SafeImage: React.FC<SafeImageProps> = ({ src, alt, className = '', onClick }) => {
+export const SafeImage: React.FC<SafeImageProps> = ({
+  src,
+  alt,
+  className = '',
+  onClick,
+  preventDownload = false,
+}) => {
   const [hasError, setHasError] = useState(false);
   const [attemptedFallback, setAttemptedFallback] = useState(false);
   const [currentSrc, setCurrentSrc] = useState<string>(() => getDirectGoogleDriveUrl(src));
@@ -30,7 +37,6 @@ export const SafeImage: React.FC<SafeImageProps> = ({ src, alt, className = '', 
     const fileId = extractDriveFileId(src);
     if (fileId && !attemptedFallback) {
       setAttemptedFallback(true);
-      // Try alternate Google Drive export URL format
       setCurrentSrc(`https://drive.google.com/uc?export=view&id=${fileId}`);
     } else {
       setHasError(true);
@@ -43,16 +49,17 @@ export const SafeImage: React.FC<SafeImageProps> = ({ src, alt, className = '', 
     return (
       <div
         onClick={onClick}
+        onContextMenu={preventDownload ? (event) => event.preventDefault() : undefined}
         className={`bg-[#0B0F17] border border-amber-500/30 rounded-2xl p-4 text-center flex flex-col items-center justify-center space-y-2 text-xs text-amber-300 min-h-[160px] w-full ${className}`}
       >
         <div className="w-10 h-10 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
           <AlertTriangle className="w-5 h-5 animate-pulse" />
         </div>
-        <span className="font-bold text-amber-200">Error al Cargar Imagen</span>
+        <span className="font-bold text-amber-200">Imagen no disponible</span>
         <p className="text-[10px] text-gray-400 max-w-[200px] leading-relaxed">
-          Google Drive bloqueó la vista previa o la imagen aún se está procesando.
+          La vista previa no está disponible por el momento.
         </p>
-        {fileId && (
+        {!preventDownload && fileId && (
           <a
             href={`https://drive.google.com/file/d/${fileId}/view`}
             target="_blank"
@@ -74,8 +81,12 @@ export const SafeImage: React.FC<SafeImageProps> = ({ src, alt, className = '', 
       alt={alt}
       onError={handleError}
       onClick={onClick}
-      className={className}
+      onContextMenu={preventDownload ? (event) => event.preventDefault() : undefined}
+      onDragStart={preventDownload ? (event) => event.preventDefault() : undefined}
+      draggable={preventDownload ? false : undefined}
+      className={`${preventDownload ? 'select-none' : ''} ${className}`}
       loading="lazy"
+      style={preventDownload ? ({ WebkitUserDrag: 'none', userSelect: 'none' } as React.CSSProperties) : undefined}
     />
   );
 };
