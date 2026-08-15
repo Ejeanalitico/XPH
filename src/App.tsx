@@ -196,7 +196,9 @@ export default function App() {
     window.setTimeout(() => setToasts((prev) => prev.filter((item) => item.id !== toast.id)), 4000);
   };
 
-  const handleNavigateRoute = (route: RoutePath) => {
+  const handleNavigateRoute = (route: RoutePath, preserveScroll = false) => {
+    const previousScrollY = window.scrollY;
+
     setCurrentRoute(route);
     window.history.pushState({}, '', `#/${route}`);
 
@@ -217,7 +219,13 @@ export default function App() {
       }
     }
 
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (preserveScroll) {
+      window.requestAnimationFrame(() => {
+        window.scrollTo({ top: previousScrollY, behavior: 'auto' });
+      });
+    } else {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
   const handleScrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
@@ -227,7 +235,7 @@ export default function App() {
     <div className="min-h-screen bg-[#0B0F17] text-[#F9FAFB] font-sans antialiased">
       <ToastContainer toasts={toasts} onDismiss={(id) => setToasts((prev) => prev.filter((toast) => toast.id !== id))} />
 
-      <Navbar currentRoute={currentRoute} onNavigateRoute={handleNavigateRoute} />
+      <Navbar currentRoute={currentRoute} onNavigateRoute={(route) => handleNavigateRoute(route, false)} />
 
       <Hero
         currentRoute={currentRoute}
@@ -240,14 +248,14 @@ export default function App() {
 
       <GallerySection
         currentRoute={currentRoute}
-        onNavigateRoute={handleNavigateRoute}
+        onNavigateRoute={(route) => handleNavigateRoute(route, true)}
         images={galleryImages}
         onShowToast={showToast}
       />
 
       <PricingQuoteEngine
         currentRoute={currentRoute}
-        onNavigateRoute={handleNavigateRoute}
+        onNavigateRoute={(route) => handleNavigateRoute(route, true)}
         bookingState={bookingState}
         onUpdateBookingState={setBookingState}
         onProceedToBooking={() => handleScrollTo('solicitud')}
@@ -265,7 +273,7 @@ export default function App() {
         addons={addonsState}
       />
 
-      <Footer onNavigateRoute={handleNavigateRoute} footerContact={footerContact} />
+      <Footer onNavigateRoute={(route) => handleNavigateRoute(route, false)} footerContact={footerContact} />
       <WhatsAppFloatingButton bookingState={bookingState} phoneNumber={`52${whatsappNumber}`} />
     </div>
   );
