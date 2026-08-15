@@ -1,4 +1,5 @@
 import { GalleryImage } from '../types';
+import { CURRENT_CATALOG_VERSION, resolvePublishedAddons, resolvePublishedPackages } from './catalogMerge';
 
 export type AdminSession = {
   authenticated: true;
@@ -74,20 +75,10 @@ export async function loadAdminConfig(_session?: AdminSession | null): Promise<R
   const data = await parseResponse(res);
   const config = data.config || {};
 
-  // Paquetes_Precios is the package source of truth. Overlay it in the
-  // administrator too, so manual Sheet edits are never hidden by Config_Activa.
-  try {
-    const packagesRes = await fetch(`/api/packages-sheet?_t=${Date.now()}`, {
-      method: 'GET',
-      cache: 'no-store',
-    });
-    const packagesData = await packagesRes.json();
-    if (packagesRes.ok && packagesData?.status === 'success' && packagesData?.packages) {
-      config.packages = packagesData.packages;
-    }
-  } catch (error) {
-    console.warn('[XPH Admin] No se pudo sincronizar Paquetes_Precios:', error);
-  }
+  // During migration, keep the complete current catalog while overlaying any
+  // matching cloud edits. After the next catalog save, cloud is authoritative.
+  config.packages = resolvePublishedPackages(config);
+  config.addons = resolvePublishedAddons(config);
 
   return config;
 }
@@ -109,11 +100,16 @@ export async function saveAdminConfig(
   auditType = 'ACTUALIZACION_ADMIN',
   auditDetails = 'Cambios guardados desde el panel administrador'
 ): Promise<Record<string, any>> {
+  const normalizedPatch = { ...patch };
+  if ('packages' in patch || 'addons' in patch) {
+    normalizedPatch.catalogVersion = CURRENT_CATALOG_VERSION;
+  }
+
   const res = await fetch('/api/proxy?action=adminSaveConfig', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ patch, auditType, auditDetails }),
+    body: JSON.stringify({ patch: normalizedPatch, auditType, auditDetails }),
   });
   const data = await parseResponse(res);
   return data.config || {};
