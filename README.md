@@ -26,8 +26,11 @@ Configura estas variables en Production, Preview y Development:
 - `XPH_APPS_SCRIPT_URL`: URL `/exec` del despliegue de Apps Script.
 - `XPH_APPS_SCRIPT_SHARED_SECRET`: secreto compartido con Apps Script.
 - `XPH_SESSION_SECRET`: secreto independiente para firmar sesiones administrativas.
+- `XPH_ADMIN_EMAIL`: correo autorizado para iniciar sesión en el panel administrativo.
+- `XPH_ADMIN_PASSWORD`: contraseña administrativa fuerte, almacenada únicamente en Vercel.
 
 Genera dos secretos distintos de al menos 32 bytes. No uses variables con prefijo `VITE_` para secretos.
+La contraseña administrativa anterior almacenada en la configuración dinámica deja de utilizarse.
 
 ## Propiedades de Google Apps Script
 

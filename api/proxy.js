@@ -3,6 +3,8 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 const APPS_SCRIPT_URL = process.env.XPH_APPS_SCRIPT_URL || '';
 const APPS_SCRIPT_SHARED_SECRET = process.env.XPH_APPS_SCRIPT_SHARED_SECRET || '';
 const SESSION_SECRET = process.env.XPH_SESSION_SECRET || '';
+const ADMIN_EMAIL = process.env.XPH_ADMIN_EMAIL || '';
+const ADMIN_PASSWORD = process.env.XPH_ADMIN_PASSWORD || '';
 
 const SESSION_COOKIE = 'xph_admin_session';
 const SESSION_DAYS = 30;
@@ -105,10 +107,9 @@ async function fetchDriveListFromScript() {
   return parsed;
 }
 
-function validAdminCredentials(config, submitted) {
-  const credentials = config?.adminCredentials || {};
-  const configuredEmail = String(credentials.email || '').trim().toLowerCase();
-  const configuredPassword = String(credentials.pass || '');
+function validAdminCredentials(submitted) {
+  const configuredEmail = String(ADMIN_EMAIL).trim().toLowerCase();
+  const configuredPassword = String(ADMIN_PASSWORD);
   if (!configuredEmail || !configuredPassword) return false;
   const submittedPassword = String(submitted.password || '');
   const expectedBuffer = Buffer.from(configuredPassword);
@@ -128,7 +129,7 @@ function sessionSecret() {
   return SESSION_SECRET;
 }
 
-function signSession(config, email) {
+function signSession(email) {
   const payload = JSON.stringify({
     email: String(email || '').trim().toLowerCase(),
     exp: Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000,
@@ -148,7 +149,7 @@ function readCookies(req) {
   }, {});
 }
 
-function verifySession(config, req) {
+function verifySession(req) {
   const token = readCookies(req)[SESSION_COOKIE];
   if (!token || !token.includes('.')) return null;
   const [encoded, signature] = token.split('.');
@@ -159,7 +160,7 @@ function verifySession(config, req) {
     if (left.length !== right.length || !timingSafeEqual(left, right)) return null;
     const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
     if (!payload?.email || Number(payload.exp) < Date.now()) return null;
-    const configuredEmail = String(config?.adminCredentials?.email || '').trim().toLowerCase();
+    const configuredEmail = String(ADMIN_EMAIL).trim().toLowerCase();
     if (String(payload.email).toLowerCase() !== configuredEmail) return null;
     return payload;
   } catch (_) {
@@ -346,9 +347,7 @@ export default async function handler(req, res) {
     const action = String(req.query?.action || '');
 
     if (req.method === 'GET' && action === 'adminSession') {
-      const payload = await fetchConfigFromScript();
-      const config = normalizeConfig(payload);
-      const session = verifySession(config, req);
+      const session = verifySession(req);
       return res.status(200).json({ status: 'success', authenticated: Boolean(session), email: session?.email || '' });
     }
 
@@ -366,13 +365,11 @@ export default async function handler(req, res) {
       const raw = await readBody(req);
       let submitted = {};
       try { submitted = JSON.parse(raw || '{}'); } catch (_) {}
-      const payload = await fetchConfigFromScript();
-      const config = normalizeConfig(payload);
-      if (!validAdminCredentials(config, submitted)) {
+      if (!validAdminCredentials(submitted)) {
         return res.status(401).json({ status: 'error', authenticated: false, message: 'Credenciales incorrectas.' });
       }
-      const email = String(config.adminCredentials?.email || submitted.email || '').trim().toLowerCase();
-      setSessionCookie(res, signSession(config, email));
+      const email = String(ADMIN_EMAIL).trim().toLowerCase();
+      setSessionCookie(res, signSession(email));
       return res.status(200).json({ status: 'success', authenticated: true, email });
     }
 
@@ -383,9 +380,8 @@ export default async function handler(req, res) {
 
       const payload = await fetchConfigFromScript();
       const config = normalizeConfig(payload);
-      const session = verifySession(config, req);
-      const legacyValid = validAdminCredentials(config, submitted);
-      if (!session && !legacyValid) {
+      const session = verifySession(req);
+      if (!session) {
         return res.status(401).json({ status: 'error', authenticated: false, message: 'La sesión expiró. Inicia sesión nuevamente.' });
       }
 
