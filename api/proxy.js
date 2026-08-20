@@ -1,17 +1,70 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-const APPS_SCRIPT_URL =
-  'https://script.google.com/macros/s/AKfycbzcabU0-P7RCW04G-MMFds6m4JeQKpiPl6_IaAA40KGQsp73ZsaJx6PuwbcmhBCa4Br/exec';
+const APPS_SCRIPT_URL = process.env.XPH_APPS_SCRIPT_URL || '';
+const APPS_SCRIPT_SHARED_SECRET = process.env.XPH_APPS_SCRIPT_SHARED_SECRET || '';
+const SESSION_SECRET = process.env.XPH_SESSION_SECRET || '';
 
 const SESSION_COOKIE = 'xph_admin_session';
 const SESSION_DAYS = 30;
+const MAX_BODY_BYTES = 4_000_000;
+const rateLimitBuckets = globalThis.__xphRateLimitBuckets || new Map();
+globalThis.__xphRateLimitBuckets = rateLimitBuckets;
+
+function assertIntegrationConfig() {
+  if (!APPS_SCRIPT_URL || !APPS_SCRIPT_SHARED_SECRET) {
+    throw new Error('La integración segura con Apps Script no está configurada.');
+  }
+}
+
+function appsScriptUrl(action) {
+  assertIntegrationConfig();
+  const url = new URL(APPS_SCRIPT_URL);
+  url.searchParams.set('action', action);
+  url.searchParams.set('apiSecret', APPS_SCRIPT_SHARED_SECRET);
+  url.searchParams.set('_t', Date.now().toString());
+  return url.toString();
+}
+
+function isSameOrigin(req) {
+  const origin = String(req.headers?.origin || '');
+  if (!origin) return true;
+  try {
+    return new URL(origin).host === String(req.headers?.host || '');
+  } catch (_) {
+    return false;
+  }
+}
+
+function rateLimit(req, scope, limit, windowMs) {
+  const forwarded = String(req.headers?.['x-forwarded-for'] || '').split(',')[0].trim();
+  const key = `${scope}:${forwarded || req.socket?.remoteAddress || 'unknown'}`;
+  const now = Date.now();
+  const current = rateLimitBuckets.get(key);
+  if (!current || current.resetAt <= now) {
+    rateLimitBuckets.set(key, { count: 1, resetAt: now + windowMs });
+    return { allowed: true, retryAfter: 0 };
+  }
+  current.count += 1;
+  rateLimitBuckets.set(key, current);
+  return { allowed: current.count <= limit, retryAfter: Math.max(1, Math.ceil((current.resetAt - now) / 1000)) };
+}
 
 async function readBody(req) {
-  if (typeof req.body === 'string') return req.body;
-  if (req.body && typeof req.body === 'object') return JSON.stringify(req.body);
+  if (typeof req.body === 'string') {
+    if (Buffer.byteLength(req.body, 'utf8') > MAX_BODY_BYTES) throw new Error('La solicitud excede el tamaño permitido.');
+    return req.body;
+  }
+  if (req.body && typeof req.body === 'object') {
+    const serialized = JSON.stringify(req.body);
+    if (Buffer.byteLength(serialized, 'utf8') > MAX_BODY_BYTES) throw new Error('La solicitud excede el tamaño permitido.');
+    return serialized;
+  }
   return await new Promise((resolve, reject) => {
     let data = '';
-    req.on('data', (chunk) => { data += chunk; });
+    req.on('data', (chunk) => {
+      data += chunk;
+      if (Buffer.byteLength(data, 'utf8') > MAX_BODY_BYTES) reject(new Error('La solicitud excede el tamaño permitido.'));
+    });
     req.on('end', () => resolve(data));
     req.on('error', reject);
   });
@@ -27,7 +80,7 @@ function normalizeConfig(payload) {
 }
 
 async function fetchConfigFromScript() {
-  const response = await fetch(`${APPS_SCRIPT_URL}?action=loadConfig&_t=${Date.now()}`, {
+  const response = await fetch(appsScriptUrl('loadConfig'), {
     method: 'GET',
     headers: { Accept: 'application/json' },
     redirect: 'follow',
@@ -40,7 +93,7 @@ async function fetchConfigFromScript() {
 }
 
 async function fetchDriveListFromScript() {
-  const response = await fetch(`${APPS_SCRIPT_URL}?action=listDriveFolder&_t=${Date.now()}`, {
+  const response = await fetch(appsScriptUrl('listDriveFolder'), {
     method: 'GET',
     headers: { Accept: 'application/json' },
     redirect: 'follow',
@@ -54,9 +107,15 @@ async function fetchDriveListFromScript() {
 
 function validAdminCredentials(config, submitted) {
   const credentials = config?.adminCredentials || {};
+  const configuredEmail = String(credentials.email || '').trim().toLowerCase();
+  const configuredPassword = String(credentials.pass || '');
+  if (!configuredEmail || !configuredPassword) return false;
+  const submittedPassword = String(submitted.password || '');
+  const expectedBuffer = Buffer.from(configuredPassword);
+  const submittedBuffer = Buffer.from(submittedPassword);
   return (
-    String(credentials.email || '').trim().toLowerCase() === String(submitted.email || '').trim().toLowerCase() &&
-    String(credentials.pass || '') === String(submitted.password || '')
+    configuredEmail === String(submitted.email || '').trim().toLowerCase() &&
+    expectedBuffer.length === submittedBuffer.length && timingSafeEqual(expectedBuffer, submittedBuffer)
   );
 }
 
@@ -64,9 +123,9 @@ function b64url(value) {
   return Buffer.from(value).toString('base64url');
 }
 
-function sessionSecret(config) {
-  const credentials = config?.adminCredentials || {};
-  return `${String(credentials.email || '').toLowerCase()}::${String(credentials.pass || '')}::xph-admin-session-v2`;
+function sessionSecret() {
+  if (!SESSION_SECRET) throw new Error('El secreto de sesión administrativa no está configurado.');
+  return SESSION_SECRET;
 }
 
 function signSession(config, email) {
@@ -75,7 +134,7 @@ function signSession(config, email) {
     exp: Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000,
   });
   const encoded = b64url(payload);
-  const signature = createHmac('sha256', sessionSecret(config)).update(encoded).digest('base64url');
+  const signature = createHmac('sha256', sessionSecret()).update(encoded).digest('base64url');
   return `${encoded}.${signature}`;
 }
 
@@ -93,7 +152,7 @@ function verifySession(config, req) {
   const token = readCookies(req)[SESSION_COOKIE];
   if (!token || !token.includes('.')) return null;
   const [encoded, signature] = token.split('.');
-  const expected = createHmac('sha256', sessionSecret(config)).update(encoded).digest('base64url');
+  const expected = createHmac('sha256', sessionSecret()).update(encoded).digest('base64url');
   try {
     const left = Buffer.from(signature);
     const right = Buffer.from(expected);
@@ -111,12 +170,12 @@ function verifySession(config, req) {
 function setSessionCookie(res, token) {
   res.setHeader(
     'Set-Cookie',
-    `${SESSION_COOKIE}=${encodeURIComponent(token)}; Max-Age=${SESSION_DAYS * 24 * 60 * 60}; Path=/; HttpOnly; Secure; SameSite=Lax`
+    `${SESSION_COOKIE}=${encodeURIComponent(token)}; Max-Age=${SESSION_DAYS * 24 * 60 * 60}; Path=/; HttpOnly; Secure; SameSite=Strict`
   );
 }
 
 function clearSessionCookie(res) {
-  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax`);
+  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Strict`);
 }
 
 function heroCoverMap(items) {
@@ -166,6 +225,7 @@ function publicGalleryOnly(items) {
 function sanitizePublicConfig(payload) {
   if (!payload || typeof payload !== 'object') return payload;
   const copy = JSON.parse(JSON.stringify(payload));
+  delete copy.spreadsheetUrl;
   if (copy.config && typeof copy.config === 'object') {
     const allGalleryItems = Array.isArray(copy.config.galleryImages) ? copy.config.galleryImages : [];
     copy.config.heroCovers = heroCoverMap(allGalleryItems);
@@ -226,8 +286,10 @@ function encodeHeroSettingsIntoGallery(config, patch) {
 }
 
 async function forwardSaveConfig(patch, auditType, auditDetails) {
+  assertIntegrationConfig();
   const body = JSON.stringify({
     action: 'saveConfig',
+    apiSecret: APPS_SCRIPT_SHARED_SECRET,
     configData: JSON.stringify(patch || {}),
     auditType: auditType || 'ACTUALIZACION_ADMIN',
     auditDetails: auditDetails || 'Cambios guardados desde panel administrador',
@@ -246,8 +308,10 @@ async function forwardSaveConfig(patch, auditType, auditDetails) {
 }
 
 async function forwardUpload(submitted) {
+  assertIntegrationConfig();
   const body = JSON.stringify({
     action: 'uploadPhoto',
+    apiSecret: APPS_SCRIPT_SHARED_SECRET,
     filename: submitted.filename,
     title: submitted.title,
     category: submitted.category,
@@ -269,13 +333,14 @@ async function forwardUpload(submitted) {
 }
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   res.setHeader('Cache-Control', 'no-store, max-age=0');
   res.setHeader('X-Robots-Tag', 'noindex, nofollow');
 
-  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method === 'OPTIONS') return res.status(204).end();
+
+  if (req.method === 'POST' && !isSameOrigin(req)) {
+    return res.status(403).json({ status: 'error', message: 'Origen no permitido.' });
+  }
 
   try {
     const action = String(req.query?.action || '');
@@ -293,6 +358,11 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'POST' && action === 'adminLogin') {
+      const attempt = rateLimit(req, 'admin-login', 8, 15 * 60 * 1000);
+      if (!attempt.allowed) {
+        res.setHeader('Retry-After', String(attempt.retryAfter));
+        return res.status(429).json({ status: 'error', authenticated: false, message: 'Demasiados intentos. Intenta más tarde.' });
+      }
       const raw = await readBody(req);
       let submitted = {};
       try { submitted = JSON.parse(raw || '{}'); } catch (_) {}
@@ -347,6 +417,11 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'POST' && action === 'submitLead') {
+      const attempt = rateLimit(req, 'public-lead', 6, 10 * 60 * 1000);
+      if (!attempt.allowed) {
+        res.setHeader('Retry-After', String(attempt.retryAfter));
+        return res.status(429).json({ status: 'error', message: 'Demasiadas solicitudes. Intenta más tarde.' });
+      }
       const raw = await readBody(req);
       let submitted = {};
       try { submitted = JSON.parse(raw || '{}'); } catch (_) {}
@@ -358,11 +433,22 @@ export default async function handler(req, res) {
       const config = normalizeConfig(payload);
       const quotes = Array.isArray(config.quotes) ? config.quotes : [];
       const safeLead = {
-        ...lead,
         id: lead.id || `quote-${Date.now()}`,
+        clientName: String(lead.clientName).trim().slice(0, 120),
+        clientEmail: String(lead.clientEmail || '').trim().slice(0, 160),
+        clientPhone: String(lead.clientPhone).replace(/[^0-9+\s()-]/g, '').slice(0, 30),
+        eventType: String(lead.eventType || '').slice(0, 40),
+        selectedPackageId: String(lead.selectedPackageId || '').slice(0, 80),
+        packageName: String(lead.packageName || '').slice(0, 120),
+        packagePrice: Math.max(0, Number(lead.packagePrice) || 0),
+        addons: Array.isArray(lead.addons) ? lead.addons.slice(0, 20).map((item) => String(item).slice(0, 160)) : [],
+        extraHours: Math.min(24, Math.max(0, Number(lead.extraHours) || 0)),
+        total: Math.max(0, Number(lead.total) || 0),
+        eventDate: String(lead.eventDate).slice(0, 30),
+        eventCity: String(lead.eventCity || '').slice(0, 160),
         status: 'Pendiente',
-        depositAmount: 0,
         createdAt: lead.createdAt || new Date().toISOString().split('T')[0],
+        notes: String(lead.notes || '').slice(0, 1000),
       };
       await forwardSaveConfig(
         { quotes: [safeLead, ...quotes] },
@@ -391,6 +477,7 @@ export default async function handler(req, res) {
         .map((item) => {
           const clean = { ...item };
           delete clean.galleryToken;
+          if (meta.galleryAllowDownloads === false) delete clean.downloadUrl;
           return clean;
         });
 
@@ -398,6 +485,7 @@ export default async function handler(req, res) {
         status: 'success',
         title: meta.galleryTitle || meta.title || 'Galería privada',
         clientName: meta.galleryClient || 'Cliente XPH',
+        allowDownloads: meta.galleryAllowDownloads !== false,
         media,
       });
     }

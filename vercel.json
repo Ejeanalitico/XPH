@@ -3,11 +3,18 @@
   "outputDirectory": "dist",
   "framework": "vite",
   "installCommand": "npm install",
-  "env": {
-    "VITE_GOOGLE_APPS_SCRIPT_URL": "https://script.google.com/macros/s/AKfycbzcabU0-P7RCW04G-MMFds6m4JeQKpiPl6_IaAA40KGQsp73ZsaJx6PuwbcmhBCa4Br/exec",
-    "VITE_GOOGLE_DRIVE_API_KEY": "AIzaSyAkYYkiVk8qRrKdA8V3a1kGxxeAWMlWLCc",
-    "VITE_GOOGLE_DRIVE_FOLDER_ID": "1UyN3m72kG4liDumQYxlO03cKtJJpYG62"
-  },
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "Referrer-Policy", "value": "no-referrer" },
+        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=()" },
+        { "key": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains" }
+      ]
+    }
+  ],
   "rewrites": [
     { "source": "/xph-logo.png", "destination": "/api/xph-logo-png" },
     { "source": "/api/:path*", "destination": "/api/:path*" },

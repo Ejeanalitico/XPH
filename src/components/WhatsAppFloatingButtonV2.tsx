@@ -16,7 +16,7 @@ export const WhatsAppFloatingButtonV2: React.FC<Props> = ({ bookingState, phoneN
   if (bookingState.extraHours > 0) activeAddons.push(`${bookingState.extraHours} hora${bookingState.extraHours === 1 ? '' : 's'} extra`);
 
   const message = selectedPackage
-    ? `Hola XPH Fotografía & Video. Quisiera información sobre ${selectedPackage.name}. Total estimado: $${Math.max(0, bookingState.total).toLocaleString('es-MX')} MXN. Anticipo 40%: $${Math.round(Math.max(0, bookingState.total) * 0.4).toLocaleString('es-MX')} MXN.${activeAddons.length ? ` Adicionales: ${activeAddons.join(', ')}.` : ''}`
+    ? `Hola XPH Fotografía & Video. Quisiera información sobre ${selectedPackage.name}. Total estimado: $${Math.max(0, bookingState.total).toLocaleString('es-MX')} MXN.${activeAddons.length ? ` Adicionales: ${activeAddons.join(', ')}.` : ''} Quedo pendiente de confirmar disponibilidad y precio final.`
     : 'Hola XPH Fotografía & Video. Quisiera información sobre sus servicios y disponibilidad.';
 
   return (

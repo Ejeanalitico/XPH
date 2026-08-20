@@ -54,7 +54,7 @@ export const PricingQuoteEngineV2: React.FC<Props> = ({
   const commitState = (next: Partial<BookingState>, nextTotal?: number) => {
     onUpdateBookingState((prev) => {
       const total = nextTotal ?? (typeof next.total === 'number' ? next.total : prev.total);
-      return { ...prev, ...next, total, depositAmount: Math.round(Math.max(0, total) * 0.4) };
+      return { ...prev, ...next, total };
     });
   };
 
@@ -113,7 +113,7 @@ export const PricingQuoteEngineV2: React.FC<Props> = ({
         <header className="text-center max-w-3xl mx-auto space-y-4">
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#161C28] border border-[#D4AF37]/30 text-xs font-semibold text-[#D4AF37]"><Sparkles className="w-3.5 h-3.5" /><span>COTIZADOR XPH</span></div>
           <h2 className="text-3xl sm:text-5xl font-bold font-serif-luxury text-white">Encuentra la cobertura adecuada para tu evento</h2>
-          <p className="text-gray-300 text-sm sm:text-base">Selecciona un paquete y añade los complementos que necesites. El total y el anticipo se actualizan automáticamente.</p>
+          <p className="text-gray-300 text-sm sm:text-base">Selecciona un paquete y añade los complementos que necesites. El total estimado se actualiza automáticamente.</p>
         </header>
 
         <div className="flex justify-center"><div className="p-1.5 rounded-2xl bg-[#161C28] border border-white/10 inline-flex flex-wrap justify-center gap-2">{(Object.keys(categoryLabels) as EventType[]).map((category) => <button key={category} type="button" onClick={() => handleSelectEventType(category)} className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all ${bookingState.eventType === category ? 'gold-gradient-bg text-black font-bold' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>{categoryLabels[category]}</button>)}</div></div>
@@ -149,7 +149,7 @@ export const PricingQuoteEngineV2: React.FC<Props> = ({
               <div>
                 <span className="text-[10px] uppercase tracking-widest text-gray-400 font-mono">Total estimado</span>
                 <div className="mt-1"><span className="text-4xl sm:text-5xl font-black text-[#D4AF37] font-mono">${quotedTotal.toLocaleString('es-MX')}</span><span className="text-sm text-gray-400 ml-2">MXN</span></div>
-                <p className="text-xs text-gray-400 mt-2">Anticipo 40%: <strong className="text-white">${Math.round(quotedTotal * 0.4).toLocaleString('es-MX')} MXN</strong></p>
+                <p className="text-xs text-gray-400 mt-2">La fecha y el precio final quedan sujetos a confirmación personal.</p>
               </div>
               <button type="button" onClick={handleProceed} className="w-full md:w-auto md:min-w-[240px] px-7 py-4 rounded-xl gold-gradient-bg text-black font-extrabold text-sm whitespace-nowrap">Solicitar disponibilidad</button>
             </div>

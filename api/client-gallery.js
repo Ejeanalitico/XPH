@@ -1,5 +1,16 @@
-const APPS_SCRIPT_URL =
-  'https://script.google.com/macros/s/AKfycbzcabU0-P7RCW04G-MMFds6m4JeQKpiPl6_IaAA40KGQsp73ZsaJx6PuwbcmhBCa4Br/exec';
+const APPS_SCRIPT_URL = process.env.XPH_APPS_SCRIPT_URL || '';
+const APPS_SCRIPT_SHARED_SECRET = process.env.XPH_APPS_SCRIPT_SHARED_SECRET || '';
+
+function appsScriptUrl(action) {
+  if (!APPS_SCRIPT_URL || !APPS_SCRIPT_SHARED_SECRET) {
+    throw new Error('La integración segura con Apps Script no está configurada.');
+  }
+  const url = new URL(APPS_SCRIPT_URL);
+  url.searchParams.set('action', action);
+  url.searchParams.set('apiSecret', APPS_SCRIPT_SHARED_SECRET);
+  url.searchParams.set('_t', Date.now().toString());
+  return url.toString();
+}
 
 function normalizeConfig(payload) {
   const raw = payload?.config;
@@ -33,7 +44,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ status: 'error', message: 'Liga privada incompleta.' });
     }
 
-    const response = await fetch(`${APPS_SCRIPT_URL}?action=loadConfig&_t=${Date.now()}`, {
+    const response = await fetch(appsScriptUrl('loadConfig'), {
       method: 'GET',
       headers: { Accept: 'application/json' },
       redirect: 'follow',
@@ -78,7 +89,7 @@ export default async function handler(req, res) {
           galleryAllowDownloads: allowDownloads,
           downloadUrl: allowDownloads ? item.downloadUrl : undefined,
           previewUrl: isVideo && fileId ? drivePreviewUrl(fileId) : (item.previewUrl || item.url),
-          streamUrl: isVideo && fileId ? driveOriginalStreamUrl(fileId) : undefined,
+          streamUrl: allowDownloads && isVideo && fileId ? driveOriginalStreamUrl(fileId) : undefined,
           createdAt: item.createdAt,
         };
       });

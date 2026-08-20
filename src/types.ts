@@ -103,36 +103,7 @@ export interface BookingState {
   clientPhone: string;
   eventCity: string;
   notes: string;
-  signatureDataUrl: string;
-  paymentMethod: 'stripe' | 'mercadopago' | 'spei';
   total: number;
-  depositAmount: number;
-}
-
-export interface QuoteRecord {
-  id: string;
-  clientName: string;
-  clientEmail: string;
-  clientPhone: string;
-  eventType: EventType;
-  selectedPackageId: string;
-  packageName: string;
-  packagePrice: number;
-  addons: string[];
-  extraHours: number;
-  total: number;
-  depositAmount: number;
-  eventDate: string;
-  eventCity: string;
-  status: 'Pendiente' | 'Cita Presencial Agendada' | 'Contratado';
-  createdAt: string;
-  notes?: string;
-  signatureDataUrl?: string;
-}
-
-export interface AdminCredentials {
-  email: string;
-  pass: string;
 }
 
 export interface ToastMessage {
