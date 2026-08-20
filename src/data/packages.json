@@ -11,9 +11,9 @@
         "Video cinematográfico",
         "Sesión fotográfica previa",
         "50 fotografías editadas",
-        "Galería digital Lifetime (6 meses)",
+          "Galería digital disponible durante 6 meses",
         "Entrega en 15 días hábiles",
-        "USB 2TB"
+          "Entrega en memoria USB"
       ],
       "notIncludes": ["Servicios adicionales no especificados en el paquete"]
     },
@@ -26,15 +26,15 @@
       "description": "Cobertura profesional con preparación de novia, sesión previa, fotografía y video.",
       "features": [
         "Fotografía ilimitada durante la cobertura",
-        "Maquillaje y peinado de novia el dia del evento",
+          "Maquillaje y peinado de novia el día del evento",
         "Prueba de Maquillaje y peinado",
         "Sesión fotográfica previa",
         "75 fotografías editadas",
         "Video profesional a 2 cámaras",
-        "Galería digital Lifetime (Un año)",
+          "Galería digital disponible durante un año",
         "6 horas de cobertura",
-        "Video Save to date",
-        "USB 2TB"
+          "Video Save the Date",
+          "Entrega en memoria USB"
       ],
       "notIncludes": ["Adicionales y horas extra fuera de la cobertura contratada"]
     }
@@ -50,10 +50,10 @@
         "5 horas de fotografía y video",
         "50 fotografías digitales editadas",
         "Sesión fotográfica previa",
-        "Video cinematografico a 2 cámaras",
+          "Video cinematográfico a 2 cámaras",
         "Fotografía ilimitada",
-        "Galería digital Lifetime (6 meses)",
-        "USB 2TB"
+          "Galería digital disponible durante 6 meses",
+          "Entrega en memoria USB"
       ],
       "notIncludes": ["Servicios adicionales no especificados en el paquete"]
     },
@@ -61,19 +61,19 @@
       "id": "pro",
       "name": "XV AÑOS PROFESIONAL",
       "price": 9990,
-      "badge": "Mas vendido",
+        "badge": "MÁS VENDIDO",
       "popular": true,
       "description": "Paquete profesional con preparación de quinceañera, fotografía y video.",
       "features": [
         "Fotografía ilimitada",
-        "Video cinematografico a 2 cámaras",
+          "Video cinematográfico a 2 cámaras",
         "6 horas de servicio",
-        "Maquillaje y peinado el dia del evento",
+          "Maquillaje y peinado el día del evento",
         "Prueba Maquillaje y peinado",
         "Sesión fotográfica previa",
         "70 fotografías editadas",
-        "USB 2TB",
-        "Galería digital Lifetime (Un año)"
+          "Entrega en memoria USB",
+          "Galería digital disponible durante un año"
       ],
       "notIncludes": ["Adicionales y horas extra fuera de la cobertura contratada"]
     }
@@ -90,7 +90,7 @@
         "Cobertura de ceremonia religiosa",
         "Fotografías con padres, padrinos y familiares",
         "30 fotografías editadas",
-        "Galería digital Lifetime (3 meses)"
+          "Galería digital disponible durante 3 meses"
       ],
       "notIncludes": ["Servicios adicionales no especificados en el paquete"]
     },
@@ -108,7 +108,7 @@
         "Sesión familiar el día del evento",
         "50 fotografías editadas",
         "Video cinematográfico",
-        "Galería digital Lifetime (6 meses)"
+          "Galería digital disponible durante 6 meses"
       ],
       "notIncludes": ["Adicionales y horas extra fuera de la cobertura contratada"]
     },
@@ -125,8 +125,8 @@
         "Sesión con padres, padrinos y familia",
         "70 fotografías editadas",
         "Video cinematográfico a 2 cámaras",
-        "Galería digital Lifetime (Un año)",
-        "USB 2TB"
+          "Galería digital disponible durante un año",
+          "Entrega en memoria USB"
       ],
       "notIncludes": ["Adicionales y horas extra fuera de la cobertura contratada"]
     }
@@ -162,7 +162,7 @@
         "25 fotografías profesionales editadas",
         "Fotografías verticales y horizontales",
         "Versiones optimizadas para redes sociales",
-        "Galería digital Lifetime (3 meses)"
+          "Galería digital disponible durante 3 meses"
       ],
       "notIncludes": ["Servicios adicionales no especificados en el paquete"]
     },
@@ -179,7 +179,7 @@
         "Fotografía ilimitada durante la sesión",
         "50 fotografías editadas",
         "Reel cinematográfico de hasta 60 segundos",
-        "Galería digital Lifetime (6 meses)"
+          "Galería digital disponible durante 6 meses"
       ],
       "notIncludes": ["Servicios adicionales no especificados en el paquete"]
     }
@@ -197,7 +197,7 @@
         "Producto o servicio",
         "25 fotografías profesionales editadas",
         "Formatos optimizados para redes, Google Business y web",
-        "Galería digital Lifetime (3 meses)"
+          "Galería digital disponible durante 3 meses"
       ],
       "notIncludes": ["Servicios adicionales no especificados en el paquete"]
     },
@@ -218,7 +218,7 @@
         "50 fotografías editadas",
         "2 reels verticales",
         "Material preparado para redes y web",
-        "Galería digital Lifetime (6 meses)"
+          "Galería digital disponible durante 6 meses"
       ],
       "notIncludes": ["Servicios adicionales no especificados en el paquete"]
     },
@@ -237,8 +237,8 @@
         "80 fotografías editadas",
         "4 reels verticales",
         "Video empresarial de 1 a 2 minutos",
-        "Galería digital Lifetime (Un año)",
-        "USB 2TB"
+          "Galería digital disponible durante un año",
+          "Entrega en memoria USB"
       ],
       "notIncludes": ["Adicionales y horas extra fuera de la cobertura contratada"]
     }

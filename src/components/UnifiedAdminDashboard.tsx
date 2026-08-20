@@ -109,6 +109,7 @@ const privateGallerySummaries = (items: GalleryImage[]): PrivateGallerySummary[]
     token: meta.galleryToken || '',
     createdAt: meta.createdAt || '',
     mediaCount: items.filter((item) => item.galleryId === meta.galleryId && item.mediaType !== 'gallery-meta').length,
+    allowDownloads: meta.galleryAllowDownloads !== false,
   }));
 
 const stablePackages = (value: Record<EventType, PackageOption[]>) =>
@@ -224,7 +225,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
     setBusy(true);
     try {
       const managedPackages = Object.fromEntries(
-        Object.entries(packages).map(([key, list]) => [key, list.map((pkg) => ({ ...pkg, managedByAdmin: true, features: pkg.features.filter((x) => x.trim()) }))])
+        (Object.entries(packages) as [EventType, PackageOption[]][]).map(([key, list]) => [key, list.map((pkg) => ({ ...pkg, managedByAdmin: true, features: pkg.features.filter((x) => x.trim()) }))])
       ) as Record<EventType, PackageOption[]>;
       const managedAddons = addons.map((addon) => ({ ...addon, managedByAdmin: true }));
       const confirmed = await saveAdminConfig(session, { packages: managedPackages, addons: managedAddons }, 'ADMIN_PAQUETES', 'Paquetes y adicionales actualizados desde el administrador web');

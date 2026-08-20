@@ -2,15 +2,29 @@
  * =========================================================================
  * GOOGLE APPS SCRIPT — XPH GOOGLE SHEETS DATABASE & AUDIT LOG ENGINE
  * =========================================================================
- * ID de Hoja de Cálculo: 1GavJQKZnn_qtOdc5aaMtqvJg951CccgH1LxuWKhTLAg
- * Carpeta Destino en Google Drive: 1UyN3m72kG4liDumQYxlO03cKtJJpYG62
  * Nombre de la Hoja de Cálculo: XPH_DATABASE_PRODUCCION
+ * Configuración requerida en Propiedades del script:
+ * XPH_SPREADSHEET_ID, XPH_FOLDER_ID y XPH_API_SECRET.
  * =========================================================================
  */
 
-var SPREADSHEET_ID = "1GavJQKZnn_qtOdc5aaMtqvJg951CccgH1LxuWKhTLAg";
-var FOLDER_ID = "1UyN3m72kG4liDumQYxlO03cKtJJpYG62";
+var XPH_PROPERTIES = PropertiesService.getScriptProperties();
+var SPREADSHEET_ID = XPH_PROPERTIES.getProperty('XPH_SPREADSHEET_ID') || '';
+var FOLDER_ID = XPH_PROPERTIES.getProperty('XPH_FOLDER_ID') || '';
 var SPREADSHEET_NAME = "XPH_DATABASE_PRODUCCION";
+
+function jsonOutput(payload) {
+  return ContentService.createTextOutput(JSON.stringify(payload)).setMimeType(ContentService.MimeType.JSON);
+}
+
+function isAuthorizedApiSecret(candidate) {
+  var expected = XPH_PROPERTIES.getProperty('XPH_API_SECRET') || '';
+  return Boolean(expected && candidate && String(candidate) === String(expected));
+}
+
+function unauthorizedOutput() {
+  return jsonOutput({ status: 'error', message: 'Solicitud no autorizada.' });
+}
 
 /**
  * Función de inicialización y migración manual.
@@ -43,6 +57,9 @@ function initDatabase() {
  */
 function getDatabaseSpreadsheet() {
   try {
+    if (!SPREADSHEET_ID || !FOLDER_ID) {
+      throw new Error('Faltan XPH_SPREADSHEET_ID o XPH_FOLDER_ID en las propiedades del script.');
+    }
     if (SPREADSHEET_ID) {
       try {
         var ssById = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -72,7 +89,7 @@ function getDatabaseSpreadsheet() {
       var file = DriveApp.getFileById(ss.getId());
       folder.addFile(file);
       try { DriveApp.getRootFolder().removeFile(file); } catch (_) {}
-      try { file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (_) {}
+      // La base de datos permanece privada. La web accede únicamente mediante el proxy autenticado.
     }
 
     if (ss) {
@@ -95,8 +112,8 @@ function initSpreadsheetSheets(ss) {
       'Config_Activa': ['Clave', 'Valor_JSON', 'Ultima_Actualizacion'],
       'Historial_Auditoria': ['Fecha_Hora', 'Accion', 'Detalles_Cambio', 'ID_Elemento', 'Usuario', 'Estado'],
       'Galeria_Fotos': ['ID_Foto', 'Titulo', 'Categoria', 'URL_Google_Drive', 'Ubicacion', 'Fecha_Carga', 'Estado'],
-      'Cotizaciones_Citas': ['ID_Cotizacion', 'Fecha_Registro', 'Cliente', 'Email', 'WhatsApp', 'Evento', 'Paquete', 'Total_MXN', 'Anticipo_40_MXN', 'Saldo_60_MXN', 'Fecha_Evento', 'Ciudad', 'Estado_Cotizacion', 'Notas'],
-      'Paquetes_Precios': ['Categoria', 'ID_Paquete', 'Nombre_Paquete', 'Precio_Base_MXN', 'Anticipo_40_MXN', 'Insignia_Badge', 'Descripcion', 'Que_Incluye', 'No_Incluye', 'Ultima_Modificacion']
+      'Cotizaciones_Citas': ['ID_Cotizacion', 'Fecha_Registro', 'Cliente', 'Email', 'WhatsApp', 'Evento', 'Paquete', 'Total_MXN', 'Pago_Inicial_MXN', 'Saldo_Pendiente_MXN', 'Fecha_Evento', 'Ciudad', 'Estado_Cotizacion', 'Notas'],
+      'Paquetes_Precios': ['Categoria', 'ID_Paquete', 'Nombre_Paquete', 'Precio_Base_MXN', 'Precio_Final_Por_Confirmar', 'Insignia_Badge', 'Descripcion', 'Que_Incluye', 'No_Incluye', 'Ultima_Modificacion']
     };
 
     for (var sheetName in sheetsMap) {
@@ -204,7 +221,7 @@ function syncGalleryTable(ss, galleryImages) {
 
 /**
  * Sincroniza físicamente la tabla Paquetes_Precios en Google Sheets con las 10 columnas exactas:
- * Categoria | ID_Paquete | Nombre_Paquete | Precio_Base_MXN | Anticipo_40_MXN | Insignia_Badge | Descripcion | Que_Incluye (en una sola columna multilínea) | No_Incluye | Ultima_Modificacion
+ * Categoria | ID_Paquete | Nombre_Paquete | Precio_Base_MXN | Precio_Final_Por_Confirmar | Insignia_Badge | Descripcion | Que_Incluye (en una sola columna multilínea) | No_Incluye | Ultima_Modificacion
  */
 function syncPackagesTable(ss, packages) {
   if (!ss) return;
@@ -214,7 +231,7 @@ function syncPackagesTable(ss, packages) {
       sheet = ss.insertSheet('Paquetes_Precios');
     }
 
-    var headers = ['Categoria', 'ID_Paquete', 'Nombre_Paquete', 'Precio_Base_MXN', 'Anticipo_40_MXN', 'Insignia_Badge', 'Descripcion', 'Que_Incluye', 'No_Incluye', 'Ultima_Modificacion'];
+    var headers = ['Categoria', 'ID_Paquete', 'Nombre_Paquete', 'Precio_Base_MXN', 'Precio_Final_Por_Confirmar', 'Insignia_Badge', 'Descripcion', 'Que_Incluye', 'No_Incluye', 'Ultima_Modificacion'];
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     sheet.getRange(1, 1, 1, headers.length)
       .setBackground('#161C28')
@@ -259,14 +276,12 @@ function syncPackagesTable(ss, packages) {
               : '';
 
             var priceNum = Number(pkg.price) || 0;
-            var depositNum = Math.round(priceNum * 0.4);
-
             rows.push([
               catLabel,
               pkg.id || '',
               pkg.name || '',
               priceNum,
-              depositNum,
+              'Sí',
               pkg.badge || '',
               pkg.description || '',
               includesFormatted,
@@ -300,7 +315,7 @@ function syncQuotesTable(ss, quotes) {
       sheet = ss.insertSheet('Cotizaciones_Citas');
     }
 
-    var headers = ['ID_Cotizacion', 'Fecha_Registro', 'Cliente', 'Email', 'WhatsApp', 'Evento', 'Paquete', 'Total_MXN', 'Anticipo_40_MXN', 'Saldo_60_MXN', 'Fecha_Evento', 'Ciudad', 'Estado_Cotizacion', 'Notas'];
+    var headers = ['ID_Cotizacion', 'Fecha_Registro', 'Cliente', 'Email', 'WhatsApp', 'Evento', 'Paquete', 'Total_MXN', 'Pago_Inicial_MXN', 'Saldo_Pendiente_MXN', 'Fecha_Evento', 'Ciudad', 'Estado_Cotizacion', 'Notas'];
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     sheet.getRange(1, 1, 1, headers.length)
       .setBackground('#161C28')
@@ -319,7 +334,8 @@ function syncQuotesTable(ss, quotes) {
       var rows = [];
       quotes.forEach(function(q) {
         var totalNum = Number(q.total) || 0;
-        var depNum = Number(q.depositAmount) || Math.round(totalNum * 0.4);
+        var hasPayment = q.depositAmount !== undefined && q.depositAmount !== null && q.depositAmount !== '';
+        var depNum = hasPayment ? Math.max(0, Number(q.depositAmount) || 0) : '';
         rows.push([
           q.id || '',
           q.createdAt || new Date().toISOString().split('T')[0],
@@ -330,7 +346,7 @@ function syncQuotesTable(ss, quotes) {
           q.packageName || '',
           totalNum,
           depNum,
-          totalNum - depNum,
+          hasPayment ? Math.max(0, totalNum - depNum) : '',
           q.eventDate || '',
           q.eventCity || 'CDMX',
           q.status || 'Pendiente',
@@ -434,6 +450,7 @@ function doPost(e) {
     var configData = '';
     var auditType = '';
     var auditDetails = '';
+    var apiSecret = '';
 
     if (e && e.postData && e.postData.contents) {
       var raw = e.postData.contents;
@@ -452,6 +469,7 @@ function doPost(e) {
           location     = j.location || location;
           auditType    = j.auditType || '';
           auditDetails = j.auditDetails || '';
+          apiSecret    = j.apiSecret || '';
           parsed = true;
         }
       } catch (_) {}
@@ -474,6 +492,7 @@ function doPost(e) {
         location     = params['location'] || location;
         auditType    = params['auditType'] || auditType;
         auditDetails = params['auditDetails'] || auditDetails;
+        apiSecret    = params['apiSecret'] || apiSecret;
       }
     }
 
@@ -488,7 +507,10 @@ function doPost(e) {
       location     = e.parameter['location'] || location;
       auditType    = e.parameter['auditType'] || auditType;
       auditDetails = e.parameter['auditDetails'] || auditDetails;
+      apiSecret    = e.parameter['apiSecret'] || apiSecret;
     }
+
+    if (!isAuthorizedApiSecret(apiSecret)) return unauthorizedOutput();
 
     var ss = getDatabaseSpreadsheet();
 
@@ -652,6 +674,8 @@ function doPost(e) {
 function doGet(e) {
   try {
     var action = (e && e.parameter && e.parameter['action']) ? e.parameter['action'] : 'loadConfig';
+    var apiSecret = (e && e.parameter && e.parameter['apiSecret']) ? e.parameter['apiSecret'] : '';
+    if (!isAuthorizedApiSecret(apiSecret)) return unauthorizedOutput();
 
     // ── ACCIÓN: MIGRAR Y SINCRONIZAR TODAS LAS TABLAS FORZOSAMENTE ────────────
     if (action === 'migrateAndSyncAll') {
@@ -708,50 +732,8 @@ function doGet(e) {
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    // ── ACCIÓN: GUARDAR CONFIGURACIÓN VIA GET PARAMS ─────────────────────────
-    if (action === 'saveConfig') {
-      var configData   = (e.parameter && e.parameter['configData'])   || '';
-      var auditType    = (e.parameter && e.parameter['auditType'])    || 'ACTUALIZACION_GENERAL';
-      var auditDetails = (e.parameter && e.parameter['auditDetails']) || 'Cambios guardados desde Admin';
-
-      var configObj = {};
-      try { configObj = JSON.parse(configData); } catch (_) {}
-
-      var ss = getDatabaseSpreadsheet();
-
-      var prevConfig = {};
-      try {
-        var prevRaw = loadActiveConfig();
-        if (prevRaw) prevConfig = JSON.parse(prevRaw);
-      } catch (_) {}
-
-      var mergedConfig = {
-        packages:         configObj.packages !== undefined         ? configObj.packages         : (prevConfig.packages         || {}),
-        addons:           configObj.addons !== undefined           ? configObj.addons           : (prevConfig.addons           || []),
-        footerContact:    configObj.footerContact !== undefined    ? configObj.footerContact    : (prevConfig.footerContact    || {}),
-        testimonials:     configObj.testimonials !== undefined     ? configObj.testimonials     : (prevConfig.testimonials     || []),
-        quotes:           configObj.quotes !== undefined           ? configObj.quotes           : (prevConfig.quotes           || []),
-        adminCredentials: configObj.adminCredentials !== undefined ? configObj.adminCredentials : (prevConfig.adminCredentials || {}),
-        galleryImages:    configObj.galleryImages !== undefined    ? configObj.galleryImages    : (prevConfig.galleryImages    || [])
-      };
-
-      var jsonStr = JSON.stringify(mergedConfig);
-      saveActiveConfig(ss, jsonStr);
-
-      if (ss) {
-        if (mergedConfig.galleryImages) syncGalleryTable(ss, mergedConfig.galleryImages);
-        if (mergedConfig.packages) syncPackagesTable(ss, mergedConfig.packages);
-        if (mergedConfig.quotes) syncQuotesTable(ss, mergedConfig.quotes);
-        logAudit(ss, auditType, auditDetails, '-', 'Admin XPH');
-      }
-
-      var props2 = PropertiesService.getScriptProperties();
-      return ContentService.createTextOutput(JSON.stringify({
-        status: 'success',
-        spreadsheetUrl: ss ? ss.getUrl() : (props2.getProperty('xph_spreadsheet_url') || ''),
-        message: 'Base de datos sincronizada en Google Sheets con exito'
-      })).setMimeType(ContentService.MimeType.JSON);
-    }
+    // Las mutaciones se aceptan únicamente por POST.
+    if (action === 'saveConfig') return jsonOutput({ status: 'error', message: 'Método no permitido.' });
 
     // ── ACCIÓN: CARGAR CONFIGURACIÓN (DEFAULT) ────────────────────────────────
     var content = loadActiveConfig();

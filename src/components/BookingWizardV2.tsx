@@ -37,7 +37,6 @@ export const BookingWizardV2: React.FC<Props> = ({
     .map((id) => addons.find((addon) => addon.id === id))
     .filter((addon): addon is AddOnOption => Boolean(addon));
   const total = selectedPackage ? Math.max(0, bookingState.total || 0) : 0;
-  const deposit = Math.round(total * 0.4);
 
   const cleanWhatsAppNumber = (value?: string) => {
     const digits = String(value || '').replace(/\D/g, '');
@@ -89,7 +88,6 @@ export const BookingWizardV2: React.FC<Props> = ({
         addons: activeAddonNames,
         extraHours: bookingState.extraHours,
         total,
-        depositAmount: deposit,
         eventDate: bookingState.date,
         eventCity: bookingState.eventCity || 'Por definir',
         status: 'Pendiente',
@@ -106,7 +104,7 @@ export const BookingWizardV2: React.FC<Props> = ({
         ? activeAddonNames.map((addon) => `• ${addon}`).join('\n')
         : '• Ninguno';
 
-      const message = `Hola XPH Fotografía & Video. Quisiera solicitar disponibilidad y cotización.\n\n📸 EVENTO\n${EVENT_LABELS[bookingState.eventType]}\n\n📦 PAQUETE\n${selectedPackage.name}\nPrecio base: $${selectedPackage.price.toLocaleString('es-MX')} MXN\n\n✅ INCLUYE\n${included}\n\n✨ COMPLEMENTOS\n${addonsText}\n\n💰 RESUMEN\nTotal estimado: $${total.toLocaleString('es-MX')} MXN\nAnticipo 40%: $${deposit.toLocaleString('es-MX')} MXN\n\n🗓️ Fecha tentativa: ${bookingState.date}\n📍 Lugar: ${bookingState.eventCity || 'Por definir'}\n👤 Nombre: ${bookingState.clientName}\n📱 WhatsApp: ${bookingState.clientPhone}\n✉️ Correo: ${bookingState.clientEmail}${bookingState.notes ? `\n📝 Notas: ${bookingState.notes}` : ''}\n\nQuedo pendiente de confirmación de disponibilidad.`;
+      const message = `Hola XPH Fotografía & Video. Quisiera solicitar disponibilidad y cotización.\n\n📸 EVENTO\n${EVENT_LABELS[bookingState.eventType]}\n\n📦 PAQUETE\n${selectedPackage.name}\nPrecio base: $${selectedPackage.price.toLocaleString('es-MX')} MXN\n\n✅ INCLUYE\n${included}\n\n✨ COMPLEMENTOS\n${addonsText}\n\n💰 RESUMEN\nTotal estimado: $${total.toLocaleString('es-MX')} MXN\n\n🗓️ Fecha tentativa: ${bookingState.date}\n📍 Lugar: ${bookingState.eventCity || 'Por definir'}\n👤 Nombre: ${bookingState.clientName}\n📱 WhatsApp: ${bookingState.clientPhone}\n✉️ Correo: ${bookingState.clientEmail}${bookingState.notes ? `\n📝 Notas: ${bookingState.notes}` : ''}\n\nQuedo pendiente de confirmación de disponibilidad y precio final.`;
 
       const url = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
       if (whatsappWindow) whatsappWindow.location.href = url;
@@ -149,7 +147,7 @@ export const BookingWizardV2: React.FC<Props> = ({
           ) : (
             <div className="space-y-6">
               <div><h3 className="text-xl font-bold font-serif-luxury text-white">Datos de contacto</h3><p className="text-xs text-gray-400 mt-1">Usaremos estos datos únicamente para dar seguimiento a tu solicitud.</p></div>
-              {selectedPackage && <div className="p-5 rounded-2xl bg-[#0B0F17] border border-white/10 grid sm:grid-cols-3 gap-4 text-xs"><div><span className="text-gray-500">Paquete</span><p className="text-white font-semibold mt-1">{selectedPackage.name}</p></div><div><span className="text-gray-500">Total</span><p className="text-white font-mono font-bold mt-1">${total.toLocaleString('es-MX')} MXN</p></div><div><span className="text-gray-500">Anticipo 40%</span><p className="text-[#D4AF37] font-mono font-bold mt-1">${deposit.toLocaleString('es-MX')} MXN</p></div></div>}
+              {selectedPackage && <div className="p-5 rounded-2xl bg-[#0B0F17] border border-white/10 grid sm:grid-cols-2 gap-4 text-xs"><div><span className="text-gray-500">Paquete</span><p className="text-white font-semibold mt-1">{selectedPackage.name}</p></div><div><span className="text-gray-500">Total estimado</span><p className="text-white font-mono font-bold mt-1">${total.toLocaleString('es-MX')} MXN</p></div></div>}
               <div className="grid sm:grid-cols-2 gap-4">
                 <label className="text-xs text-gray-300">Nombre completo *<input type="text" value={bookingState.clientName} onChange={(e) => onUpdateBookingState((prev) => ({ ...prev, clientName: e.target.value }))} className="mt-1 w-full px-4 py-2.5 rounded-xl bg-[#0B0F17] border border-white/15 text-white" /></label>
                 <label className="text-xs text-gray-300">Correo electrónico *<input type="email" value={bookingState.clientEmail} onChange={(e) => onUpdateBookingState((prev) => ({ ...prev, clientEmail: e.target.value }))} className="mt-1 w-full px-4 py-2.5 rounded-xl bg-[#0B0F17] border border-white/15 text-white" /></label>

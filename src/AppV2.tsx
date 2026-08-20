@@ -90,10 +90,7 @@ export default function AppV2() {
     clientPhone: '',
     eventCity: '',
     notes: '',
-    signatureDataUrl: '',
-    paymentMethod: 'stripe',
     total: 0,
-    depositAmount: 0,
   });
 
   useEffect(() => {
@@ -143,7 +140,6 @@ export default function AppV2() {
           selectedAddons: [],
           extraHours: 0,
           total: 0,
-          depositAmount: 0,
         }));
       }
     };
@@ -175,7 +171,6 @@ export default function AppV2() {
         selectedAddons: [],
         extraHours: 0,
         total: 0,
-        depositAmount: 0,
       }));
     }
 

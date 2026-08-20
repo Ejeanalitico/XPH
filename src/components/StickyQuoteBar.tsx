@@ -15,7 +15,6 @@ export const StickyQuoteBar: React.FC<StickyQuoteBarProps> = ({ bookingState, pa
     .map((id) => addons.find((addon) => addon.id === id))
     .filter((addon): addon is AddOnOption => Boolean(addon));
   const total = selectedPackage ? Math.max(0, bookingState.total || 0) : 0;
-  const deposit = Math.round(total * 0.4);
   const extraCount = selectedAddons.length + (bookingState.extraHours > 0 ? 1 : 0);
 
   return (
@@ -25,14 +24,10 @@ export const StickyQuoteBar: React.FC<StickyQuoteBarProps> = ({ bookingState, pa
           <Calculator className="w-5 h-5 text-[#D4AF37]" />
         </div>
 
-        <div className="min-w-0 flex-1 grid grid-cols-2 sm:flex sm:items-center sm:gap-8">
+        <div className="min-w-0 flex-1 grid grid-cols-1 sm:flex sm:items-center sm:gap-8">
           <div className="min-w-0">
             <p className="text-[9px] sm:text-[10px] uppercase tracking-widest text-gray-500 font-mono">Total</p>
             <p className="text-lg sm:text-2xl font-black text-white font-mono leading-tight">${total.toLocaleString('es-MX')} <span className="text-[10px] sm:text-xs text-gray-500 font-sans">MXN</span></p>
-          </div>
-          <div className="min-w-0">
-            <p className="text-[9px] sm:text-[10px] uppercase tracking-widest text-gray-500 font-mono">Anticipo 40%</p>
-            <p className="text-lg sm:text-2xl font-black text-[#D4AF37] font-mono leading-tight">${deposit.toLocaleString('es-MX')} <span className="text-[10px] sm:text-xs text-gray-500 font-sans">MXN</span></p>
           </div>
           <div className="hidden lg:block min-w-0">
             <p className="text-xs font-semibold text-gray-200 truncate">{selectedPackage?.name || 'Selecciona un paquete'}</p>
