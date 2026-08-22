@@ -4,7 +4,6 @@ import AppV2 from './AppV2';
 import { ClientGalleryPage } from './components/ClientGalleryPage';
 import { PrivateGalleryDownloadSettings } from './components/PrivateGalleryDownloadSettings';
 import { UnifiedAdminDashboard } from './components/UnifiedAdminDashboard';
-import { PromotionAdminSettings } from './components/PromotionAdminSettings';
 import { AdminExitHomeEnhancer } from './components/AdminExitHomeEnhancer';
 import './index.css';
 import './branding.css';
@@ -17,14 +16,13 @@ const galleryToken = params.get('k') || '';
 
 let content = <AppV2 />;
 
-if (adminMode === 'panel' || adminMode === 'galeria' || adminMode === 'portadas') {
+if (adminMode === 'panel' || adminMode === 'galeria' || adminMode === 'portadas' || adminMode === 'promociones') {
   content = (
     <>
       <UnifiedAdminDashboard
-        initialTab={adminMode === 'portadas' ? 'covers' : adminMode === 'galeria' ? 'public' : 'packages'}
+        initialTab={adminMode === 'portadas' ? 'covers' : adminMode === 'galeria' ? 'public' : adminMode === 'promociones' ? 'promotions' : 'packages'}
       />
       <PrivateGalleryDownloadSettings />
-      <PromotionAdminSettings />
       <AdminExitHomeEnhancer />
     </>
   );

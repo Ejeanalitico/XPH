@@ -1,30 +1,29 @@
 import React, { useEffect, useState } from 'react';
-import { EyeOff, Image as ImageIcon, Loader2, Megaphone, Save, Trash2, Upload, X } from 'lucide-react';
+import { EyeOff, Image as ImageIcon, Loader2, Save, Trash2, Upload } from 'lucide-react';
 import { EMPTY_PROMOTION_POPUP, PromotionPopupConfig, PromotionPopupMode } from '../promotion';
-import { AdminSession, adminUploadMedia, loadAdminConfig, resumeAdminSession, saveAdminConfig } from '../utils/adminApi';
+import { AdminSession, adminUploadMedia, loadAdminConfig, saveAdminConfig } from '../utils/adminApi';
 
-export const PromotionAdminSettings: React.FC = () => {
-  const [session, setSession] = useState<AdminSession | null>(null);
-  const [open, setOpen] = useState(false);
+interface PromotionAdminSettingsProps {
+  adminSession: AdminSession;
+}
+
+export const PromotionAdminSettings: React.FC<PromotionAdminSettingsProps> = ({ adminSession }) => {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [form, setForm] = useState<PromotionPopupConfig>({ ...EMPTY_PROMOTION_POPUP });
 
-  const load = async (activeSession: AdminSession) => {
-    const config = await loadAdminConfig(activeSession);
-    const promo = config.promotionPopup;
-    setForm(promo && typeof promo === 'object' ? { ...EMPTY_PROMOTION_POPUP, ...promo } : { ...EMPTY_PROMOTION_POPUP });
-  };
-
   useEffect(() => {
-    resumeAdminSession().then((active) => {
-      setSession(active);
-      if (active) load(active).catch(() => null);
-    }).catch(() => setSession(null));
-  }, []);
+    let cancelled = false;
+    loadAdminConfig(adminSession).then((config) => {
+      if (cancelled) return;
+      const promo = config.promotionPopup;
+      setForm(promo && typeof promo === 'object' ? { ...EMPTY_PROMOTION_POPUP, ...promo } : { ...EMPTY_PROMOTION_POPUP });
+    }).catch(() => null);
+    return () => { cancelled = true; };
+  }, [adminSession]);
 
-  if (!session) return null;
+  const session = adminSession;
 
   const patch = <K extends keyof PromotionPopupConfig>(key: K, value: PromotionPopupConfig[K]) => setForm((prev) => ({ ...prev, [key]: value }));
 
@@ -103,16 +102,9 @@ export const PromotionAdminSettings: React.FC = () => {
   };
 
   return (
-    <>
-      <button type="button" onClick={() => setOpen(true)} className="fixed bottom-5 right-5 z-[120] px-4 py-3 rounded-xl bg-[#D4AF37] text-black font-extrabold text-sm shadow-2xl flex items-center gap-2">
-        <Megaphone className="w-4 h-4" /> Promociones
-      </button>
-
-      {open && <div className="fixed inset-0 z-[130] bg-black/75 backdrop-blur-sm p-4 flex items-center justify-center" onClick={() => setOpen(false)}>
-        <div className="w-full max-w-3xl max-h-[92vh] overflow-y-auto rounded-2xl bg-[#161C28] border border-white/10 p-6 sm:p-7 space-y-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="w-full rounded-2xl bg-[#161C28] border border-white/10 p-6 sm:p-7 space-y-6 shadow-2xl">
           <div className="flex items-start justify-between gap-4">
             <div><p className="text-xs uppercase tracking-widest text-[#D4AF37] font-mono">PROMOCIONES</p><h2 className="text-2xl font-bold">Pop-up promocional</h2><p className="text-xs text-gray-400 mt-1">Puedes publicarlo como texto, imagen o ambos. El visitante siempre podrá cerrarlo.</p></div>
-            <button type="button" onClick={() => setOpen(false)} className="p-2 rounded-lg bg-white/5"><X className="w-5 h-5" /></button>
           </div>
 
           {message && <div className="rounded-xl border border-[#D4AF37]/25 bg-[#D4AF37]/10 px-4 py-3 text-sm text-[#F5D76E]">{message}</div>}
@@ -142,7 +134,5 @@ export const PromotionAdminSettings: React.FC = () => {
             <button type="button" onClick={remove} disabled={busy} className="py-3 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-300 font-bold text-sm disabled:opacity-40"><Trash2 className="inline w-4 h-4 mr-2" />Eliminar pop-up</button>
           </div>
         </div>
-      </div>}
-    </>
   );
 };
