@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Sparkles, ChevronRight, HeartHandshake, MapPin, CalendarCheck, Camera } from 'lucide-react';
 import { HeroCoverSetting, RoutePath } from '../types';
 
@@ -9,6 +9,7 @@ interface HeroProps {
   onCitaClick: () => void;
   heroCovers?: Partial<Record<RoutePath, string>>;
   heroCoverSettings?: Partial<Record<RoutePath, HeroCoverSetting>>;
+  mediaReady?: boolean;
 }
 
 export const Hero: React.FC<HeroProps> = ({
@@ -18,7 +19,9 @@ export const Hero: React.FC<HeroProps> = ({
   onCitaClick,
   heroCovers = {},
   heroCoverSettings = {},
+  mediaReady = true,
 }) => {
+  const [loadedImageUrl, setLoadedImageUrl] = useState<string | null>(null);
   const routeContent: Record<RoutePath, { badge: string; title: string; highlight: string; subtitle: string; imageUrl: string; imageTag: string }> = {
     inicio: {
       badge: 'Fotografía & video en CDMX, Estado de México y zona centro',
@@ -81,6 +84,7 @@ export const Hero: React.FC<HeroProps> = ({
   const positionX = setting?.positionX ?? 50;
   const positionY = setting?.positionY ?? 50;
   const zoom = Math.max(100, setting?.zoom ?? 100);
+  const imageLoaded = mediaReady && loadedImageUrl === imageUrl;
 
   return (
     <section className="relative overflow-hidden bg-[#0B0F17] pt-8 pb-14 lg:pt-16 lg:pb-28 border-b border-white/5">
@@ -109,16 +113,34 @@ export const Hero: React.FC<HeroProps> = ({
                 <img
                   src={imageUrl}
                   alt={coverLabel}
-                  className="absolute inset-0 w-full h-full object-cover transition-transform duration-300"
+                  width={1400}
+                  height={933}
+                  fetchPriority="high"
+                  decoding="async"
+                  onLoad={(event) => {
+                    const image = event.currentTarget;
+                    void image.decode().catch(() => undefined).finally(() => setLoadedImageUrl(imageUrl));
+                  }}
+                  className={`absolute inset-0 w-full h-full object-cover transition-[opacity,transform] duration-300 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
                   style={{
                     objectPosition: `${positionX}% ${positionY}%`,
                     transform: `scale(${zoom / 100})`,
                   }}
                 />
+                {!imageLoaded && <div className="absolute inset-0 bg-gradient-to-br from-[#161C28] via-[#0B0F17] to-black animate-pulse" aria-hidden="true" />}
                 <div className="absolute inset-0 bg-gradient-to-t from-[#0B0F17] via-transparent to-transparent opacity-80" />
-                <div className="absolute bottom-4 left-4 right-4 p-4 rounded-xl bg-[#0B0F17]/80 backdrop-blur-md border border-white/10">
-                  <p className="text-xs uppercase tracking-widest text-[#D4AF37] font-semibold">{coverLabel}</p>
-                  <p className="text-xs text-gray-400 mt-1">{coverDescription}</p>
+                <div className="absolute bottom-4 left-4 right-4 min-h-[78px] p-4 rounded-xl bg-[#0B0F17]/80 backdrop-blur-md border border-white/10" aria-busy={!imageLoaded}>
+                  {imageLoaded ? (
+                    <>
+                      <p className="text-xs uppercase tracking-widest text-[#D4AF37] font-semibold">{coverLabel}</p>
+                      <p className="text-xs text-gray-400 mt-1">{coverDescription}</p>
+                    </>
+                  ) : (
+                    <div className="space-y-2" aria-hidden="true">
+                      <div className="h-3 w-28 rounded bg-[#D4AF37]/20 animate-pulse" />
+                      <div className="h-3 w-4/5 rounded bg-white/10 animate-pulse" />
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

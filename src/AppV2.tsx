@@ -30,8 +30,20 @@ import { PromotionPopupConfig } from './promotion';
 import { ToastContainer } from './components/Toast';
 import { Footer } from './components/Footer';
 import { loadSiteDataFromCloud } from './utils/googleDrive';
+import {
+  filterPublicGalleryImages,
+  preloadCriticalPublicMedia,
+  readPublicMediaCache,
+  writePublicMediaCache,
+} from './utils/publicMediaCache';
 
 const DEFAULT_WHATSAPP = '5615567863';
+const VALID_ROUTES: RoutePath[] = ['inicio', 'bodas', 'xv-anos', 'bautizos', 'retratos', 'empresarial'];
+
+const routeFromHash = (): RoutePath => {
+  const hash = window.location.hash.replace('#/', '').replace('#', '');
+  return VALID_ROUTES.includes(hash as RoutePath) ? hash as RoutePath : 'inicio';
+};
 
 const defaultContact: FooterContact = {
   phone: '+52 56 1556 7863',
@@ -69,10 +81,12 @@ const sanitizePublicContact = (cloudContact?: Partial<FooterContact>): FooterCon
 };
 
 export default function AppV2() {
-  const [currentRoute, setCurrentRoute] = useState<RoutePath>('inicio');
-  const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([]);
-  const [heroCovers, setHeroCovers] = useState<Partial<Record<RoutePath, string>>>({});
-  const [heroCoverSettings, setHeroCoverSettings] = useState<Partial<Record<RoutePath, HeroCoverSetting>>>({});
+  const [initialMedia] = useState(readPublicMediaCache);
+  const [currentRoute, setCurrentRoute] = useState<RoutePath>(routeFromHash);
+  const [galleryImages, setGalleryImages] = useState<GalleryImage[]>(() => initialMedia?.galleryImages || []);
+  const [heroCovers, setHeroCovers] = useState<Partial<Record<RoutePath, string>>>(() => initialMedia?.heroCovers || {});
+  const [heroCoverSettings, setHeroCoverSettings] = useState<Partial<Record<RoutePath, HeroCoverSetting>>>(() => initialMedia?.heroCoverSettings || {});
+  const [mediaReady, setMediaReady] = useState(Boolean(initialMedia));
   const [footerContact, setFooterContact] = useState<FooterContact>(defaultContact);
   const [packagesState, setPackagesState] = useState<Record<EventType, PackageOption[]>>(PACKAGES_BY_EVENT);
   const [addonsState, setAddonsState] = useState<AddOnOption[]>(ADDONS_CATALOG);
@@ -99,23 +113,31 @@ export default function AppV2() {
   }, []);
 
   useEffect(() => {
-    loadSiteDataFromCloud().then((cloudData) => {
+    let cancelled = false;
+
+    loadSiteDataFromCloud().then(async (cloudData) => {
+      if (cancelled) return;
       const data = cloudData || {};
 
-      if (Array.isArray(data.galleryImages)) {
-        const realGallery = data.galleryImages.filter((image: GalleryImage) =>
-          Boolean(
-            image?.id && image?.url && image?.category &&
-            image.visibility !== 'private' && image.visibility !== 'cover' &&
-            image.mediaType !== 'gallery-meta' && image.mediaType !== 'cover-meta' &&
-            image.mediaType !== 'video' && image.category !== 'private'
-          )
-        );
-        setGalleryImages(realGallery);
+      if (!cloudData) {
+        setMediaReady(true);
+        return;
       }
 
-      if (data.heroCovers && typeof data.heroCovers === 'object') setHeroCovers(data.heroCovers);
-      if (data.heroCoverSettings && typeof data.heroCoverSettings === 'object') setHeroCoverSettings(data.heroCoverSettings);
+      const publicMedia = {
+        galleryImages: filterPublicGalleryImages(data.galleryImages),
+        heroCovers: data.heroCovers && typeof data.heroCovers === 'object' ? data.heroCovers : {},
+        heroCoverSettings: data.heroCoverSettings && typeof data.heroCoverSettings === 'object' ? data.heroCoverSettings : {},
+      };
+
+      writePublicMediaCache(publicMedia);
+      await preloadCriticalPublicMedia(publicMedia, currentRoute);
+      if (cancelled) return;
+
+      setGalleryImages(publicMedia.galleryImages);
+      setHeroCovers(publicMedia.heroCovers);
+      setHeroCoverSettings(publicMedia.heroCoverSettings);
+      setMediaReady(true);
       if (data.promotionPopup && typeof data.promotionPopup === 'object') setPromotionPopup(data.promotionPopup as PromotionPopupConfig);
       else setPromotionPopup(null);
 
@@ -123,13 +145,16 @@ export default function AppV2() {
       setAddonsState(resolvePublishedAddons(data));
       if (data.footerContact) setFooterContact(sanitizePublicContact(data.footerContact));
     });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#/', '').replace('#', '');
-      const validRoutes: RoutePath[] = ['inicio', 'bodas', 'xv-anos', 'bautizos', 'retratos', 'empresarial'];
-      if (!validRoutes.includes(hash as RoutePath)) return;
+      if (!VALID_ROUTES.includes(hash as RoutePath)) return;
       const route = hash as RoutePath;
       setCurrentRoute(route);
       if (route !== 'inicio') {
@@ -190,8 +215,8 @@ export default function AppV2() {
       <PromotionPopup config={promotionPopup} />
 
       <Navbar currentRoute={currentRoute} onNavigateRoute={(route) => handleNavigateRoute(route, false)} />
-      <Hero currentRoute={currentRoute} onQuoteClick={() => handleScrollTo('cotizador')} onGalleryClick={() => handleScrollTo('galerias')} onCitaClick={() => handleScrollTo('solicitud')} heroCovers={heroCovers} heroCoverSettings={heroCoverSettings} />
-      <GallerySection currentRoute={currentRoute} onNavigateRoute={(route) => handleNavigateRoute(route, true)} images={galleryImages} onShowToast={showToast} />
+      <Hero currentRoute={currentRoute} onQuoteClick={() => handleScrollTo('cotizador')} onGalleryClick={() => handleScrollTo('galerias')} onCitaClick={() => handleScrollTo('solicitud')} heroCovers={heroCovers} heroCoverSettings={heroCoverSettings} mediaReady={mediaReady} />
+      <GallerySection currentRoute={currentRoute} onNavigateRoute={(route) => handleNavigateRoute(route, true)} images={galleryImages} onShowToast={showToast} loading={!mediaReady} />
 
       <PricingQuoteEngineV2
         currentRoute={currentRoute}
