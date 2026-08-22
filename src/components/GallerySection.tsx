@@ -10,14 +10,17 @@ interface GallerySectionProps {
   favorites?: string[];
   onToggleFavorite?: (imageId: string) => void;
   onShowToast: (title: string, description?: string) => void;
+  loading?: boolean;
 }
 
 const INITIAL_VISIBLE_PHOTOS = 5;
+const galleryAspectRatio = (index: number) => index % 3 === 2 ? '16 / 10' : '2 / 3';
 
 export const GallerySection: React.FC<GallerySectionProps> = ({
   currentRoute,
   onNavigateRoute,
   images,
+  loading = false,
 }) => {
   const [activeCategory, setActiveCategory] = useState<GalleryCategory>('all');
   const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
@@ -114,7 +117,17 @@ export const GallerySection: React.FC<GallerySectionProps> = ({
           </div>
         </div>
 
-        {filteredImages.length === 0 ? (
+        {loading ? (
+          <div className="masonry-grid" aria-label="Cargando fotografías" aria-busy="true">
+            {Array.from({ length: INITIAL_VISIBLE_PHOTOS }, (_, index) => (
+              <div
+                key={index}
+                className="masonry-item rounded-2xl overflow-hidden bg-gradient-to-br from-[#161C28] via-[#111722] to-[#0B0F17] border border-white/10 animate-pulse"
+                style={{ aspectRatio: galleryAspectRatio(index) }}
+              />
+            ))}
+          </div>
+        ) : filteredImages.length === 0 ? (
           <div className="text-center py-16 bg-[#161C28] rounded-2xl border border-white/10 space-y-3">
             <Camera className="w-12 h-12 text-gray-500 mx-auto" />
             <p className="text-gray-300 font-medium text-base">
@@ -138,12 +151,13 @@ export const GallerySection: React.FC<GallerySectionProps> = ({
                   onClick={() => setSelectedImageIndex(index)}
                   onContextMenu={(event) => event.preventDefault()}
                   onDragStart={(event) => event.preventDefault()}
+                  style={{ aspectRatio: galleryAspectRatio(index) }}
                 >
                   <SafeImage
                     src={img.url}
                     alt="Fotografía XPH"
                     preventDownload
-                    className="w-full object-cover transform group-hover:scale-105 transition-transform duration-500"
+                    className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500"
                   />
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300 pointer-events-none" />
                   <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
