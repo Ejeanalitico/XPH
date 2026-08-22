@@ -55,7 +55,10 @@ export const PromotionAdminSettings: React.FC = () => {
     try {
       const next = { ...form, updatedAt: new Date().toISOString() };
       const confirmed = await saveAdminConfig(session, { promotionPopup: next }, 'ADMIN_PROMOCION', 'Pop-up promocional actualizado');
-      setForm(confirmed.promotionPopup || next);
+      if (!confirmed.promotionPopup || confirmed.promotionPopup.updatedAt !== next.updatedAt) {
+        throw new Error('La promoción no quedó confirmada en la nube. Intenta guardarla nuevamente.');
+      }
+      setForm({ ...EMPTY_PROMOTION_POPUP, ...confirmed.promotionPopup });
       setMessage(next.enabled ? 'Promoción guardada y publicada.' : 'Promoción guardada como desactivada.');
     } catch (error: any) {
       setMessage(error?.message || 'No se pudo guardar la promoción.');
@@ -70,7 +73,10 @@ export const PromotionAdminSettings: React.FC = () => {
     try {
       const next = { ...form, enabled: false, updatedAt: new Date().toISOString() };
       const confirmed = await saveAdminConfig(session, { promotionPopup: next }, 'ADMIN_PROMOCION_DESACTIVADA', 'Pop-up promocional desactivado');
-      setForm(confirmed.promotionPopup || next);
+      if (!confirmed.promotionPopup || confirmed.promotionPopup.updatedAt !== next.updatedAt) {
+        throw new Error('La desactivación no quedó confirmada en la nube. Intenta nuevamente.');
+      }
+      setForm({ ...EMPTY_PROMOTION_POPUP, ...confirmed.promotionPopup });
       setMessage('Pop-up desactivado. Su contenido se conserva para volver a activarlo después.');
     } catch (error: any) {
       setMessage(error?.message || 'No se pudo desactivar.');
@@ -84,7 +90,8 @@ export const PromotionAdminSettings: React.FC = () => {
     if (!window.confirm('¿Eliminar por completo el pop-up promocional?')) return;
     setBusy(true);
     try {
-      await saveAdminConfig(session, { promotionPopup: null }, 'ADMIN_PROMOCION_ELIMINADA', 'Pop-up promocional eliminado');
+      const confirmed = await saveAdminConfig(session, { promotionPopup: null }, 'ADMIN_PROMOCION_ELIMINADA', 'Pop-up promocional eliminado');
+      if (confirmed.promotionPopup) throw new Error('El pop-up todavía aparece en la configuración guardada.');
       setForm({ ...EMPTY_PROMOTION_POPUP });
       setImageFile(null);
       setMessage('Pop-up eliminado por completo.');

@@ -534,6 +534,7 @@ function doPost(e) {
         packages:         configObj.packages !== undefined ? configObj.packages : (prevConfig.packages || {}),
         addons:           configObj.addons !== undefined ? configObj.addons : (prevConfig.addons || []),
         footerContact:    configObj.footerContact !== undefined ? configObj.footerContact : (prevConfig.footerContact || {}),
+        promotionPopup:   configObj.promotionPopup !== undefined ? configObj.promotionPopup : (prevConfig.promotionPopup || null),
         testimonials:     configObj.testimonials !== undefined ? configObj.testimonials : (prevConfig.testimonials || []),
         quotes:           configObj.quotes !== undefined ? configObj.quotes : (prevConfig.quotes || []),
         adminCredentials: configObj.adminCredentials !== undefined ? configObj.adminCredentials : (prevConfig.adminCredentials || {}),
