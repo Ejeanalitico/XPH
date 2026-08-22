@@ -79,6 +79,34 @@ export interface FooterContact {
   address: string;
   schedule: string;
   aboutText: string;
+  brandTitle?: string;
+  brandSubtitle?: string;
+  specialtiesTitle?: string;
+  quickLinksTitle?: string;
+  contactTitle?: string;
+  socialTitle?: string;
+  copyrightText?: string;
+  services?: FooterServiceLink[];
+  quickLinks?: FooterQuickLink[];
+  socialLinks?: FooterSocialLink[];
+}
+
+export interface FooterServiceLink {
+  id: string;
+  label: string;
+  route: RoutePath;
+}
+
+export interface FooterQuickLink {
+  id: string;
+  label: string;
+  href: string;
+}
+
+export interface FooterSocialLink {
+  id: string;
+  label: string;
+  url: string;
 }
 
 export interface Testimonial {

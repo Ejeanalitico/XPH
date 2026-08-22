@@ -223,6 +223,14 @@ function publicGalleryOnly(items) {
     });
 }
 
+const PROMOTION_META_ID = 'xph-promotion-popup-config';
+
+function promotionPopupFromGallery(items) {
+  if (!Array.isArray(items)) return null;
+  const meta = items.find((item) => item?.id === PROMOTION_META_ID && item?.mediaType === 'gallery-meta');
+  return meta?.promotionPopup && typeof meta.promotionPopup === 'object' ? meta.promotionPopup : null;
+}
+
 function sanitizePublicConfig(payload) {
   if (!payload || typeof payload !== 'object') return payload;
   const copy = JSON.parse(JSON.stringify(payload));
@@ -231,6 +239,9 @@ function sanitizePublicConfig(payload) {
     const allGalleryItems = Array.isArray(copy.config.galleryImages) ? copy.config.galleryImages : [];
     copy.config.heroCovers = heroCoverMap(allGalleryItems);
     copy.config.heroCoverSettings = heroCoverSettingsMap(allGalleryItems);
+    copy.config.promotionPopup = copy.config.promotionPopup && typeof copy.config.promotionPopup === 'object'
+      ? copy.config.promotionPopup
+      : promotionPopupFromGallery(allGalleryItems);
     copy.config.galleryImages = publicGalleryOnly(allGalleryItems);
     delete copy.config.adminCredentials;
     delete copy.config.quotes;
@@ -244,6 +255,9 @@ function sanitizeAdminConfig(config) {
   const allGalleryItems = Array.isArray(copy.galleryImages) ? copy.galleryImages : [];
   copy.heroCovers = heroCoverMap(allGalleryItems);
   copy.heroCoverSettings = heroCoverSettingsMap(allGalleryItems);
+  copy.promotionPopup = copy.promotionPopup && typeof copy.promotionPopup === 'object'
+    ? copy.promotionPopup
+    : promotionPopupFromGallery(allGalleryItems);
   delete copy.adminCredentials;
   delete copy.quotes;
   return copy;
@@ -283,6 +297,34 @@ function encodeHeroSettingsIntoGallery(config, patch) {
 
   next.galleryImages = baseGallery;
   delete next.heroCoverSettings;
+  return next;
+}
+
+function encodePromotionIntoGallery(config, patch) {
+  if (!Object.prototype.hasOwnProperty.call(patch || {}, 'promotionPopup')) return patch;
+  const next = { ...patch };
+  const baseGallery = Array.isArray(patch.galleryImages)
+    ? [...patch.galleryImages]
+    : Array.isArray(config.galleryImages)
+      ? [...config.galleryImages]
+      : [];
+  const withoutPrevious = baseGallery.filter((item) => item?.id !== PROMOTION_META_ID);
+
+  if (patch.promotionPopup && typeof patch.promotionPopup === 'object') {
+    withoutPrevious.unshift({
+      id: PROMOTION_META_ID,
+      title: 'Configuración del pop-up promocional',
+      category: 'private',
+      url: 'xph://promotion-popup-config',
+      location: 'Configuración XPH',
+      visibility: 'cover',
+      mediaType: 'gallery-meta',
+      promotionPopup: patch.promotionPopup,
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  next.galleryImages = withoutPrevious;
   return next;
 }
 
@@ -397,6 +439,7 @@ export default async function handler(req, res) {
         delete patch.adminCredentials;
         delete patch.quotes;
         patch = encodeHeroSettingsIntoGallery(config, patch);
+        patch = encodePromotionIntoGallery(config, patch);
         await forwardSaveConfig(patch, submitted.auditType, submitted.auditDetails);
         const confirmedPayload = await fetchConfigFromScript();
         const confirmedConfig = normalizeConfig(confirmedPayload);

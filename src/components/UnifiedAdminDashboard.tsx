@@ -11,6 +11,7 @@ import {
   LogIn,
   LogOut,
   PackagePlus,
+  PanelBottom,
   Plus,
   RefreshCw,
   Save,
@@ -22,6 +23,10 @@ import { ADDONS_CATALOG, PACKAGES_BY_EVENT } from '../data/packages';
 import {
   AddOnOption,
   EventType,
+  FooterContact,
+  FooterQuickLink,
+  FooterServiceLink,
+  FooterSocialLink,
   GalleryCategory,
   GalleryImage,
   HeroCoverSetting,
@@ -29,6 +34,7 @@ import {
   PrivateGallerySummary,
   RoutePath,
 } from '../types';
+import { DEFAULT_FOOTER_CONTACT, normalizeFooterContact } from '../footerConfig';
 import {
   AdminSession,
   DriveImageRecord,
@@ -44,7 +50,7 @@ import {
   saveAdminConfig,
 } from '../utils/adminApi';
 
-type Tab = 'packages' | 'public' | 'covers' | 'private';
+type Tab = 'packages' | 'public' | 'covers' | 'footer' | 'private';
 
 const CATEGORY_LABELS: Record<EventType, string> = {
   bodas: 'Bodas',
@@ -135,6 +141,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([]);
   const [driveImages, setDriveImages] = useState<DriveImageRecord[]>([]);
   const [heroSettings, setHeroSettings] = useState<Partial<Record<RoutePath, HeroCoverSetting>>>({});
+  const [footerContact, setFooterContact] = useState<FooterContact>(DEFAULT_FOOTER_CONTACT);
 
   const [activeCategory, setActiveCategory] = useState<EventType>('bodas');
   const [publicCategory, setPublicCategory] = useState<Exclude<GalleryCategory, 'all'>>('bodas');
@@ -169,6 +176,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
     setAddons(hasManagedAddons(config.addons) ? config.addons : ADDONS_CATALOG);
     setGalleryImages(Array.isArray(config.galleryImages) ? config.galleryImages : []);
     setHeroSettings(config.heroCoverSettings && typeof config.heroCoverSettings === 'object' ? config.heroCoverSettings : {});
+    setFooterContact(normalizeFooterContact(config.footerContact));
   };
 
   const refresh = async () => {
@@ -362,6 +370,27 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
     finally { setBusy(false); }
   };
 
+  const patchFooter = <K extends keyof FooterContact>(key: K, value: FooterContact[K]) => {
+    setFooterContact((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const saveFooter = async () => {
+    if (!session) return;
+    setBusy(true);
+    try {
+      const next = normalizeFooterContact(footerContact);
+      const confirmed = await saveAdminConfig(session, { footerContact: next }, 'ADMIN_PIE_PAGINA', 'Pie de página, contacto, servicios y redes sociales actualizados');
+      const saved = normalizeFooterContact(confirmed.footerContact);
+      if (JSON.stringify(saved) !== JSON.stringify(next)) throw new Error('El pie de página no coincide con la configuración guardada.');
+      setFooterContact(saved);
+      notify('Pie de página guardado y publicado.');
+    } catch (error: any) {
+      notify(error?.message || 'No se pudo guardar el pie de página.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const createPrivateGallery = async () => {
     if (!session || !galleryClient.trim() || !galleryTitle.trim()) return;
     setBusy(true);
@@ -450,6 +479,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
             { id: 'packages' as Tab, label: 'Paquetes & precios', icon: PackagePlus },
             { id: 'public' as Tab, label: 'Galería pública', icon: Camera },
             { id: 'covers' as Tab, label: 'Portadas', icon: ImageIcon },
+            { id: 'footer' as Tab, label: 'Pie de página', icon: PanelBottom },
             { id: 'private' as Tab, label: 'Galerías privadas', icon: FolderLock },
           ].map((item) => { const Icon = item.icon; return <button key={item.id} onClick={() => setTab(item.id)} className={`px-4 py-3 rounded-xl text-sm font-semibold whitespace-nowrap flex items-center gap-2 ${tab === item.id ? 'bg-[#D4AF37] text-black' : 'text-gray-300 hover:bg-white/5'}`}><Icon className="w-4 h-4" />{item.label}</button>; })}
         </nav>
@@ -508,6 +538,66 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
             <div className="rounded-2xl bg-[#161C28] border border-white/10 p-5 space-y-3"><h2 className="text-xl font-bold">Elegir una imagen ya existente de Drive</h2><div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 max-h-[500px] overflow-auto">{driveImages.map((item) => <button key={item.id} onClick={() => updateCover({ url: item.url, positionX: 50, positionY: 50, zoom: 100 })} className="rounded-xl overflow-hidden border border-white/10 hover:border-[#D4AF37]"><img src={item.url} alt={item.name} className="w-full aspect-square object-cover" /><div className="p-2 text-[10px] truncate">{item.name}</div></button>)}</div></div>
           </section>
         )}
+
+        {tab === 'footer' && (() => {
+          const normalized = normalizeFooterContact(footerContact);
+          const inputClass = 'mt-1 w-full px-4 py-3 rounded-xl bg-[#0B0F17] border border-white/10 text-white';
+          const updateService = (index: number, patch: Partial<FooterServiceLink>) => patchFooter('services', normalized.services.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item));
+          const updateQuickLink = (index: number, patch: Partial<FooterQuickLink>) => patchFooter('quickLinks', normalized.quickLinks.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item));
+          const updateSocial = (index: number, patch: Partial<FooterSocialLink>) => patchFooter('socialLinks', normalized.socialLinks.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item));
+
+          return (
+            <section className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div><h2 className="text-2xl font-bold">Pie de página</h2><p className="text-sm text-gray-400">Edita textos, cobertura, contacto, servicios, accesos y redes sociales.</p></div>
+                <button onClick={saveFooter} disabled={busy} className="px-5 py-3 rounded-xl bg-[#D4AF37] text-black font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-40">{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}Guardar y publicar</button>
+              </div>
+
+              <div className="grid lg:grid-cols-2 gap-5">
+                <div className="rounded-2xl bg-[#161C28] border border-white/10 p-5 space-y-4">
+                  <div><h3 className="text-lg font-bold">Marca y descripción</h3><p className="text-xs text-gray-400">Textos que aparecen junto al logotipo.</p></div>
+                  <label className="text-xs text-gray-400 block">Nombre de la marca<input value={normalized.brandTitle} onChange={(e) => patchFooter('brandTitle', e.target.value)} className={inputClass} /></label>
+                  <label className="text-xs text-gray-400 block">Subtítulo<input value={normalized.brandSubtitle} onChange={(e) => patchFooter('brandSubtitle', e.target.value)} className={inputClass} /></label>
+                  <label className="text-xs text-gray-400 block">Descripción<textarea value={normalized.aboutText} onChange={(e) => patchFooter('aboutText', e.target.value)} rows={5} className={`${inputClass} resize-y`} /></label>
+                </div>
+
+                <div className="rounded-2xl bg-[#161C28] border border-white/10 p-5 space-y-4">
+                  <div><h3 className="text-lg font-bold">Contacto y cobertura</h3><p className="text-xs text-gray-400">La ubicación puede ser una lista de estados, ciudades o zonas de servicio.</p></div>
+                  <label className="text-xs text-gray-400 block">Título de la sección<input value={normalized.contactTitle} onChange={(e) => patchFooter('contactTitle', e.target.value)} className={inputClass} /></label>
+                  <label className="text-xs text-gray-400 block">Ubicaciones / cobertura<textarea value={normalized.address} onChange={(e) => patchFooter('address', e.target.value)} rows={3} className={`${inputClass} resize-y`} /></label>
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    <label className="text-xs text-gray-400">Teléfono<input value={normalized.phone} onChange={(e) => patchFooter('phone', e.target.value)} className={inputClass} /></label>
+                    <label className="text-xs text-gray-400">WhatsApp<input value={normalized.whatsapp} onChange={(e) => patchFooter('whatsapp', e.target.value)} className={inputClass} /></label>
+                    <label className="text-xs text-gray-400">Correo<input type="email" value={normalized.email} onChange={(e) => patchFooter('email', e.target.value)} className={inputClass} /></label>
+                    <label className="text-xs text-gray-400">Horario / atención<input value={normalized.schedule} onChange={(e) => patchFooter('schedule', e.target.value)} className={inputClass} /></label>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-[#161C28] border border-white/10 p-5 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3"><div><h3 className="text-lg font-bold">Servicios</h3><p className="text-xs text-gray-400">Cada elemento abre la sección correspondiente de la página.</p></div><button onClick={() => patchFooter('services', [...normalized.services, { id: `service-${Date.now()}`, label: 'Nuevo servicio', route: 'bodas' }])} className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-xs"><Plus className="inline w-4 h-4 mr-1" />Agregar servicio</button></div>
+                <label className="text-xs text-gray-400 block">Título de la sección<input value={normalized.specialtiesTitle} onChange={(e) => patchFooter('specialtiesTitle', e.target.value)} className={inputClass} /></label>
+                <div className="space-y-3">{normalized.services.map((service, index) => <div key={service.id} className="grid sm:grid-cols-[1fr_220px_44px] gap-2"><input value={service.label} onChange={(e) => updateService(index, { label: e.target.value })} className="px-3 py-2.5 rounded-xl bg-[#0B0F17] border border-white/10" /><select value={service.route} onChange={(e) => updateService(index, { route: e.target.value as RoutePath })} className="px-3 py-2.5 rounded-xl bg-[#0B0F17] border border-white/10">{(Object.keys(COVER_LABELS) as RoutePath[]).map((route) => <option key={route} value={route}>{COVER_LABELS[route]}</option>)}</select><button onClick={() => patchFooter('services', normalized.services.filter((_, itemIndex) => itemIndex !== index))} className="rounded-xl bg-rose-500/10 text-rose-400"><Trash2 className="w-4 h-4 mx-auto" /></button></div>)}</div>
+              </div>
+
+              <div className="grid lg:grid-cols-2 gap-5">
+                <div className="rounded-2xl bg-[#161C28] border border-white/10 p-5 space-y-4">
+                  <div className="flex items-center justify-between gap-3"><div><h3 className="text-lg font-bold">Accesos rápidos</h3><p className="text-xs text-gray-400">Ejemplo: #cotizador, #solicitud o una liga completa.</p></div><button onClick={() => patchFooter('quickLinks', [...normalized.quickLinks, { id: `quick-${Date.now()}`, label: 'Nuevo acceso', href: '#' }])} className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs"><Plus className="inline w-4 h-4 mr-1" />Agregar</button></div>
+                  <label className="text-xs text-gray-400 block">Título de la sección<input value={normalized.quickLinksTitle} onChange={(e) => patchFooter('quickLinksTitle', e.target.value)} className={inputClass} /></label>
+                  <div className="space-y-3">{normalized.quickLinks.map((link, index) => <div key={link.id} className="grid sm:grid-cols-[1fr_1fr_44px] gap-2"><input value={link.label} onChange={(e) => updateQuickLink(index, { label: e.target.value })} placeholder="Texto" className="px-3 py-2.5 rounded-xl bg-[#0B0F17] border border-white/10" /><input value={link.href} onChange={(e) => updateQuickLink(index, { href: e.target.value })} placeholder="#seccion" className="px-3 py-2.5 rounded-xl bg-[#0B0F17] border border-white/10" /><button onClick={() => patchFooter('quickLinks', normalized.quickLinks.filter((_, itemIndex) => itemIndex !== index))} className="rounded-xl bg-rose-500/10 text-rose-400"><Trash2 className="w-4 h-4 mx-auto" /></button></div>)}</div>
+                </div>
+
+                <div className="rounded-2xl bg-[#161C28] border border-white/10 p-5 space-y-4">
+                  <div className="flex items-center justify-between gap-3"><div><h3 className="text-lg font-bold">Redes sociales</h3><p className="text-xs text-gray-400">Agrega Instagram, Facebook, TikTok, YouTube u otra red.</p></div><button onClick={() => patchFooter('socialLinks', [...normalized.socialLinks, { id: `social-${Date.now()}`, label: 'Nueva red', url: 'https://' }])} className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs"><Plus className="inline w-4 h-4 mr-1" />Agregar</button></div>
+                  <label className="text-xs text-gray-400 block">Título de la sección<input value={normalized.socialTitle} onChange={(e) => patchFooter('socialTitle', e.target.value)} className={inputClass} /></label>
+                  <div className="space-y-3">{normalized.socialLinks.map((social, index) => <div key={social.id} className="grid sm:grid-cols-[.7fr_1.3fr_44px] gap-2"><input value={social.label} onChange={(e) => updateSocial(index, { label: e.target.value })} placeholder="Red social" className="px-3 py-2.5 rounded-xl bg-[#0B0F17] border border-white/10" /><input value={social.url} onChange={(e) => updateSocial(index, { url: e.target.value })} placeholder="https://..." className="px-3 py-2.5 rounded-xl bg-[#0B0F17] border border-white/10" /><button onClick={() => patchFooter('socialLinks', normalized.socialLinks.filter((_, itemIndex) => itemIndex !== index))} className="rounded-xl bg-rose-500/10 text-rose-400"><Trash2 className="w-4 h-4 mx-auto" /></button></div>)}</div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-[#161C28] border border-white/10 p-5"><label className="text-xs text-gray-400 block">Texto legal / derechos reservados<input value={normalized.copyrightText} onChange={(e) => patchFooter('copyrightText', e.target.value)} className={inputClass} /></label></div>
+            </section>
+          );
+        })()}
 
         {tab === 'private' && (
           <section className="space-y-6">

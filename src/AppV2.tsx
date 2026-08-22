@@ -36,6 +36,7 @@ import {
   readPublicMediaCache,
   writePublicMediaCache,
 } from './utils/publicMediaCache';
+import { DEFAULT_FOOTER_CONTACT, normalizeFooterContact } from './footerConfig';
 
 const DEFAULT_WHATSAPP = '5615567863';
 const VALID_ROUTES: RoutePath[] = ['inicio', 'bodas', 'xv-anos', 'bautizos', 'retratos', 'empresarial'];
@@ -45,14 +46,7 @@ const routeFromHash = (): RoutePath => {
   return VALID_ROUTES.includes(hash as RoutePath) ? hash as RoutePath : 'inicio';
 };
 
-const defaultContact: FooterContact = {
-  phone: '+52 56 1556 7863',
-  whatsapp: DEFAULT_WHATSAPP,
-  email: 'contacto@xavi.ph',
-  address: 'CDMX, Estado de México, Morelos, Puebla, Querétaro, Tlaxcala y Pachuca',
-  schedule: 'Atención por WhatsApp y citas previamente coordinadas',
-  aboutText: 'XPH Fotografía & Video; Producción Audiovisual para bodas, XV años, sesiones, eventos y proyectos empresariales.',
-};
+const defaultContact: FooterContact = DEFAULT_FOOTER_CONTACT;
 
 const cleanWhatsApp = (value?: string) => {
   const digits = String(value || '').replace(/\D/g, '');
@@ -67,16 +61,14 @@ const displayPhoneFromWhatsApp = (value: string) => {
 };
 
 const sanitizePublicContact = (cloudContact?: Partial<FooterContact>): FooterContact => {
+  const normalized = normalizeFooterContact(cloudContact);
   const whatsapp = cleanWhatsApp(cloudContact?.whatsapp || cloudContact?.phone || DEFAULT_WHATSAPP);
   const cloudPhone = String(cloudContact?.phone || '');
   const looksLikePlaceholder = /1234\s*5678/.test(cloudPhone) || !cloudPhone.trim();
   return {
-    phone: looksLikePlaceholder ? displayPhoneFromWhatsApp(whatsapp) : cloudPhone,
+    ...normalized,
+    phone: looksLikePlaceholder ? displayPhoneFromWhatsApp(whatsapp) : normalized.phone,
     whatsapp,
-    email: cloudContact?.email || defaultContact.email,
-    address: cloudContact?.address || defaultContact.address,
-    schedule: cloudContact?.schedule || defaultContact.schedule,
-    aboutText: defaultContact.aboutText,
   };
 };
 
