@@ -10,7 +10,7 @@ interface PromotionAdminSettingsProps {
 export const PromotionAdminSettings: React.FC<PromotionAdminSettingsProps> = ({ adminSession }) => {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
-  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [uploadedImageName, setUploadedImageName] = useState('');
   const [form, setForm] = useState<PromotionPopupConfig>({ ...EMPTY_PROMOTION_POPUP });
 
   useEffect(() => {
@@ -27,19 +27,31 @@ export const PromotionAdminSettings: React.FC<PromotionAdminSettingsProps> = ({ 
 
   const patch = <K extends keyof PromotionPopupConfig>(key: K, value: PromotionPopupConfig[K]) => setForm((prev) => ({ ...prev, [key]: value }));
 
-  const uploadImage = async () => {
-    if (!imageFile || !session) return;
+  const uploadImage = async (file: File) => {
+    if (!session) return;
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setMessage('Formato no compatible. Selecciona una imagen JPG, PNG o WEBP.');
+      return;
+    }
+    if (file.size > 25 * 1024 * 1024) {
+      setMessage('La imagen supera 25 MB. Selecciona una versión más ligera.');
+      return;
+    }
     setBusy(true);
-    setMessage('');
+    setMessage(`Subiendo ${file.name}…`);
     try {
-      const uploaded = await adminUploadMedia(session, imageFile, {
+      const uploaded = await adminUploadMedia(session, file, {
         title: form.title || 'Promoción XPH',
         category: 'empresarial',
         location: 'Promoción XPH',
       });
-      patch('imageUrl', uploaded.url);
-      setImageFile(null);
-      setMessage('Imagen cargada. Guarda la promoción para publicarla.');
+      setForm((prev) => ({
+        ...prev,
+        imageUrl: uploaded.url,
+        mode: prev.mode === 'text' ? (prev.title.trim() || prev.text.trim() ? 'both' : 'image') : prev.mode,
+      }));
+      setUploadedImageName(file.name);
+      setMessage('Imagen cargada correctamente. Pulsa “Guardar y publicar” para mostrarla en el pop-up.');
     } catch (error: any) {
       setMessage(error?.message || 'No se pudo cargar la imagen.');
     } finally {
@@ -92,7 +104,7 @@ export const PromotionAdminSettings: React.FC<PromotionAdminSettingsProps> = ({ 
       const confirmed = await saveAdminConfig(session, { promotionPopup: null }, 'ADMIN_PROMOCION_ELIMINADA', 'Pop-up promocional eliminado');
       if (confirmed.promotionPopup) throw new Error('El pop-up todavía aparece en la configuración guardada.');
       setForm({ ...EMPTY_PROMOTION_POPUP });
-      setImageFile(null);
+      setUploadedImageName('');
       setMessage('Pop-up eliminado por completo.');
     } catch (error: any) {
       setMessage(error?.message || 'No se pudo eliminar.');
@@ -123,8 +135,24 @@ export const PromotionAdminSettings: React.FC<PromotionAdminSettingsProps> = ({ 
           <div className="rounded-2xl bg-[#0B0F17] border border-white/10 p-5 space-y-4">
             <div className="flex items-center gap-2"><ImageIcon className="w-5 h-5 text-[#D4AF37]" /><h3 className="font-bold">Imagen de la promoción</h3></div>
             {form.imageUrl && <img src={form.imageUrl} alt="Vista previa promoción" className="w-full max-h-80 object-contain rounded-xl bg-black" />}
-            <input type="file" accept="image/*" onChange={(e) => setImageFile(e.target.files?.[0] || null)} />
-            <button type="button" onClick={uploadImage} disabled={!imageFile || busy} className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm disabled:opacity-40"><Upload className="inline w-4 h-4 mr-2" />Subir imagen</button>
+            <input
+              id="promotion-image-upload"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              disabled={busy}
+              className="sr-only"
+              onChange={(event) => {
+                const file = event.currentTarget.files?.[0];
+                event.currentTarget.value = '';
+                if (file) void uploadImage(file);
+              }}
+            />
+            <label htmlFor="promotion-image-upload" className={`w-full px-4 py-3 rounded-xl border text-sm font-bold flex items-center justify-center gap-2 cursor-pointer ${busy ? 'bg-white/5 border-white/10 text-gray-500 pointer-events-none' : 'bg-[#D4AF37]/10 border-[#D4AF37]/35 text-[#F5D76E] hover:bg-[#D4AF37]/15'}`}>
+              {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+              {busy ? 'Subiendo imagen…' : form.imageUrl ? 'Cambiar imagen' : 'Seleccionar y subir imagen'}
+            </label>
+            <p className="text-[11px] text-gray-500">Formatos compatibles: JPG, PNG y WEBP. Tamaño máximo: 25 MB. La carga comienza al seleccionar el archivo.</p>
+            {uploadedImageName && <p className="text-xs text-emerald-400">Archivo cargado: {uploadedImageName}</p>}
             <label className="text-xs text-gray-300 block">O pega una URL<input value={form.imageUrl} onChange={(e) => patch('imageUrl', e.target.value)} className="mt-1 w-full px-4 py-3 rounded-xl bg-[#161C28] border border-white/10" /></label>
           </div>
 
