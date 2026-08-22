@@ -10,6 +10,7 @@ import {
   Loader2,
   LogIn,
   LogOut,
+  Megaphone,
   PackagePlus,
   PanelBottom,
   Plus,
@@ -35,6 +36,7 @@ import {
   RoutePath,
 } from '../types';
 import { DEFAULT_FOOTER_CONTACT, normalizeFooterContact } from '../footerConfig';
+import { PromotionAdminSettings } from './PromotionAdminSettings';
 import {
   AdminSession,
   DriveImageRecord,
@@ -50,7 +52,7 @@ import {
   saveAdminConfig,
 } from '../utils/adminApi';
 
-type Tab = 'packages' | 'public' | 'covers' | 'footer' | 'private';
+type Tab = 'packages' | 'public' | 'covers' | 'promotions' | 'footer' | 'private';
 
 const CATEGORY_LABELS: Record<EventType, string> = {
   bodas: 'Bodas',
@@ -479,6 +481,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
             { id: 'packages' as Tab, label: 'Paquetes & precios', icon: PackagePlus },
             { id: 'public' as Tab, label: 'Galería pública', icon: Camera },
             { id: 'covers' as Tab, label: 'Portadas', icon: ImageIcon },
+            { id: 'promotions' as Tab, label: 'Promociones', icon: Megaphone },
             { id: 'footer' as Tab, label: 'Pie de página', icon: PanelBottom },
             { id: 'private' as Tab, label: 'Galerías privadas', icon: FolderLock },
           ].map((item) => { const Icon = item.icon; return <button key={item.id} onClick={() => setTab(item.id)} className={`px-4 py-3 rounded-xl text-sm font-semibold whitespace-nowrap flex items-center gap-2 ${tab === item.id ? 'bg-[#D4AF37] text-black' : 'text-gray-300 hover:bg-white/5'}`}><Icon className="w-4 h-4" />{item.label}</button>; })}
@@ -538,6 +541,8 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
             <div className="rounded-2xl bg-[#161C28] border border-white/10 p-5 space-y-3"><h2 className="text-xl font-bold">Elegir una imagen ya existente de Drive</h2><div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 max-h-[500px] overflow-auto">{driveImages.map((item) => <button key={item.id} onClick={() => updateCover({ url: item.url, positionX: 50, positionY: 50, zoom: 100 })} className="rounded-xl overflow-hidden border border-white/10 hover:border-[#D4AF37]"><img src={item.url} alt={item.name} className="w-full aspect-square object-cover" /><div className="p-2 text-[10px] truncate">{item.name}</div></button>)}</div></div>
           </section>
         )}
+
+        {tab === 'promotions' && <PromotionAdminSettings adminSession={session} />}
 
         {tab === 'footer' && (() => {
           const normalized = normalizeFooterContact(footerContact);
