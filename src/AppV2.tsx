@@ -30,6 +30,7 @@ import { PromotionPopup } from './components/PromotionPopup';
 import { PromotionPopupConfig } from './promotion';
 import { ToastContainer } from './components/Toast';
 import { Footer } from './components/Footer';
+import { ServiceSeoSection } from './components/ServiceSeoSection';
 import { loadSiteDataFromCloud } from './utils/googleDrive';
 import {
   filterPublicGalleryImages,
@@ -218,6 +219,7 @@ export default function AppV2() {
       <Navbar currentRoute={currentRoute} onNavigateRoute={(route) => handleNavigateRoute(route, false)} />
       <Hero currentRoute={currentRoute} onQuoteClick={() => handleScrollTo('cotizador')} onGalleryClick={() => handleScrollTo('galerias')} onCitaClick={() => handleScrollTo('solicitud')} heroCovers={heroCovers} heroCoverSettings={heroCoverSettings} mediaReady={mediaReady} />
       <GallerySection currentRoute={currentRoute} onNavigateRoute={(route) => handleNavigateRoute(route, true)} images={galleryImages} onShowToast={showToast} loading={!mediaReady} />
+      <ServiceSeoSection currentRoute={currentRoute} onNavigateRoute={(route) => handleNavigateRoute(route, false)} onQuoteClick={() => handleScrollTo('cotizador')} />
 
       <PricingQuoteEngineV2
         currentRoute={currentRoute}
