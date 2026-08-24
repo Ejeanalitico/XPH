@@ -15,6 +15,14 @@ interface GallerySectionProps {
 
 const INITIAL_VISIBLE_PHOTOS = 5;
 const galleryAspectRatio = (index: number) => index % 3 === 2 ? '16 / 10' : '2 / 3';
+const CATEGORY_LABELS: Record<string, string> = {
+  bodas: 'boda',
+  'xv-anos': 'XV años',
+  bautizos: 'bautizo y familia',
+  retratos: 'retrato',
+  empresarial: 'fotografía empresarial',
+  previa: 'sesión previa',
+};
 
 export const GallerySection: React.FC<GallerySectionProps> = ({
   currentRoute,
@@ -155,7 +163,7 @@ export const GallerySection: React.FC<GallerySectionProps> = ({
                 >
                   <SafeImage
                     src={img.url}
-                    alt="Fotografía XPH"
+                    alt={`${img.title || `Fotografía de ${CATEGORY_LABELS[img.category] || 'evento'}`} por XPH${img.location ? ` en ${img.location}` : ''}`}
                     preventDownload
                     className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500"
                   />

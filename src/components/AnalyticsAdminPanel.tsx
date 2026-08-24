@@ -6,9 +6,11 @@ import {
   Eye,
   Globe2,
   Link2,
+  LineChart,
   Loader2,
   MessageCircle,
   MonitorSmartphone,
+  MousePointerClick,
   RefreshCw,
   Save,
   Search,
@@ -21,6 +23,7 @@ import {
   AdminAnalytics,
   AdminSession,
   AnalyticsBreakdownRow,
+  SearchConsoleRow,
   loadAdminAnalytics,
   saveAdminConfig,
 } from '../utils/adminApi';
@@ -33,11 +36,11 @@ interface Props {
   onSeoSettingsChange: (settings: SeoSettings) => void;
 }
 
-type Period = 7 | 30 | 90;
+type Period = 7 | 28 | 90;
 
 const PERIODS: Array<{ value: Period; label: string }> = [
   { value: 7, label: '7 días' },
-  { value: 30, label: '30 días' },
+  { value: 28, label: '28 días' },
   { value: 90, label: '90 días' },
 ];
 
@@ -86,6 +89,13 @@ const rowCount = (row: AnalyticsBreakdownRow) => numericValue(row, ['pageviews',
 
 const formatNumber = (value: number) => new Intl.NumberFormat('es-MX').format(value || 0);
 
+const formatDecimal = (value: number) => new Intl.NumberFormat('es-MX', {
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+}).format(value || 0);
+
+const formatCtr = (value: number) => `${formatDecimal(value <= 1 ? value * 100 : value)}%`;
+
 const formatDate = (value: string) => {
   const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) return value;
@@ -127,8 +137,34 @@ const BreakdownList: React.FC<{
   );
 };
 
+const SearchConsoleTable: React.FC<{ rows: SearchConsoleRow[] }> = ({ rows }) => {
+  const visibleRows = rows.filter((row) => row.keys[0]).slice(0, 10);
+  if (!visibleRows.length) return <p className="text-sm text-gray-500 py-8 text-center">Google todavía no muestra consultas para este periodo.</p>;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[620px] text-left text-xs">
+        <thead className="text-gray-500 uppercase tracking-wider border-b border-white/10">
+          <tr><th className="py-3 pr-4 font-semibold">Búsqueda en Google</th><th className="py-3 px-3 font-semibold text-right">Clics</th><th className="py-3 px-3 font-semibold text-right">Impresiones</th><th className="py-3 px-3 font-semibold text-right">CTR</th><th className="py-3 pl-3 font-semibold text-right">Posición</th></tr>
+        </thead>
+        <tbody>
+          {visibleRows.map((row) => (
+            <tr key={`${row.keys.join('|')}-${row.clicks}-${row.impressions}`} className="border-b border-white/5 last:border-0">
+              <td className="py-3 pr-4 text-gray-200 max-w-[320px] truncate" title={row.keys[0]}>{row.keys[0]}</td>
+              <td className="py-3 px-3 text-right font-mono text-white">{formatNumber(row.clicks)}</td>
+              <td className="py-3 px-3 text-right font-mono text-white">{formatNumber(row.impressions)}</td>
+              <td className="py-3 px-3 text-right font-mono text-white">{formatCtr(row.ctr)}</td>
+              <td className="py-3 pl-3 text-right font-mono text-[#F5D76E]">{formatDecimal(row.position)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
 export const AnalyticsAdminPanel: React.FC<Props> = ({ session, seoSettings, onSeoSettingsChange }) => {
-  const [period, setPeriod] = useState<Period>(30);
+  const [period, setPeriod] = useState<Period>(28);
   const [reloadKey, setReloadKey] = useState(0);
   const [analytics, setAnalytics] = useState<AdminAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
@@ -291,6 +327,40 @@ export const AnalyticsAdminPanel: React.FC<Props> = ({ session, seoSettings, onS
             {analytics.leadsByService.length ? <BreakdownList rows={analytics.leadsByService} keys={['label']} labelMap={EVENT_LABELS} empty="Todavía no hay solicitudes en este periodo." /> : <p className="text-sm text-gray-500 py-6 text-center">Todavía no hay solicitudes en este periodo.</p>}
           </article>
         </>
+      )}
+
+      {analytics?.searchConsole && (
+        <article className="rounded-2xl bg-[#161C28] border border-white/10 p-5 sm:p-6 space-y-5">
+          <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+            <div>
+              <h3 className="font-bold flex items-center gap-2"><Search className="w-5 h-5 text-[#D4AF37]" />Resultados reales en Google</h3>
+              <p className="text-sm text-gray-400 mt-1">Clics, apariciones y posición promedio de la propiedad {analytics.searchConsole.property}.</p>
+            </div>
+            <a href="https://search.google.com/search-console?resource_id=sc-domain%3Axaviph.com" target="_blank" rel="noopener noreferrer" className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-xs flex items-center justify-center gap-2">Abrir Search Console<ExternalLink className="w-3.5 h-3.5" /></a>
+          </div>
+
+          {analytics.searchConsole.connected ? (
+            <>
+              <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3">
+                {[
+                  { label: 'Clics de Google', value: formatNumber(analytics.searchConsole.totals.clicks), icon: MousePointerClick, note: 'Entradas desde resultados' },
+                  { label: 'Impresiones', value: formatNumber(analytics.searchConsole.totals.impressions), icon: Eye, note: 'Veces que apareció el sitio' },
+                  { label: 'CTR', value: formatCtr(analytics.searchConsole.totals.ctr), icon: Target, note: 'Clics ÷ impresiones' },
+                  { label: 'Posición promedio', value: formatDecimal(analytics.searchConsole.totals.position), icon: LineChart, note: 'Menor número significa mejor posición' },
+                ].map((card) => { const Icon = card.icon; return <div key={card.label} className="rounded-xl bg-[#0B0F17] border border-white/10 p-4"><div className="flex items-center justify-between gap-2"><p className="text-[10px] text-gray-500 uppercase tracking-wider">{card.label}</p><Icon className="w-4 h-4 text-[#D4AF37]" /></div><p className="text-2xl font-black font-mono mt-2">{card.value}</p><p className="text-[10px] text-gray-600 mt-1">{card.note}</p></div>; })}
+              </div>
+              <div>
+                <div className="flex items-center justify-between gap-3 mb-2"><h4 className="text-sm font-semibold">Búsquedas que muestran tu página</h4>{analytics.searchConsole.range && <span className="text-[10px] text-gray-500">{analytics.searchConsole.range.startDate} – {analytics.searchConsole.range.endDate}</span>}</div>
+                <SearchConsoleTable rows={analytics.searchConsole.queries} />
+              </div>
+            </>
+          ) : (
+            <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 p-4">
+              <p className="text-sm font-semibold text-amber-100">Conector de Google preparado</p>
+              <p className="text-xs text-amber-100/75 mt-1">{analytics.searchConsole.message || 'La lectura de Search Console está pendiente de activación.'}</p>
+            </div>
+          )}
+        </article>
       )}
 
       <article className="rounded-2xl bg-[#161C28] border border-white/10 p-5 sm:p-6 space-y-5">
