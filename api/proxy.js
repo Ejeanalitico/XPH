@@ -5,6 +5,9 @@ const APPS_SCRIPT_SHARED_SECRET = process.env.XPH_APPS_SCRIPT_SHARED_SECRET || '
 const SESSION_SECRET = process.env.XPH_SESSION_SECRET || '';
 const ADMIN_EMAIL = process.env.XPH_ADMIN_EMAIL || '';
 const ADMIN_PASSWORD = process.env.XPH_ADMIN_PASSWORD || '';
+const VERCEL_ANALYTICS_TOKEN = process.env.XPH_VERCEL_ANALYTICS_TOKEN || '';
+const VERCEL_PROJECT_ID = process.env.XPH_VERCEL_PROJECT_ID || 'prj_cg2Vva1lVKN4kPoxncRiPK6lX6a7';
+const VERCEL_TEAM_ID = process.env.XPH_VERCEL_TEAM_ID || 'team_dj8zggd573kLjdTDYe1CEta5';
 
 const SESSION_COOKIE = 'xph_admin_session';
 const SESSION_DAYS = 30;
@@ -375,6 +378,136 @@ async function forwardUpload(submitted) {
   return parsed;
 }
 
+function analyticsPeriod(value) {
+  const days = Number(value);
+  return [7, 30, 90].includes(days) ? days : 30;
+}
+
+function dateRange(days) {
+  const until = new Date();
+  const since = new Date(until);
+  since.setUTCDate(since.getUTCDate() - days + 1);
+  since.setUTCHours(0, 0, 0, 0);
+  return { since: since.toISOString(), until: until.toISOString() };
+}
+
+function quoteCreatedAt(quote) {
+  const raw = String(quote?.createdAt || '');
+  const timestamp = Date.parse(raw.length <= 10 ? `${raw}T00:00:00.000Z` : raw);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function leadSummary(quotes, since, until) {
+  const sinceMs = Date.parse(since);
+  const untilMs = Date.parse(until);
+  const validQuotes = (Array.isArray(quotes) ? quotes : []).filter((quote) => {
+    const createdAt = quoteCreatedAt(quote);
+    return createdAt >= sinceMs && createdAt <= untilMs;
+  });
+
+  const byDay = validQuotes.reduce((acc, quote) => {
+    const day = new Date(quoteCreatedAt(quote)).toISOString().slice(0, 10);
+    acc[day] = (acc[day] || 0) + 1;
+    return acc;
+  }, {});
+
+  const byService = validQuotes.reduce((acc, quote) => {
+    const service = String(quote?.eventType || 'sin-especificar');
+    acc[service] = (acc[service] || 0) + 1;
+    return acc;
+  }, {});
+
+  return {
+    total: validQuotes.length,
+    byDay: Object.entries(byDay).map(([date, count]) => ({ date, count })),
+    byService: Object.entries(byService)
+      .map(([label, count]) => ({ label, count }))
+      .sort((a, b) => b.count - a.count),
+  };
+}
+
+async function fetchVercelAnalytics(path, range, by, limit = 10) {
+  if (!VERCEL_ANALYTICS_TOKEN) throw new Error('La conexión de lectura con Vercel Analytics está pendiente.');
+  const url = new URL(`https://api.vercel.com/v1/query/web-analytics/visits/${path}`);
+  url.searchParams.set('projectId', VERCEL_PROJECT_ID);
+  url.searchParams.set('teamId', VERCEL_TEAM_ID);
+  url.searchParams.set('since', range.since);
+  url.searchParams.set('until', range.until);
+  if (by) url.searchParams.append('by', by);
+  if (path === 'aggregate') url.searchParams.set('limit', String(limit));
+
+  const response = await fetch(url, {
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${VERCEL_ANALYTICS_TOKEN}`,
+    },
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data?.error?.message || data?.message || 'Vercel Analytics no respondió correctamente.');
+  return data?.data || (path === 'count' ? { pageviews: 0, visitors: 0 } : []);
+}
+
+async function adminAnalytics(config, period) {
+  const days = analyticsPeriod(period);
+  const range = dateRange(days);
+  const leads = leadSummary(config?.quotes, range.since, range.until);
+
+  if (!VERCEL_ANALYTICS_TOKEN) {
+    return {
+      connected: false,
+      period: days,
+      range,
+      totals: { visitors: 0, pageviews: 0, leads: leads.total, conversionRate: 0 },
+      trends: [],
+      countries: [],
+      referrers: [],
+      pages: [],
+      devices: [],
+      leadsByDay: leads.byDay,
+      leadsByService: leads.byService,
+      message: 'Web Analytics está activo. Falta autorizar la lectura segura de sus datos dentro de este panel.',
+    };
+  }
+
+  const requests = await Promise.allSettled([
+    fetchVercelAnalytics('count', range),
+    fetchVercelAnalytics('aggregate', range, 'day', 90),
+    fetchVercelAnalytics('aggregate', range, 'country', 12),
+    fetchVercelAnalytics('aggregate', range, 'referrerHostname', 12),
+    fetchVercelAnalytics('aggregate', range, 'requestPath', 12),
+    fetchVercelAnalytics('aggregate', range, 'deviceType', 8),
+  ]);
+
+  const valueOr = (index, fallback) => requests[index].status === 'fulfilled' ? requests[index].value : fallback;
+  const counts = valueOr(0, { pageviews: 0, visitors: 0 });
+  const visitors = Math.max(0, Number(counts?.visitors) || 0);
+  const pageviews = Math.max(0, Number(counts?.pageviews) || 0);
+  const failures = requests.filter((result) => result.status === 'rejected');
+  const connected = requests[0].status === 'fulfilled';
+
+  return {
+    connected,
+    period: days,
+    range,
+    totals: {
+      visitors,
+      pageviews,
+      leads: leads.total,
+      conversionRate: visitors > 0 ? Number(((leads.total / visitors) * 100).toFixed(1)) : 0,
+    },
+    trends: valueOr(1, []),
+    countries: valueOr(2, []),
+    referrers: valueOr(3, []),
+    pages: valueOr(4, []),
+    devices: valueOr(5, []),
+    leadsByDay: leads.byDay,
+    leadsByService: leads.byService,
+    message: !connected
+      ? 'No se pudo leer Web Analytics temporalmente. Las cotizaciones siguen disponibles.'
+      : failures.length ? 'Algunos desgloses no estuvieron disponibles temporalmente.' : '',
+  };
+}
+
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, max-age=0');
   res.setHeader('X-Robots-Tag', 'noindex, nofollow');
@@ -413,6 +546,20 @@ export default async function handler(req, res) {
       const email = String(ADMIN_EMAIL).trim().toLowerCase();
       setSessionCookie(res, signSession(email));
       return res.status(200).json({ status: 'success', authenticated: true, email });
+    }
+
+    if (req.method === 'POST' && action === 'adminAnalytics') {
+      const session = verifySession(req);
+      if (!session) {
+        return res.status(401).json({ status: 'error', authenticated: false, message: 'La sesión expiró. Inicia sesión nuevamente.' });
+      }
+      const raw = await readBody(req);
+      let submitted = {};
+      try { submitted = JSON.parse(raw || '{}'); } catch (_) {}
+      const payload = await fetchConfigFromScript();
+      const config = normalizeConfig(payload);
+      const analytics = await adminAnalytics(config, submitted.period);
+      return res.status(200).json({ status: 'success', analytics });
     }
 
     if (req.method === 'POST' && ['adminConfig', 'adminSaveConfig', 'adminUpload', 'adminDriveList'].includes(action)) {

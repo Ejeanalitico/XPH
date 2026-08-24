@@ -1,5 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { Analytics } from '@vercel/analytics/react';
 import AppV2 from './AppV2';
 import { ClientGalleryPage } from './components/ClientGalleryPage';
 import { PrivateGalleryDownloadSettings } from './components/PrivateGalleryDownloadSettings';
@@ -16,11 +17,11 @@ const galleryToken = params.get('k') || '';
 
 let content = <AppV2 />;
 
-if (adminMode === 'panel' || adminMode === 'galeria' || adminMode === 'portadas' || adminMode === 'promociones') {
+if (adminMode === 'panel' || adminMode === 'galeria' || adminMode === 'portadas' || adminMode === 'promociones' || adminMode === 'analitica') {
   content = (
     <>
       <UnifiedAdminDashboard
-        initialTab={adminMode === 'portadas' ? 'covers' : adminMode === 'galeria' ? 'public' : adminMode === 'promociones' ? 'promotions' : 'packages'}
+        initialTab={adminMode === 'portadas' ? 'covers' : adminMode === 'galeria' ? 'public' : adminMode === 'promociones' ? 'promotions' : adminMode === 'analitica' ? 'analytics' : 'packages'}
       />
       <PrivateGalleryDownloadSettings />
       <AdminExitHomeEnhancer />
@@ -30,6 +31,14 @@ if (adminMode === 'panel' || adminMode === 'galeria' || adminMode === 'portadas'
   content = <ClientGalleryPage slug={gallerySlug} token={galleryToken} />;
 }
 
+const publicView = !adminMode && !(gallerySlug && galleryToken);
+if (!publicView) {
+  const robots = document.querySelector('meta[name="robots"]') || document.createElement('meta');
+  robots.setAttribute('name', 'robots');
+  robots.setAttribute('content', 'noindex,nofollow,noarchive');
+  if (!robots.parentNode) document.head.appendChild(robots);
+}
+
 createRoot(document.getElementById('root')!).render(
-  <StrictMode>{content}</StrictMode>,
+  <StrictMode>{content}{publicView ? <Analytics /> : null}</StrictMode>,
 );

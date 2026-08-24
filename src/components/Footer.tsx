@@ -2,6 +2,7 @@ import React from 'react';
 import { MapPin, Mail, Phone, Clock, MessageSquare, ExternalLink } from 'lucide-react';
 import { RoutePath, FooterContact } from '../types';
 import { DEFAULT_FOOTER_CONTACT, normalizeFooterContact } from '../footerConfig';
+import { routePath } from '../utils/seo';
 
 interface FooterProps {
   onNavigateRoute: (route: RoutePath) => void;
@@ -41,7 +42,7 @@ export const Footer: React.FC<FooterProps> = ({
           <div className="space-y-3">
             <h4 className="text-xs font-bold text-white uppercase tracking-wider font-mono">{config.specialtiesTitle}</h4>
             <ul className="space-y-2">
-              {config.services.map((service) => <li key={service.id}><button onClick={() => onNavigateRoute(service.route)} className="hover:text-[#D4AF37] text-left cursor-pointer">{service.label}</button></li>)}
+              {config.services.map((service) => <li key={service.id}><a href={routePath(service.route)} onClick={(event) => { event.preventDefault(); onNavigateRoute(service.route); }} className="hover:text-[#D4AF37] text-left cursor-pointer">{service.label}</a></li>)}
             </ul>
           </div>
 

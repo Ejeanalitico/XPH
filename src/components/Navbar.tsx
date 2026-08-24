@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Menu, X, Sparkles, ChevronDown, MapPin, CalendarCheck, Shield } from 'lucide-react';
 import { RoutePath } from '../types';
+import { routePath } from '../utils/seo';
 
 interface NavbarProps {
   currentRoute: RoutePath;
@@ -50,14 +51,14 @@ export const Navbar: React.FC<NavbarProps> = ({
     <header className="sticky top-0 z-40 w-full backdrop-blur-xl bg-[#0B0F17]/95 border-b border-white/10">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
         <div className="flex items-center gap-4 min-w-0">
-          <button onClick={() => handleSelectRoute('inicio')} className="group text-left cursor-pointer min-w-0">
+          <a href="/" onClick={(event) => { event.preventDefault(); handleSelectRoute('inicio'); }} className="group text-left cursor-pointer min-w-0">
             <span className="text-lg sm:text-xl xl:text-2xl font-bold tracking-wide font-serif-luxury text-white block truncate">
               XPH <span className="text-[#D4AF37] font-sans font-light">Fotografía & Video</span>
             </span>
             <span className="text-[9px] sm:text-[10px] tracking-widest text-gray-400 uppercase block font-mono">
               Producción Audiovisual
             </span>
-          </button>
+          </a>
 
           {currentRoute !== 'inicio' && (
             <div className="hidden xl:flex items-center gap-2 px-3 py-1 rounded-full bg-[#D4AF37]/10 border border-[#D4AF37]/30 text-[#D4AF37] text-xs font-medium">
@@ -82,9 +83,10 @@ export const Navbar: React.FC<NavbarProps> = ({
               <div className="absolute top-full left-0 mt-2 w-72 rounded-2xl bg-[#161C28] border border-[#D4AF37]/30 shadow-2xl p-2 z-50 backdrop-blur-xl">
                 <div className="px-3 py-1.5 text-[11px] font-bold tracking-wider uppercase text-gray-400 font-mono">Especialidades</div>
                 {selectableRoutes.map((route) => (
-                  <button
+                  <a
                     key={route}
-                    onClick={() => handleSelectRoute(route)}
+                    href={routePath(route)}
+                    onClick={(event) => { event.preventDefault(); handleSelectRoute(route); }}
                     className={`w-full text-left p-2.5 rounded-xl transition-all flex items-start gap-3 cursor-pointer ${currentRoute === route ? 'bg-[#D4AF37]/15 border border-[#D4AF37]/30 text-[#D4AF37]' : 'hover:bg-white/5 text-gray-200 hover:text-white'}`}
                   >
                     <span className="text-xl mt-0.5">{routeLabels[route].icon}</span>
@@ -92,7 +94,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       <div className="font-semibold text-sm">{routeLabels[route].title}</div>
                       <div className="text-xs text-gray-400">{routeLabels[route].subtitle}</div>
                     </div>
-                  </button>
+                  </a>
                 ))}
               </div>
             )}
@@ -117,10 +119,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div className="text-[10px] font-bold tracking-wider uppercase text-gray-400 font-mono">Especialidades</div>
           <div className="grid grid-cols-1 gap-2">
             {selectableRoutes.map((route) => (
-              <button key={route} onClick={() => handleSelectRoute(route)} className={`p-2.5 rounded-xl text-left flex items-center gap-3 cursor-pointer ${currentRoute === route ? 'bg-[#D4AF37]/20 border border-[#D4AF37]/40 text-[#D4AF37] font-bold' : 'bg-white/5 text-gray-300'}`}>
+              <a key={route} href={routePath(route)} onClick={(event) => { event.preventDefault(); handleSelectRoute(route); }} className={`p-2.5 rounded-xl text-left flex items-center gap-3 cursor-pointer ${currentRoute === route ? 'bg-[#D4AF37]/20 border border-[#D4AF37]/40 text-[#D4AF37] font-bold' : 'bg-white/5 text-gray-300'}`}>
                 <span>{routeLabels[route].icon}</span>
                 <span className="text-sm">{routeLabels[route].title}</span>
-              </button>
+              </a>
             ))}
           </div>
           <div className="pt-2 border-t border-white/10 flex flex-col gap-2 font-medium text-gray-300">

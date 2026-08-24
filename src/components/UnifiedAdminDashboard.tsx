@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  BarChart3,
   Camera,
   Check,
   CheckCircle2,
@@ -37,6 +38,7 @@ import {
 } from '../types';
 import { DEFAULT_FOOTER_CONTACT, normalizeFooterContact } from '../footerConfig';
 import { PromotionAdminSettings } from './PromotionAdminSettings';
+import { AnalyticsAdminPanel } from './AnalyticsAdminPanel';
 import {
   AdminSession,
   DriveImageRecord,
@@ -52,7 +54,7 @@ import {
   saveAdminConfig,
 } from '../utils/adminApi';
 
-type Tab = 'packages' | 'public' | 'covers' | 'promotions' | 'footer' | 'private';
+type Tab = 'packages' | 'public' | 'covers' | 'promotions' | 'analytics' | 'footer' | 'private';
 
 const CATEGORY_LABELS: Record<EventType, string> = {
   bodas: 'Bodas',
@@ -482,6 +484,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
             { id: 'public' as Tab, label: 'Galería pública', icon: Camera },
             { id: 'covers' as Tab, label: 'Portadas', icon: ImageIcon },
             { id: 'promotions' as Tab, label: 'Promociones', icon: Megaphone },
+            { id: 'analytics' as Tab, label: 'Analítica', icon: BarChart3 },
             { id: 'footer' as Tab, label: 'Pie de página', icon: PanelBottom },
             { id: 'private' as Tab, label: 'Galerías privadas', icon: FolderLock },
           ].map((item) => { const Icon = item.icon; return <button key={item.id} onClick={() => setTab(item.id)} className={`px-4 py-3 rounded-xl text-sm font-semibold whitespace-nowrap flex items-center gap-2 ${tab === item.id ? 'bg-[#D4AF37] text-black' : 'text-gray-300 hover:bg-white/5'}`}><Icon className="w-4 h-4" />{item.label}</button>; })}
@@ -543,6 +546,8 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
         )}
 
         {tab === 'promotions' && <PromotionAdminSettings adminSession={session} />}
+
+        {tab === 'analytics' && <AnalyticsAdminPanel session={session} />}
 
         {tab === 'footer' && (() => {
           const normalized = normalizeFooterContact(footerContact);
