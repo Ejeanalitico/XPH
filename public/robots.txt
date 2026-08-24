@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /*?xph-admin=
+Disallow: /*?galeria=
+
+Sitemap: https://www.xaviph.com/sitemap.xml

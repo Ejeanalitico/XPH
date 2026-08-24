@@ -14,6 +14,28 @@ export type DriveImageRecord = {
   createdTime?: string;
 };
 
+export type AnalyticsBreakdownRow = Record<string, string | number | null | undefined>;
+
+export type AdminAnalytics = {
+  connected: boolean;
+  period: 7 | 30 | 90;
+  range: { since: string; until: string };
+  totals: {
+    visitors: number;
+    pageviews: number;
+    leads: number;
+    conversionRate: number;
+  };
+  trends: AnalyticsBreakdownRow[];
+  countries: AnalyticsBreakdownRow[];
+  referrers: AnalyticsBreakdownRow[];
+  pages: AnalyticsBreakdownRow[];
+  devices: AnalyticsBreakdownRow[];
+  leadsByDay: Array<{ date: string; count: number }>;
+  leadsByService: Array<{ label: string; count: number }>;
+  message?: string;
+};
+
 let activeAdminSession: AdminSession | null = null;
 
 export function getCurrentAdminSession(): AdminSession | null {
@@ -92,6 +114,21 @@ export async function loadDriveImages(_session?: AdminSession | null): Promise<D
   });
   const data = await parseResponse(res);
   return Array.isArray(data.images) ? data.images : [];
+}
+
+export async function loadAdminAnalytics(
+  _session?: AdminSession | null,
+  period: 7 | 30 | 90 = 30,
+): Promise<AdminAnalytics> {
+  const res = await fetch('/api/proxy?action=adminAnalytics', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    cache: 'no-store',
+    body: JSON.stringify({ period }),
+  });
+  const data = await parseResponse(res);
+  return data.analytics as AdminAnalytics;
 }
 
 export async function saveAdminConfig(

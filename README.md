@@ -28,6 +28,9 @@ Configura estas variables en Production, Preview y Development:
 - `XPH_SESSION_SECRET`: secreto independiente para firmar sesiones administrativas.
 - `XPH_ADMIN_EMAIL`: correo autorizado para iniciar sesión en el panel administrativo.
 - `XPH_ADMIN_PASSWORD`: contraseña administrativa fuerte, almacenada únicamente en Vercel.
+- `XPH_VERCEL_ANALYTICS_TOKEN`: token de lectura limitado al proyecto para consultar Web Analytics desde el panel.
+- `XPH_VERCEL_PROJECT_ID`: identificador del proyecto que genera las métricas.
+- `XPH_VERCEL_TEAM_ID`: identificador del equipo propietario del proyecto.
 
 Genera dos secretos distintos de al menos 32 bytes. No uses variables con prefijo `VITE_` para secretos.
 La contraseña administrativa anterior almacenada en la configuración dinámica deja de utilizarse.

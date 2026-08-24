@@ -37,13 +37,16 @@ import {
   writePublicMediaCache,
 } from './utils/publicMediaCache';
 import { DEFAULT_FOOTER_CONTACT, normalizeFooterContact } from './footerConfig';
+import { routePath, updateRouteMetadata } from './utils/seo';
 
 const DEFAULT_WHATSAPP = '5615567863';
 const VALID_ROUTES: RoutePath[] = ['inicio', 'bodas', 'xv-anos', 'bautizos', 'retratos', 'empresarial'];
 
-const routeFromHash = (): RoutePath => {
+const routeFromLocation = (): RoutePath => {
   const hash = window.location.hash.replace('#/', '').replace('#', '');
-  return VALID_ROUTES.includes(hash as RoutePath) ? hash as RoutePath : 'inicio';
+  if (VALID_ROUTES.includes(hash as RoutePath)) return hash as RoutePath;
+  const pathname = window.location.pathname.replace(/^\/+|\/+$/g, '');
+  return VALID_ROUTES.includes(pathname as RoutePath) ? pathname as RoutePath : 'inicio';
 };
 
 const defaultContact: FooterContact = DEFAULT_FOOTER_CONTACT;
@@ -74,7 +77,7 @@ const sanitizePublicContact = (cloudContact?: Partial<FooterContact>): FooterCon
 
 export default function AppV2() {
   const [initialMedia] = useState(readPublicMediaCache);
-  const [currentRoute, setCurrentRoute] = useState<RoutePath>(routeFromHash);
+  const [currentRoute, setCurrentRoute] = useState<RoutePath>(routeFromLocation);
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>(() => initialMedia?.galleryImages || []);
   const [heroCovers, setHeroCovers] = useState<Partial<Record<RoutePath, string>>>(() => initialMedia?.heroCovers || {});
   const [heroCoverSettings, setHeroCoverSettings] = useState<Partial<Record<RoutePath, HeroCoverSetting>>>(() => initialMedia?.heroCoverSettings || {});
@@ -103,6 +106,10 @@ export default function AppV2() {
     document.documentElement.classList.add('dark');
     document.documentElement.classList.remove('light');
   }, []);
+
+  useEffect(() => {
+    updateRouteMetadata(currentRoute);
+  }, [currentRoute]);
 
   useEffect(() => {
     let cancelled = false;
@@ -144,11 +151,10 @@ export default function AppV2() {
   }, []);
 
   useEffect(() => {
-    const handleHashChange = () => {
-      const hash = window.location.hash.replace('#/', '').replace('#', '');
-      if (!VALID_ROUTES.includes(hash as RoutePath)) return;
-      const route = hash as RoutePath;
+    const handleLocationChange = () => {
+      const route = routeFromLocation();
       setCurrentRoute(route);
+      if (window.location.hash) window.history.replaceState({}, '', routePath(route));
       if (route !== 'inicio') {
         setBookingState((prev) => ({
           ...prev,
@@ -160,12 +166,12 @@ export default function AppV2() {
         }));
       }
     };
-    handleHashChange();
-    window.addEventListener('hashchange', handleHashChange);
-    window.addEventListener('popstate', handleHashChange);
+    handleLocationChange();
+    window.addEventListener('hashchange', handleLocationChange);
+    window.addEventListener('popstate', handleLocationChange);
     return () => {
-      window.removeEventListener('hashchange', handleHashChange);
-      window.removeEventListener('popstate', handleHashChange);
+      window.removeEventListener('hashchange', handleLocationChange);
+      window.removeEventListener('popstate', handleLocationChange);
     };
   }, []);
 
@@ -178,7 +184,7 @@ export default function AppV2() {
   const handleNavigateRoute = (route: RoutePath, preserveScroll = false) => {
     const previousScrollY = window.scrollY;
     setCurrentRoute(route);
-    window.history.pushState({}, '', route === 'inicio' ? '#/inicio' : `#/${route}`);
+    window.history.pushState({}, '', routePath(route));
 
     if (route !== 'inicio') {
       setBookingState((prev) => ({
