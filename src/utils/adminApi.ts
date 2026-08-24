@@ -16,9 +16,35 @@ export type DriveImageRecord = {
 
 export type AnalyticsBreakdownRow = Record<string, string | number | null | undefined>;
 
+export type SearchConsoleRow = {
+  keys: string[];
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  position: number;
+};
+
+export type SearchConsoleAnalytics = {
+  connected: boolean;
+  property: string;
+  period: 7 | 28 | 90;
+  range: { startDate: string; endDate: string } | null;
+  totals: {
+    clicks: number;
+    impressions: number;
+    ctr: number;
+    position: number;
+  };
+  queries: SearchConsoleRow[];
+  pages: SearchConsoleRow[];
+  countries: SearchConsoleRow[];
+  devices: SearchConsoleRow[];
+  message?: string;
+};
+
 export type AdminAnalytics = {
   connected: boolean;
-  period: 7 | 30 | 90;
+  period: 7 | 28 | 90;
   range: { since: string; until: string };
   totals: {
     visitors: number;
@@ -33,6 +59,7 @@ export type AdminAnalytics = {
   devices: AnalyticsBreakdownRow[];
   leadsByDay: Array<{ date: string; count: number }>;
   leadsByService: Array<{ label: string; count: number }>;
+  searchConsole: SearchConsoleAnalytics;
   message?: string;
 };
 
@@ -118,7 +145,7 @@ export async function loadDriveImages(_session?: AdminSession | null): Promise<D
 
 export async function loadAdminAnalytics(
   _session?: AdminSession | null,
-  period: 7 | 30 | 90 = 30,
+  period: 7 | 28 | 90 = 28,
 ): Promise<AdminAnalytics> {
   const res = await fetch('/api/proxy?action=adminAnalytics', {
     method: 'POST',
