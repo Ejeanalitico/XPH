@@ -21,6 +21,11 @@
   "rewrites": [
     { "source": "/xph-logo.png", "destination": "/api/xph-logo-png" },
     { "source": "/api/:path*", "destination": "/api/:path*" },
+    { "source": "/bodas", "destination": "/bodas/index.html" },
+    { "source": "/xv-anos", "destination": "/xv-anos/index.html" },
+    { "source": "/bautizos", "destination": "/bautizos/index.html" },
+    { "source": "/retratos", "destination": "/retratos/index.html" },
+    { "source": "/empresarial", "destination": "/empresarial/index.html" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
