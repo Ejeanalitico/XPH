@@ -13,6 +13,7 @@ import {
   HeroCoverSetting,
   PackageOption,
   RoutePath,
+  SeoSettings,
   ToastMessage,
 } from './types';
 import { PACKAGES_BY_EVENT, ADDONS_CATALOG } from './data/packages';
@@ -37,7 +38,7 @@ import {
   writePublicMediaCache,
 } from './utils/publicMediaCache';
 import { DEFAULT_FOOTER_CONTACT, normalizeFooterContact } from './footerConfig';
-import { routePath, updateRouteMetadata } from './utils/seo';
+import { normalizeSeoSettings, routePath, updateRouteMetadata } from './utils/seo';
 
 const DEFAULT_WHATSAPP = '5615567863';
 const VALID_ROUTES: RoutePath[] = ['inicio', 'bodas', 'xv-anos', 'bautizos', 'retratos', 'empresarial'];
@@ -86,6 +87,7 @@ export default function AppV2() {
   const [packagesState, setPackagesState] = useState<Record<EventType, PackageOption[]>>(PACKAGES_BY_EVENT);
   const [addonsState, setAddonsState] = useState<AddOnOption[]>(ADDONS_CATALOG);
   const [promotionPopup, setPromotionPopup] = useState<PromotionPopupConfig | null>(null);
+  const [seoSettings, setSeoSettings] = useState<SeoSettings>({});
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   const [bookingState, setBookingState] = useState<BookingState>({
@@ -108,8 +110,8 @@ export default function AppV2() {
   }, []);
 
   useEffect(() => {
-    updateRouteMetadata(currentRoute);
-  }, [currentRoute]);
+    updateRouteMetadata(currentRoute, seoSettings);
+  }, [currentRoute, seoSettings]);
 
   useEffect(() => {
     let cancelled = false;
@@ -143,6 +145,7 @@ export default function AppV2() {
       setPackagesState(resolvePublishedPackages(data));
       setAddonsState(resolvePublishedAddons(data));
       if (data.footerContact) setFooterContact(sanitizePublicContact(data.footerContact));
+      setSeoSettings(normalizeSeoSettings(data.seoSettings));
     });
 
     return () => {

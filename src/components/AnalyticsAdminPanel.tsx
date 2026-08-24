@@ -10,19 +10,27 @@ import {
   MessageCircle,
   MonitorSmartphone,
   RefreshCw,
+  Save,
   Search,
+  ShieldCheck,
   Target,
   Users,
 } from 'lucide-react';
+import { RoutePath, SeoSettings } from '../types';
 import {
   AdminAnalytics,
   AdminSession,
   AnalyticsBreakdownRow,
   loadAdminAnalytics,
+  saveAdminConfig,
 } from '../utils/adminApi';
+import { isAnalyticsExcluded, setAnalyticsExcluded } from '../utils/analyticsPrivacy';
+import { normalizeSeoSettings } from '../utils/seo';
 
 interface Props {
   session: AdminSession;
+  seoSettings: SeoSettings;
+  onSeoSettingsChange: (settings: SeoSettings) => void;
 }
 
 type Period = 7 | 30 | 90;
@@ -47,6 +55,15 @@ const COUNTRY_LABELS: Record<string, string> = {
   US: 'Estados Unidos',
   CA: 'Canadá',
   ES: 'España',
+};
+
+const SEO_ROUTE_LABELS: Record<RoutePath, string> = {
+  inicio: 'Inicio',
+  bodas: 'Bodas',
+  'xv-anos': 'XV años',
+  bautizos: 'Bautizos',
+  retratos: 'Retratos',
+  empresarial: 'Empresarial',
 };
 
 const numericValue = (row: AnalyticsBreakdownRow, keys: string[]) => {
@@ -110,12 +127,47 @@ const BreakdownList: React.FC<{
   );
 };
 
-export const AnalyticsAdminPanel: React.FC<Props> = ({ session }) => {
+export const AnalyticsAdminPanel: React.FC<Props> = ({ session, seoSettings, onSeoSettingsChange }) => {
   const [period, setPeriod] = useState<Period>(30);
   const [reloadKey, setReloadKey] = useState(0);
   const [analytics, setAnalytics] = useState<AdminAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [excludeThisDevice, setExcludeThisDevice] = useState(isAnalyticsExcluded);
+  const [seoRoute, setSeoRoute] = useState<RoutePath>('inicio');
+  const [seoDraft, setSeoDraft] = useState(() => normalizeSeoSettings(seoSettings));
+  const [savingSeo, setSavingSeo] = useState(false);
+  const [seoMessage, setSeoMessage] = useState('');
+
+  useEffect(() => {
+    setSeoDraft(normalizeSeoSettings(seoSettings));
+  }, [seoSettings]);
+
+  const toggleAnalyticsExclusion = (excluded: boolean) => {
+    setAnalyticsExcluded(excluded);
+    setExcludeThisDevice(excluded);
+  };
+
+  const saveSeo = async () => {
+    setSavingSeo(true);
+    setSeoMessage('');
+    try {
+      const confirmed = await saveAdminConfig(
+        session,
+        { seoSettings: seoDraft },
+        'ADMIN_SEO',
+        'Títulos, descripciones y reglas de indexación actualizados desde el administrador',
+      );
+      const saved = normalizeSeoSettings(confirmed.seoSettings || seoDraft);
+      setSeoDraft(saved);
+      onSeoSettingsChange(saved);
+      setSeoMessage('Configuración SEO guardada y publicada.');
+    } catch (reason: unknown) {
+      setSeoMessage(reason instanceof Error ? reason.message : 'No se pudo guardar la configuración SEO.');
+    } finally {
+      setSavingSeo(false);
+    }
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -172,6 +224,20 @@ export const AnalyticsAdminPanel: React.FC<Props> = ({ session }) => {
           <button type="button" onClick={() => setReloadKey((value) => value + 1)} className="px-3.5 py-2 rounded-xl border border-white/10 text-xs text-gray-300 flex items-center gap-2"><RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />Actualizar</button>
         </div>
       </div>
+
+      <article className="rounded-2xl bg-[#161C28] border border-white/10 p-5 sm:p-6 space-y-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div>
+            <h3 className="font-bold flex items-center gap-2"><ShieldCheck className="w-5 h-5 text-[#D4AF37]" />Control de medición</h3>
+            <p className="text-sm text-gray-400 mt-1">Al entrar al administrador, este navegador se excluye automáticamente de las visitas futuras.</p>
+          </div>
+          <label className="flex items-center gap-3 rounded-xl bg-[#0B0F17] border border-white/10 px-4 py-3 cursor-pointer">
+            <input type="checkbox" checked={excludeThisDevice} onChange={(event) => toggleAnalyticsExclusion(event.target.checked)} className="accent-[#D4AF37] w-4 h-4" />
+            <span className="text-sm font-semibold">Ignorar mis visitas</span>
+          </label>
+        </div>
+        <p className="text-xs text-gray-500">La exclusión aplica solo a este navegador y dispositivo. Debes entrar al administrador una vez desde cada equipo que uses. No modifica visitas históricas ya agregadas.</p>
+      </article>
 
       {error && <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">{error}</div>}
       {analytics?.message && <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">{analytics.message}</div>}
@@ -237,6 +303,26 @@ export const AnalyticsAdminPanel: React.FC<Props> = ({ session }) => {
           <a href="https://search.google.com/search-console?resource_id=sc-domain%3Axaviph.com" target="_blank" rel="noopener noreferrer" className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-xs flex items-center gap-2">Abrir Google Search Console<ExternalLink className="w-3.5 h-3.5" /></a>
           <a href="/sitemap.xml" target="_blank" rel="noopener noreferrer" className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-xs flex items-center gap-2">Ver sitemap<ExternalLink className="w-3.5 h-3.5" /></a>
         </div>
+      </article>
+
+      <article className="rounded-2xl bg-[#161C28] border border-white/10 p-5 sm:p-6 space-y-5">
+        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+          <div><h3 className="font-bold flex items-center gap-2"><Search className="w-4 h-4 text-[#D4AF37]" />Control de indexación</h3><p className="text-sm text-gray-400 mt-1">Edita lo que Google muestra y permite o bloquea la indexación de cada página pública.</p></div>
+          <button type="button" onClick={saveSeo} disabled={savingSeo} className="px-5 py-2.5 rounded-xl bg-[#D4AF37] text-black font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-40">{savingSeo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}Guardar y publicar</button>
+        </div>
+        <div className="flex overflow-x-auto gap-2">{(Object.keys(SEO_ROUTE_LABELS) as RoutePath[]).map((route) => <button key={route} type="button" onClick={() => setSeoRoute(route)} className={`px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap ${seoRoute === route ? 'bg-white text-black' : 'bg-[#0B0F17] border border-white/10 text-gray-300'}`}>{SEO_ROUTE_LABELS[route]}</button>)}</div>
+        <div className="grid lg:grid-cols-[1fr_240px] gap-4">
+          <div className="space-y-4">
+            <label className="text-xs text-gray-400 block">Título para Google<input value={seoDraft[seoRoute].title} maxLength={120} onChange={(event) => setSeoDraft((prev) => ({ ...prev, [seoRoute]: { ...prev[seoRoute], title: event.target.value } }))} className="mt-1 w-full px-4 py-3 rounded-xl bg-[#0B0F17] border border-white/10 text-white" /></label>
+            <label className="text-xs text-gray-400 block">Descripción para Google<textarea value={seoDraft[seoRoute].description} maxLength={320} rows={4} onChange={(event) => setSeoDraft((prev) => ({ ...prev, [seoRoute]: { ...prev[seoRoute], description: event.target.value } }))} className="mt-1 w-full px-4 py-3 rounded-xl bg-[#0B0F17] border border-white/10 text-white resize-y" /></label>
+          </div>
+          <label className="rounded-xl bg-[#0B0F17] border border-white/10 p-4 flex items-start gap-3 cursor-pointer h-fit">
+            <input type="checkbox" checked={seoDraft[seoRoute].indexed} onChange={(event) => setSeoDraft((prev) => ({ ...prev, [seoRoute]: { ...prev[seoRoute], indexed: event.target.checked } }))} className="accent-[#D4AF37] w-4 h-4 mt-0.5" />
+            <span><span className="block text-sm font-semibold">Permitir indexación</span><span className="block text-xs text-gray-500 mt-1">Desactívalo para publicar la directiva noindex en esta página.</span></span>
+          </label>
+        </div>
+        {seoMessage && <p className="text-sm text-[#F5D76E]">{seoMessage}</p>}
+        <p className="text-xs text-gray-500">Guardar publica la directiva en el sitio; Google decide cuándo vuelve a rastrear el cambio. Las páginas de fotografía no son compatibles con la Indexing API rápida reservada por Google para ofertas de empleo y transmisiones en vivo.</p>
       </article>
     </section>
   );

@@ -6,6 +6,7 @@ import { ClientGalleryPage } from './components/ClientGalleryPage';
 import { PrivateGalleryDownloadSettings } from './components/PrivateGalleryDownloadSettings';
 import { UnifiedAdminDashboard } from './components/UnifiedAdminDashboard';
 import { AdminExitHomeEnhancer } from './components/AdminExitHomeEnhancer';
+import { isAnalyticsExcluded } from './utils/analyticsPrivacy';
 import './index.css';
 import './branding.css';
 
@@ -40,5 +41,8 @@ if (!publicView) {
 }
 
 createRoot(document.getElementById('root')!).render(
-  <StrictMode>{content}{publicView ? <Analytics /> : null}</StrictMode>,
+  <StrictMode>
+    {content}
+    {publicView ? <Analytics beforeSend={(event) => isAnalyticsExcluded() ? null : event} /> : null}
+  </StrictMode>,
 );
