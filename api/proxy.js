@@ -8,6 +8,8 @@ const ADMIN_PASSWORD = process.env.XPH_ADMIN_PASSWORD || '';
 const VERCEL_ANALYTICS_TOKEN = process.env.XPH_VERCEL_ANALYTICS_TOKEN || '';
 const VERCEL_PROJECT_ID = process.env.XPH_VERCEL_PROJECT_ID || 'prj_cg2Vva1lVKN4kPoxncRiPK6lX6a7';
 const VERCEL_TEAM_ID = process.env.XPH_VERCEL_TEAM_ID || 'team_dj8zggd573kLjdTDYe1CEta5';
+const SEARCH_CONSOLE_SCRIPT_URL = process.env.XPH_SEARCH_CONSOLE_SCRIPT_URL || '';
+const SEARCH_CONSOLE_SECRET = process.env.XPH_SEARCH_CONSOLE_SECRET || '';
 
 const SESSION_COOKIE = 'xph_admin_session';
 const SESSION_DAYS = 30;
@@ -380,7 +382,7 @@ async function forwardUpload(submitted) {
 
 function analyticsPeriod(value) {
   const days = Number(value);
-  return [7, 30, 90].includes(days) ? days : 30;
+  return [7, 28, 90].includes(days) ? days : 28;
 }
 
 function dateRange(days) {
@@ -447,10 +449,87 @@ async function fetchVercelAnalytics(path, range, by, limit = 10) {
   return data?.data || (path === 'count' ? { pageviews: 0, visitors: 0 } : []);
 }
 
+function emptySearchConsole(days, message) {
+  return {
+    connected: false,
+    property: 'sc-domain:xaviph.com',
+    period: days,
+    range: null,
+    totals: { clicks: 0, impressions: 0, ctr: 0, position: 0 },
+    queries: [],
+    pages: [],
+    countries: [],
+    devices: [],
+    message,
+  };
+}
+
+function normalizeSearchConsoleRow(row) {
+  const keys = Array.isArray(row?.keys) ? row.keys.map((key) => String(key || '')) : [];
+  return {
+    keys,
+    clicks: Math.max(0, Number(row?.clicks) || 0),
+    impressions: Math.max(0, Number(row?.impressions) || 0),
+    ctr: Math.max(0, Number(row?.ctr) || 0),
+    position: Math.max(0, Number(row?.position) || 0),
+  };
+}
+
+async function fetchSearchConsoleAnalytics(days) {
+  if (!SEARCH_CONSOLE_SCRIPT_URL || !SEARCH_CONSOLE_SECRET) {
+    return emptySearchConsole(days, 'La conexión privada con Google Search Console está pendiente de activación.');
+  }
+
+  const response = await fetch(SEARCH_CONSOLE_SCRIPT_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ action: 'performance', apiSecret: SEARCH_CONSOLE_SECRET, period: days }),
+    redirect: 'follow',
+  });
+  const text = await response.text();
+  let parsed;
+  try { parsed = JSON.parse(text); } catch (_) { throw new Error('Google Search Console devolvió una respuesta no válida.'); }
+  if (!response.ok || parsed?.status === 'error') {
+    throw new Error(parsed?.message || 'Google Search Console no respondió correctamente.');
+  }
+
+  const data = parsed?.performance || parsed?.data || parsed?.analytics || parsed?.result || parsed;
+  const totals = data?.totals || data || {};
+  const normalizeRows = (value) => {
+    const rows = Array.isArray(value) ? value : Array.isArray(value?.rows) ? value.rows : [];
+    return rows.map(normalizeSearchConsoleRow);
+  };
+  return {
+    connected: true,
+    property: String(data?.property || data?.siteUrl || 'sc-domain:xaviph.com'),
+    period: days,
+    range: data?.range && typeof data.range === 'object'
+      ? {
+          startDate: String(data.range.startDate || data.range.start || data.startDate || ''),
+          endDate: String(data.range.endDate || data.range.end || data.endDate || ''),
+        }
+      : null,
+    totals: {
+      clicks: Math.max(0, Number(totals.clicks) || 0),
+      impressions: Math.max(0, Number(totals.impressions) || 0),
+      ctr: Math.max(0, Number(totals.ctr) || 0),
+      position: Math.max(0, Number(totals.position) || 0),
+    },
+    queries: normalizeRows(data?.queries),
+    pages: normalizeRows(data?.pages),
+    countries: normalizeRows(data?.countries),
+    devices: normalizeRows(data?.devices),
+    message: '',
+  };
+}
+
 async function adminAnalytics(config, period) {
   const days = analyticsPeriod(period);
   const range = dateRange(days);
   const leads = leadSummary(config?.quotes, range.since, range.until);
+
+  const searchConsolePromise = fetchSearchConsoleAnalytics(days)
+    .catch((error) => emptySearchConsole(days, error instanceof Error ? error.message : 'No se pudo consultar Google Search Console.'));
 
   if (!VERCEL_ANALYTICS_TOKEN) {
     return {
@@ -465,17 +544,21 @@ async function adminAnalytics(config, period) {
       devices: [],
       leadsByDay: leads.byDay,
       leadsByService: leads.byService,
+      searchConsole: await searchConsolePromise,
       message: 'Web Analytics está activo. Falta autorizar la lectura segura de sus datos dentro de este panel.',
     };
   }
 
-  const requests = await Promise.allSettled([
+  const [requests, searchConsole] = await Promise.all([
+    Promise.allSettled([
     fetchVercelAnalytics('count', range),
     fetchVercelAnalytics('aggregate', range, 'day', 90),
     fetchVercelAnalytics('aggregate', range, 'country', 12),
     fetchVercelAnalytics('aggregate', range, 'referrerHostname', 12),
     fetchVercelAnalytics('aggregate', range, 'requestPath', 12),
     fetchVercelAnalytics('aggregate', range, 'deviceType', 8),
+    ]),
+    searchConsolePromise,
   ]);
 
   const valueOr = (index, fallback) => requests[index].status === 'fulfilled' ? requests[index].value : fallback;
@@ -502,6 +585,7 @@ async function adminAnalytics(config, period) {
     devices: valueOr(5, []),
     leadsByDay: leads.byDay,
     leadsByService: leads.byService,
+    searchConsole,
     message: !connected
       ? 'No se pudo leer Web Analytics temporalmente. Las cotizaciones siguen disponibles.'
       : failures.length ? 'Algunos desgloses no estuvieron disponibles temporalmente.' : '',
