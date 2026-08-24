@@ -35,10 +35,13 @@ import {
   PackageOption,
   PrivateGallerySummary,
   RoutePath,
+  SeoSettings,
 } from '../types';
 import { DEFAULT_FOOTER_CONTACT, normalizeFooterContact } from '../footerConfig';
 import { PromotionAdminSettings } from './PromotionAdminSettings';
 import { AnalyticsAdminPanel } from './AnalyticsAdminPanel';
+import { setAnalyticsExcluded } from '../utils/analyticsPrivacy';
+import { normalizeSeoSettings } from '../utils/seo';
 import {
   AdminSession,
   DriveImageRecord,
@@ -146,6 +149,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
   const [driveImages, setDriveImages] = useState<DriveImageRecord[]>([]);
   const [heroSettings, setHeroSettings] = useState<Partial<Record<RoutePath, HeroCoverSetting>>>({});
   const [footerContact, setFooterContact] = useState<FooterContact>(DEFAULT_FOOTER_CONTACT);
+  const [seoSettings, setSeoSettings] = useState<SeoSettings>(() => normalizeSeoSettings({}));
 
   const [activeCategory, setActiveCategory] = useState<EventType>('bodas');
   const [publicCategory, setPublicCategory] = useState<Exclude<GalleryCategory, 'all'>>('bodas');
@@ -181,6 +185,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
     setGalleryImages(Array.isArray(config.galleryImages) ? config.galleryImages : []);
     setHeroSettings(config.heroCoverSettings && typeof config.heroCoverSettings === 'object' ? config.heroCoverSettings : {});
     setFooterContact(normalizeFooterContact(config.footerContact));
+    setSeoSettings(normalizeSeoSettings(config.seoSettings));
   };
 
   const refresh = async () => {
@@ -196,6 +201,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
         if (!mounted) return;
         setSession(restored);
         if (restored) {
+          setAnalyticsExcluded(true);
           const [config, drive] = await Promise.all([loadAdminConfig(restored), loadDriveImages(restored)]);
           if (!mounted) return;
           applyConfig(config);
@@ -213,6 +219,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
     setAuthError('');
     try {
       const next = await adminLogin(email, password);
+      setAnalyticsExcluded(true);
       setSession(next);
       const [config, drive] = await Promise.all([loadAdminConfig(next), loadDriveImages(next)]);
       applyConfig(config);
@@ -484,7 +491,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
             { id: 'public' as Tab, label: 'Galería pública', icon: Camera },
             { id: 'covers' as Tab, label: 'Portadas', icon: ImageIcon },
             { id: 'promotions' as Tab, label: 'Promociones', icon: Megaphone },
-            { id: 'analytics' as Tab, label: 'Analítica', icon: BarChart3 },
+            { id: 'analytics' as Tab, label: 'Tráfico y SEO', icon: BarChart3 },
             { id: 'footer' as Tab, label: 'Pie de página', icon: PanelBottom },
             { id: 'private' as Tab, label: 'Galerías privadas', icon: FolderLock },
           ].map((item) => { const Icon = item.icon; return <button key={item.id} onClick={() => setTab(item.id)} className={`px-4 py-3 rounded-xl text-sm font-semibold whitespace-nowrap flex items-center gap-2 ${tab === item.id ? 'bg-[#D4AF37] text-black' : 'text-gray-300 hover:bg-white/5'}`}><Icon className="w-4 h-4" />{item.label}</button>; })}
@@ -547,7 +554,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
 
         {tab === 'promotions' && <PromotionAdminSettings adminSession={session} />}
 
-        {tab === 'analytics' && <AnalyticsAdminPanel session={session} />}
+        {tab === 'analytics' && <AnalyticsAdminPanel session={session} seoSettings={seoSettings} onSeoSettingsChange={setSeoSettings} />}
 
         {tab === 'footer' && (() => {
           const normalized = normalizeFooterContact(footerContact);

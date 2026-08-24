@@ -1,4 +1,4 @@
-import { RoutePath } from '../types';
+import { RoutePath, SeoPageSetting, SeoSettings } from '../types';
 
 const SITE_URL = 'https://www.xaviph.com';
 
@@ -41,6 +41,26 @@ const SEO_METADATA: Record<RoutePath, { path: string; title: string; description
   },
 };
 
+export const DEFAULT_SEO_SETTINGS: Record<RoutePath, SeoPageSetting> = Object.fromEntries(
+  Object.entries(SEO_METADATA).map(([route, metadata]) => [route, {
+    title: metadata.title,
+    description: metadata.description,
+    indexed: true,
+  }]),
+) as Record<RoutePath, SeoPageSetting>;
+
+export const normalizeSeoSettings = (value?: SeoSettings | null): Record<RoutePath, SeoPageSetting> =>
+  (Object.keys(SEO_METADATA) as RoutePath[]).reduce((acc, route) => {
+    const candidate = value?.[route];
+    const fallback = DEFAULT_SEO_SETTINGS[route];
+    acc[route] = {
+      title: String(candidate?.title || fallback.title).trim().slice(0, 120) || fallback.title,
+      description: String(candidate?.description || fallback.description).trim().slice(0, 320) || fallback.description,
+      indexed: candidate?.indexed !== false,
+    };
+    return acc;
+  }, {} as Record<RoutePath, SeoPageSetting>);
+
 const setMeta = (selector: string, attribute: 'name' | 'property', key: string, content: string) => {
   let element = document.head.querySelector<HTMLMetaElement>(selector);
   if (!element) {
@@ -53,14 +73,23 @@ const setMeta = (selector: string, attribute: 'name' | 'property', key: string, 
 
 export const routePath = (route: RoutePath) => SEO_METADATA[route].path;
 
-export const updateRouteMetadata = (route: RoutePath) => {
-  const metadata = SEO_METADATA[route];
+export const updateRouteMetadata = (route: RoutePath, settings?: SeoSettings | null) => {
+  const defaults = SEO_METADATA[route];
+  const configured = normalizeSeoSettings(settings)[route];
+  const metadata = { ...defaults, ...configured };
   const canonicalUrl = `${SITE_URL}${metadata.path}`;
   document.title = metadata.title;
   document.documentElement.lang = 'es-MX';
 
   setMeta('meta[name="description"]', 'name', 'description', metadata.description);
-  setMeta('meta[name="robots"]', 'name', 'robots', 'index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1');
+  setMeta(
+    'meta[name="robots"]',
+    'name',
+    'robots',
+    metadata.indexed
+      ? 'index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1'
+      : 'noindex,nofollow,noarchive',
+  );
   setMeta('meta[property="og:title"]', 'property', 'og:title', metadata.title);
   setMeta('meta[property="og:description"]', 'property', 'og:description', metadata.description);
   setMeta('meta[property="og:url"]', 'property', 'og:url', canonicalUrl);

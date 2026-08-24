@@ -2,6 +2,14 @@ export type RoutePath = 'inicio' | 'bodas' | 'xv-anos' | 'bautizos' | 'retratos'
 
 export type EventType = 'bodas' | 'xv-anos' | 'bautizos' | 'retratos' | 'empresarial';
 
+export interface SeoPageSetting {
+  title: string;
+  description: string;
+  indexed: boolean;
+}
+
+export type SeoSettings = Partial<Record<RoutePath, SeoPageSetting>>;
+
 export type GalleryCategory = 'all' | 'bodas' | 'xv-anos' | 'bautizos' | 'retratos' | 'empresarial' | 'previa';
 
 export type GalleryVisibility = 'public' | 'private' | 'cover';
