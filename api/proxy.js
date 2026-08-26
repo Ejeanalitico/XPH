@@ -1,4 +1,5 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 
 const APPS_SCRIPT_URL = process.env.XPH_APPS_SCRIPT_URL || '';
 const APPS_SCRIPT_SHARED_SECRET = process.env.XPH_APPS_SCRIPT_SHARED_SECRET || '';
@@ -14,6 +15,9 @@ const SEARCH_CONSOLE_SECRET = process.env.XPH_SEARCH_CONSOLE_SECRET || '';
 const SESSION_COOKIE = 'xph_admin_session';
 const SESSION_DAYS = 30;
 const MAX_BODY_BYTES = 4_000_000;
+const CRM_STATUSES = new Set(['Nuevo', 'Contactado', 'Cotización enviada', 'Seguimiento', 'Cierre prioritario', 'Contratado', 'No interesado', 'Archivado']);
+const EXPENSE_CATEGORIES = new Set(['Equipo y fotografía', 'Maquillaje e insumos', 'Transporte', 'Comida', 'Gastos personales', 'Publicidad', 'Otros del negocio']);
+const EXPENSE_ACCOUNTS = new Set(['Banco', 'Efectivo', 'Bote de reserva', 'Otro']);
 const rateLimitBuckets = globalThis.__xphRateLimitBuckets || new Map();
 globalThis.__xphRateLimitBuckets = rateLimitBuckets;
 
@@ -380,6 +384,111 @@ async function forwardUpload(submitted) {
   return parsed;
 }
 
+async function forwardBusinessAction(action, payload = {}) {
+  assertIntegrationConfig();
+  const response = await fetch(APPS_SCRIPT_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ action, apiSecret: APPS_SCRIPT_SHARED_SECRET, payload }),
+    redirect: 'follow',
+  });
+  const text = await response.text();
+  let parsed;
+  try { parsed = JSON.parse(text); } catch (_) { throw new Error('La base privada devolvió una respuesta no válida.'); }
+  if (!parsed || parsed.status !== 'success') throw new Error(parsed?.message || 'La operación privada no pudo completarse.');
+  return parsed;
+}
+
+function clientIp(req) {
+  return String(req.headers?.['x-forwarded-for'] || '').split(',')[0].trim() || String(req.socket?.remoteAddress || '');
+}
+
+function isMobileSigningRequest(req) {
+  const mobileHint = String(req.headers?.['sec-ch-ua-mobile'] || '');
+  const userAgent = String(req.headers?.['user-agent'] || '');
+  if (mobileHint === '?1') return true;
+  return /(iphone|ipod|android.+mobile|windows phone|iemobile|opera mini)/i.test(userAgent);
+}
+
+function signingAudit(req) {
+  return {
+    ip: clientIp(req).slice(0, 120),
+    userAgent: String(req.headers?.['user-agent'] || '').slice(0, 700),
+    acceptedAt: new Date().toISOString(),
+    consentText: 'He leído el contrato completo, comprendo su contenido y acepto sus términos.',
+  };
+}
+
+function cleanBase64(value) {
+  const source = String(value || '');
+  return source.includes(',') ? source.split(',').pop() : source;
+}
+
+function isPngDataUrl(value) {
+  const source = String(value || '');
+  if (!source.startsWith('data:image/png;base64,')) return false;
+  try {
+    const bytes = Buffer.from(cleanBase64(source), 'base64');
+    return bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  } catch (_) {
+    return false;
+  }
+}
+
+function isPdfDataUrl(value) {
+  const source = String(value || '');
+  if (!source.startsWith('data:application/pdf;base64,')) return false;
+  try {
+    return Buffer.from(cleanBase64(source), 'base64').subarray(0, 5).toString('ascii') === '%PDF-';
+  } catch (_) {
+    return false;
+  }
+}
+
+async function appendClientSignature(pdfBase64, signatureDataUrl, contract, audit) {
+  const pdfBytes = Buffer.from(cleanBase64(pdfBase64), 'base64');
+  const signatureBytes = Buffer.from(cleanBase64(signatureDataUrl), 'base64');
+  const pdf = await PDFDocument.load(pdfBytes, { ignoreEncryption: false });
+  const page = pdf.addPage([612, 792]);
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const signature = await pdf.embedPng(signatureBytes);
+  const scaled = signature.scaleToFit(220, 92);
+
+  page.drawText('CONSTANCIA DE ACEPTACION Y FIRMA', { x: 54, y: 720, size: 16, font: bold, color: rgb(0.12, 0.14, 0.18) });
+  page.drawText(`Contrato: ${String(contract.folio || contract.id || '').slice(0, 100)}`, { x: 54, y: 685, size: 10, font });
+  page.drawText(`Cliente: ${String(contract.clientName || '').slice(0, 120)}`, { x: 54, y: 667, size: 10, font });
+  page.drawText(`Fecha del evento: ${String(contract.eventDate || 'Por confirmar').slice(0, 40)}`, { x: 54, y: 649, size: 10, font });
+  page.drawText('El cliente confirma que leyo el contrato completo y acepto sus terminos', { x: 54, y: 610, size: 9, font });
+  page.drawText('antes de realizar la firma manuscrita electronica que aparece abajo.', { x: 54, y: 596, size: 9, font });
+  page.drawText(`Aceptado: ${audit.acceptedAt}`, { x: 54, y: 566, size: 8, font, color: rgb(0.3, 0.32, 0.36) });
+  page.drawText(`IP: ${audit.ip || 'No disponible'}`, { x: 54, y: 552, size: 8, font, color: rgb(0.3, 0.32, 0.36) });
+  page.drawImage(signature, { x: 54, y: 365, width: scaled.width, height: scaled.height });
+  page.drawLine({ start: { x: 54, y: 355 }, end: { x: 274, y: 355 }, thickness: 0.8, color: rgb(0.15, 0.16, 0.18) });
+  page.drawText('Firma del cliente', { x: 54, y: 338, size: 9, font });
+  page.drawLine({ start: { x: 338, y: 355 }, end: { x: 558, y: 355 }, thickness: 0.8, color: rgb(0.15, 0.16, 0.18) });
+  page.drawText('Autorizacion de Javier Garcia - pendiente', { x: 338, y: 338, size: 9, font });
+  page.drawText('Xavi.ph conserva el documento original y esta constancia como evidencia del proceso.', { x: 54, y: 95, size: 8, font, color: rgb(0.35, 0.37, 0.42) });
+
+  return Buffer.from(await pdf.save()).toString('base64');
+}
+
+async function applyOwnerSignature(pdfBase64, signatureDataUrl, authorizedAt) {
+  const pdf = await PDFDocument.load(Buffer.from(cleanBase64(pdfBase64), 'base64'));
+  const pages = pdf.getPages();
+  if (!pages.length) throw new Error('El contrato firmado no contiene páginas.');
+  const page = pages[pages.length - 1];
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const signature = await pdf.embedPng(Buffer.from(cleanBase64(signatureDataUrl), 'base64'));
+  const scaled = signature.scaleToFit(220, 92);
+  page.drawRectangle({ x: 334, y: 330, width: 230, height: 125, color: rgb(1, 1, 1) });
+  page.drawImage(signature, { x: 338, y: 365, width: scaled.width, height: scaled.height });
+  page.drawLine({ start: { x: 338, y: 355 }, end: { x: 558, y: 355 }, thickness: 0.8, color: rgb(0.15, 0.16, 0.18) });
+  page.drawText('Javier Garcia - Xavi.ph', { x: 338, y: 338, size: 9, font });
+  page.drawText(`Autorizado: ${authorizedAt}`, { x: 338, y: 324, size: 7, font, color: rgb(0.35, 0.37, 0.42) });
+  return Buffer.from(await pdf.save()).toString('base64');
+}
+
 function analyticsPeriod(value) {
   const days = Number(value);
   return [7, 28, 90].includes(days) ? days : 28;
@@ -646,6 +755,152 @@ export default async function handler(req, res) {
       return res.status(200).json({ status: 'success', analytics });
     }
 
+    const adminBusinessActions = [
+      'adminBusinessSnapshot',
+      'adminCrmUpsert',
+      'adminExpenseUpsert',
+      'adminContractUpload',
+      'adminContractCreateLink',
+      'adminOwnerSignatureSave',
+      'adminContractFinalize',
+    ];
+
+    if (req.method === 'POST' && adminBusinessActions.includes(action)) {
+      const session = verifySession(req);
+      if (!session) return res.status(401).json({ status: 'error', message: 'La sesión expiró. Inicia sesión nuevamente.' });
+      const raw = await readBody(req);
+      let submitted = {};
+      try { submitted = JSON.parse(raw || '{}'); } catch (_) {}
+
+      if (action === 'adminBusinessSnapshot') {
+        const result = await forwardBusinessAction('businessSnapshot');
+        return res.status(200).json({ status: 'success', snapshot: result.snapshot });
+      }
+      if (action === 'adminCrmUpsert') {
+        const client = submitted.client || {};
+        if (!String(client.name || '').trim() && !String(client.phone || '').trim()) {
+          return res.status(400).json({ status: 'error', message: 'Registra por lo menos el nombre o el teléfono.' });
+        }
+        if (client.status && !CRM_STATUSES.has(String(client.status))) {
+          return res.status(400).json({ status: 'error', message: 'Estado de cliente no válido.' });
+        }
+        if (Number(client.paidAmount || 0) > Number(client.totalAmount || 0) && Number(client.totalAmount || 0) > 0) {
+          return res.status(400).json({ status: 'error', message: 'Lo pagado no puede ser mayor al total contratado.' });
+        }
+        const result = await forwardBusinessAction('crmUpsert', { client });
+        return res.status(200).json({ status: 'success', client: result.client });
+      }
+      if (action === 'adminExpenseUpsert') {
+        const expense = submitted.expense || {};
+        if (!EXPENSE_CATEGORIES.has(String(expense.category || '')) || !EXPENSE_ACCOUNTS.has(String(expense.account || 'Banco'))) {
+          return res.status(400).json({ status: 'error', message: 'Categoría o cuenta de gasto no válida.' });
+        }
+        if (!['Pagado', 'Pendiente'].includes(String(expense.paymentStatus || ''))) {
+          return res.status(400).json({ status: 'error', message: 'Estado de gasto no válido.' });
+        }
+        const result = await forwardBusinessAction('expenseUpsert', { expense });
+        return res.status(200).json({ status: 'success', expense: result.expense });
+      }
+      if (action === 'adminContractUpload') {
+        const contract = submitted.contract || {};
+        if (!contract.clientId || !contract.clientName || !contract.folio || !contract.base64) {
+          return res.status(400).json({ status: 'error', message: 'Faltan datos del contrato.' });
+        }
+        if (String(contract.mimeType || '') !== 'application/pdf' || !isPdfDataUrl(contract.base64)) {
+          return res.status(400).json({ status: 'error', message: 'El contrato debe ser un archivo PDF.' });
+        }
+        const result = await forwardBusinessAction('contractUpload', { contract });
+        return res.status(200).json({ status: 'success', contract: result.contract });
+      }
+      if (action === 'adminContractCreateLink') {
+        const contractId = String(submitted.contractId || '');
+        if (!contractId) return res.status(400).json({ status: 'error', message: 'Contrato no identificado.' });
+        const token = randomBytes(32).toString('base64url');
+        const tokenHash = createHash('sha256').update(token).digest('base64url');
+        const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
+        await forwardBusinessAction('contractCreateLink', { contractId, tokenHash, expiresAt });
+        const protocol = String(req.headers?.['x-forwarded-proto'] || 'https').split(',')[0];
+        const host = String(req.headers?.host || 'www.xaviph.com');
+        return res.status(200).json({ status: 'success', url: `${protocol}://${host}/firmar/${token}`, expiresAt });
+      }
+      if (action === 'adminOwnerSignatureSave') {
+        const signatureDataUrl = String(submitted.signatureDataUrl || '');
+        if (!isPngDataUrl(signatureDataUrl)) return res.status(400).json({ status: 'error', message: 'Firma inválida.' });
+        await forwardBusinessAction('ownerSignatureSave', { signatureDataUrl });
+        return res.status(200).json({ status: 'success' });
+      }
+      if (action === 'adminContractFinalize') {
+        const contractId = String(submitted.contractId || '');
+        const material = await forwardBusinessAction('contractFinalizeData', { contractId });
+        const authorizedAt = new Date().toISOString();
+        const finalizedPdfBase64 = await applyOwnerSignature(material.pdfBase64, material.ownerSignatureDataUrl, authorizedAt);
+        const finalDocumentHash = createHash('sha256').update(Buffer.from(finalizedPdfBase64, 'base64')).digest('hex');
+        const result = await forwardBusinessAction('contractFinalize', { contractId, finalizedPdfBase64, finalDocumentHash, authorizedAt });
+        return res.status(200).json({ status: 'success', contract: result.contract });
+      }
+    }
+
+    if (req.method === 'GET' && action === 'adminContractPdf') {
+      const session = verifySession(req);
+      if (!session) return res.status(401).json({ status: 'error', message: 'La sesión expiró. Inicia sesión nuevamente.' });
+      const contractId = String(req.query?.contractId || '').trim();
+      const requestedVersion = String(req.query?.version || 'latest');
+      const version = ['original', 'signed', 'final', 'latest'].includes(requestedVersion) ? requestedVersion : 'latest';
+      if (!contractId) return res.status(400).json({ status: 'error', message: 'Contrato no identificado.' });
+      const result = await forwardBusinessAction('contractAdminPdfData', { contractId, version });
+      const pdf = Buffer.from(cleanBase64(result.pdfBase64), 'base64');
+      if (pdf.subarray(0, 5).toString('ascii') !== '%PDF-') throw new Error('El contrato privado no contiene un PDF válido.');
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="contrato-${String(result.folio || 'xph').replace(/[^a-z0-9-]/gi, '_')}.pdf"`);
+      return res.status(200).send(pdf);
+    }
+
+    if (req.method === 'GET' && (action === 'contractView' || action === 'contractPdf')) {
+      const token = String(req.query?.token || '').trim();
+      if (!token) return res.status(400).json({ status: 'error', message: 'Liga incompleta.' });
+      if (!isMobileSigningRequest(req)) {
+        await forwardBusinessAction('contractInvalidate', { token }).catch(() => null);
+        return res.status(410).json({ status: 'error', message: 'Esta liga solo funciona en un teléfono. Se canceló por seguridad; solicita una nueva a Javier.' });
+      }
+      const result = await forwardBusinessAction('contractResolve', { token, includePdf: action === 'contractPdf', markViewed: true });
+      if (action === 'contractPdf') {
+        const pdf = Buffer.from(cleanBase64(result.pdfBase64), 'base64');
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="contrato-${String(result.contract?.folio || 'xaviph').replace(/[^a-z0-9-]/gi, '_')}.pdf"`);
+        return res.status(200).send(pdf);
+      }
+      return res.status(200).json({ status: 'success', contract: result.contract });
+    }
+
+    if (req.method === 'POST' && action === 'contractSign') {
+      if (!isMobileSigningRequest(req)) return res.status(403).json({ status: 'error', message: 'La firma solo está permitida desde un teléfono.' });
+      const attempt = rateLimit(req, 'contract-sign', 5, 30 * 60 * 1000);
+      if (!attempt.allowed) return res.status(429).json({ status: 'error', message: 'Demasiados intentos. Solicita una liga nueva.' });
+      const raw = await readBody(req);
+      let submitted = {};
+      try { submitted = JSON.parse(raw || '{}'); } catch (_) {}
+      const token = String(submitted.token || '');
+      const signatureDataUrl = String(submitted.signatureDataUrl || '');
+      if (!submitted.accepted || !token || !isPngDataUrl(signatureDataUrl)) {
+        return res.status(400).json({ status: 'error', message: 'Aceptación o firma incompleta.' });
+      }
+      if (Buffer.byteLength(signatureDataUrl, 'utf8') > 900_000) return res.status(413).json({ status: 'error', message: 'La firma excede el tamaño permitido.' });
+      const material = await forwardBusinessAction('contractResolve', { token, includePdf: true, markViewed: true });
+      const audit = signingAudit(req);
+      const signedPdfBase64 = await appendClientSignature(material.pdfBase64, signatureDataUrl, material.contract, audit);
+      const originalDocumentHash = createHash('sha256').update(Buffer.from(cleanBase64(material.pdfBase64), 'base64')).digest('hex');
+      const signedDocumentHash = createHash('sha256').update(Buffer.from(signedPdfBase64, 'base64')).digest('hex');
+      await forwardBusinessAction('contractCompleteSignature', {
+        token,
+        signedPdfBase64,
+        signatureDataUrl,
+        originalDocumentHash,
+        signedDocumentHash,
+        audit,
+      });
+      return res.status(200).json({ status: 'success', message: 'Firma recibida.' });
+    }
+
     if (req.method === 'POST' && ['adminConfig', 'adminSaveConfig', 'adminUpload', 'adminDriveList'].includes(action)) {
       const raw = await readBody(req);
       let submitted = {};
@@ -725,6 +980,30 @@ export default async function handler(req, res) {
         'NUEVA_SOLICITUD_DISPONIBILIDAD',
         `Solicitud web de ${String(safeLead.clientName).slice(0, 120)} para ${String(safeLead.eventDate).slice(0, 30)}`
       );
+      await forwardBusinessAction('crmUpsert', {
+        client: {
+          id: `web-${String(safeLead.id).replace(/[^a-z0-9-]/gi, '').slice(0, 100)}`,
+          recordType: 'Prospecto',
+          name: safeLead.clientName,
+          phone: safeLead.clientPhone,
+          email: safeLead.clientEmail,
+          eventType: safeLead.eventType,
+          eventDate: safeLead.eventDate,
+          eventLocation: safeLead.eventCity,
+          packageName: safeLead.packageName,
+          totalAmount: safeLead.total,
+          paidAmount: 0,
+          status: 'Nuevo',
+          source: 'Formulario de xaviph.com',
+          firstContactAt: new Date().toISOString(),
+          lastContactAt: '',
+          nextAction: 'Responder solicitud de disponibilidad',
+          nextActionAt: '',
+          notes: safeLead.notes,
+          campaign: '',
+          followUpAttempts: 0,
+        },
+      });
       return res.status(200).json({ status: 'success', message: 'Solicitud registrada.' });
     }
 

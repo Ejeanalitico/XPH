@@ -1,4 +1,5 @@
 import { GalleryImage } from '../types';
+import { BusinessContract, BusinessExpense, BusinessSnapshot, CrmClient } from '../types/business';
 import { CURRENT_CATALOG_VERSION, resolvePublishedAddons, resolvePublishedPackages } from './catalogMerge';
 
 export type AdminSession = {
@@ -177,6 +178,109 @@ export async function saveAdminConfig(
   });
   const data = await parseResponse(res);
   return data.config || {};
+}
+
+async function adminBusinessRequest<T>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
+  const res = await fetch(`/api/proxy?action=${encodeURIComponent(action)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    cache: 'no-store',
+    body: JSON.stringify(payload),
+  });
+  const data = await parseResponse(res);
+  return data as T;
+}
+
+export async function loadBusinessSnapshot(): Promise<BusinessSnapshot> {
+  const data = await adminBusinessRequest<{ snapshot: BusinessSnapshot }>('adminBusinessSnapshot');
+  return {
+    clients: Array.isArray(data.snapshot?.clients) ? data.snapshot.clients : [],
+    expenses: Array.isArray(data.snapshot?.expenses) ? data.snapshot.expenses : [],
+    contracts: Array.isArray(data.snapshot?.contracts) ? data.snapshot.contracts : [],
+    ownerSignatureConfigured: Boolean(data.snapshot?.ownerSignatureConfigured),
+  };
+}
+
+export async function saveCrmClient(client: Partial<CrmClient>): Promise<CrmClient> {
+  const data = await adminBusinessRequest<{ client: CrmClient }>('adminCrmUpsert', { client });
+  return data.client;
+}
+
+export async function saveBusinessExpense(expense: Partial<BusinessExpense>): Promise<BusinessExpense> {
+  const data = await adminBusinessRequest<{ expense: BusinessExpense }>('adminExpenseUpsert', { expense });
+  return data.expense;
+}
+
+export async function uploadBusinessContract(input: {
+  clientId: string;
+  clientName: string;
+  folio: string;
+  eventType: string;
+  eventDate: string;
+  file: File;
+}): Promise<BusinessContract> {
+  if (input.file.type && input.file.type !== 'application/pdf') {
+    throw new Error('Selecciona un contrato en formato PDF.');
+  }
+  if (input.file.size > 2_600_000) {
+    throw new Error('El PDF debe pesar máximo 2.6 MB para poder guardarlo de forma segura.');
+  }
+  const base64 = await fileToDataUrl(input.file);
+  const data = await adminBusinessRequest<{ contract: BusinessContract }>('adminContractUpload', {
+    contract: {
+      clientId: input.clientId,
+      clientName: input.clientName,
+      folio: input.folio,
+      eventType: input.eventType,
+      eventDate: input.eventDate,
+      filename: input.file.name,
+      mimeType: input.file.type || 'application/pdf',
+      base64,
+    },
+  });
+  return data.contract;
+}
+
+export async function createContractSigningLink(contractId: string): Promise<{ url: string; expiresAt: string }> {
+  return await adminBusinessRequest<{ url: string; expiresAt: string }>('adminContractCreateLink', { contractId });
+}
+
+export function adminContractPdfUrl(contractId: string, version: 'original' | 'signed' | 'final' | 'latest' = 'latest'): string {
+  const params = new URLSearchParams({ action: 'adminContractPdf', contractId, version });
+  return `/api/proxy?${params.toString()}`;
+}
+
+export async function saveOwnerSignature(signatureDataUrl: string): Promise<void> {
+  await adminBusinessRequest('adminOwnerSignatureSave', { signatureDataUrl });
+}
+
+export async function finalizeBusinessContract(contractId: string): Promise<BusinessContract> {
+  const data = await adminBusinessRequest<{ contract: BusinessContract }>('adminContractFinalize', { contractId });
+  return data.contract;
+}
+
+export async function loadPublicContract(token: string): Promise<{
+  contract: Pick<BusinessContract, 'id' | 'clientName' | 'folio' | 'eventType' | 'eventDate' | 'status' | 'expiresAt'>;
+}> {
+  const params = new URLSearchParams({ action: 'contractView', token });
+  const res = await fetch(`/api/proxy?${params.toString()}`, { cache: 'no-store' });
+  return await parseResponse(res);
+}
+
+export function publicContractPdfUrl(token: string): string {
+  const params = new URLSearchParams({ action: 'contractPdf', token });
+  return `/api/proxy?${params.toString()}`;
+}
+
+export async function signPublicContract(token: string, signatureDataUrl: string, accepted: boolean): Promise<void> {
+  const res = await fetch('/api/proxy?action=contractSign', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    cache: 'no-store',
+    body: JSON.stringify({ token, signatureDataUrl, accepted }),
+  });
+  await parseResponse(res);
 }
 
 async function fileToDataUrl(file: File): Promise<string> {

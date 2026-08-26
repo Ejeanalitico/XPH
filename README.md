@@ -2,6 +2,8 @@
 
 Sitio comercial de XPH construido con React, TypeScript, Vite y funciones de Vercel. La configuración dinámica se almacena en Google Sheets/Drive mediante Google Apps Script.
 
+El panel privado incluye CRM de prospectos y clientes, control de gastos y gestión de contratos. Los contratos se guardan en Drive sin acceso público y pueden enviarse mediante una liga temporal para lectura, aceptación y firma desde un teléfono.
+
 ## Desarrollo
 
 ```bash
@@ -18,6 +20,10 @@ npm run dev
 - El proxy elimina credenciales, solicitudes privadas y tokens antes de devolver configuración pública.
 - Las operaciones administrativas usan una cookie `HttpOnly`, `Secure` y `SameSite=Strict`.
 - Apps Script rechaza cualquier solicitud que no incluya el secreto compartido del servidor.
+- Las ligas de firma se almacenan como hash, caducan a las 72 horas y se consumen después de firmar.
+- Si una liga de firma se abre desde una computadora, se invalida y debe generarse una nueva.
+- La firma privada de Javier se aplica únicamente después de una autorización explícita desde el panel.
+- Se conservan el PDF original, el PDF firmado por el cliente, el documento final y la evidencia técnica de aceptación.
 
 ## Variables de Vercel
 
@@ -50,7 +56,8 @@ Después crea una nueva implementación de la aplicación web. El despliegue deb
 1. Configura las tres variables en Vercel.
 2. Configura las tres propiedades en Apps Script.
 3. Actualiza y despliega `google-apps-script.js`.
-4. Publica la aplicación en Vercel.
-5. Comprueba la página pública, el inicio de sesión administrativo, una solicitud de disponibilidad y una galería privada.
+4. Ejecuta una vez `initDatabase()` para crear las pestañas `CRM_Clientes`, `Gastos`, `Contratos` y `Firma_Administrador` sin registros ficticios.
+5. Publica la aplicación en Vercel.
+6. Comprueba la página pública, el inicio de sesión administrativo, la carga privada de un PDF y una liga móvil de firma.
 
 No publiques credenciales, claves de Drive, IDs privados ni archivos `.vercel/project.json` en el repositorio.

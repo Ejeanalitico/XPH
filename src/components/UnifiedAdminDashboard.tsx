@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   BarChart3,
+  BriefcaseBusiness,
   Camera,
   Check,
   CheckCircle2,
@@ -40,6 +41,7 @@ import {
 import { DEFAULT_FOOTER_CONTACT, normalizeFooterContact } from '../footerConfig';
 import { PromotionAdminSettings } from './PromotionAdminSettings';
 import { AnalyticsAdminPanel } from './AnalyticsAdminPanel';
+import { BusinessAdminPanel } from './BusinessAdminPanel';
 import { setAnalyticsExcluded } from '../utils/analyticsPrivacy';
 import { normalizeSeoSettings } from '../utils/seo';
 import {
@@ -57,7 +59,7 @@ import {
   saveAdminConfig,
 } from '../utils/adminApi';
 
-type Tab = 'packages' | 'public' | 'covers' | 'promotions' | 'analytics' | 'footer' | 'private';
+type Tab = 'business' | 'packages' | 'public' | 'covers' | 'promotions' | 'analytics' | 'footer' | 'private';
 
 const CATEGORY_LABELS: Record<EventType, string> = {
   bodas: 'Bodas',
@@ -487,6 +489,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
 
         <nav className="flex overflow-x-auto gap-2 p-1.5 rounded-2xl bg-[#161C28] border border-white/10">
           {[
+            { id: 'business' as Tab, label: 'Clientes & negocio', icon: BriefcaseBusiness },
             { id: 'packages' as Tab, label: 'Paquetes & precios', icon: PackagePlus },
             { id: 'public' as Tab, label: 'Galería pública', icon: Camera },
             { id: 'covers' as Tab, label: 'Portadas', icon: ImageIcon },
@@ -496,6 +499,8 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
             { id: 'private' as Tab, label: 'Galerías privadas', icon: FolderLock },
           ].map((item) => { const Icon = item.icon; return <button key={item.id} onClick={() => setTab(item.id)} className={`px-4 py-3 rounded-xl text-sm font-semibold whitespace-nowrap flex items-center gap-2 ${tab === item.id ? 'bg-[#D4AF37] text-black' : 'text-gray-300 hover:bg-white/5'}`}><Icon className="w-4 h-4" />{item.label}</button>; })}
         </nav>
+
+        {tab === 'business' && <BusinessAdminPanel notify={notify} />}
 
         {tab === 'packages' && (
           <section className="space-y-7">

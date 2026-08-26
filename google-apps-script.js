@@ -57,9 +57,6 @@ function initDatabase() {
  */
 function getDatabaseSpreadsheet() {
   try {
-    if (!SPREADSHEET_ID || !FOLDER_ID) {
-      throw new Error('Faltan XPH_SPREADSHEET_ID o XPH_FOLDER_ID en las propiedades del script.');
-    }
     if (SPREADSHEET_ID) {
       try {
         var ssById = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -69,6 +66,20 @@ function getDatabaseSpreadsheet() {
         }
       } catch (eId) {
         Logger.log('Spreadsheet openById notice: ' + eId);
+      }
+    }
+
+    var legacySpreadsheetUrl = XPH_PROPERTIES.getProperty('xph_spreadsheet_url') || '';
+    var legacySpreadsheetMatch = legacySpreadsheetUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    if (legacySpreadsheetMatch && legacySpreadsheetMatch[1]) {
+      try {
+        var ssByLegacyUrl = SpreadsheetApp.openById(legacySpreadsheetMatch[1]);
+        if (ssByLegacyUrl) {
+          initSpreadsheetSheets(ssByLegacyUrl);
+          return ssByLegacyUrl;
+        }
+      } catch (eLegacy) {
+        Logger.log('Spreadsheet legacy URL notice: ' + eLegacy);
       }
     }
 
@@ -113,7 +124,11 @@ function initSpreadsheetSheets(ss) {
       'Historial_Auditoria': ['Fecha_Hora', 'Accion', 'Detalles_Cambio', 'ID_Elemento', 'Usuario', 'Estado'],
       'Galeria_Fotos': ['ID_Foto', 'Titulo', 'Categoria', 'URL_Google_Drive', 'Ubicacion', 'Fecha_Carga', 'Estado'],
       'Cotizaciones_Citas': ['ID_Cotizacion', 'Fecha_Registro', 'Cliente', 'Email', 'WhatsApp', 'Evento', 'Paquete', 'Total_MXN', 'Pago_Inicial_MXN', 'Saldo_Pendiente_MXN', 'Fecha_Evento', 'Ciudad', 'Estado_Cotizacion', 'Notas'],
-      'Paquetes_Precios': ['Categoria', 'ID_Paquete', 'Nombre_Paquete', 'Precio_Base_MXN', 'Precio_Final_Por_Confirmar', 'Insignia_Badge', 'Descripcion', 'Que_Incluye', 'No_Incluye', 'Ultima_Modificacion']
+      'Paquetes_Precios': ['Categoria', 'ID_Paquete', 'Nombre_Paquete', 'Precio_Base_MXN', 'Precio_Final_Por_Confirmar', 'Insignia_Badge', 'Descripcion', 'Que_Incluye', 'No_Incluye', 'Ultima_Modificacion'],
+      'CRM_Clientes': ['id', 'recordType', 'name', 'phone', 'email', 'eventType', 'eventDate', 'eventLocation', 'packageName', 'totalAmount', 'paidAmount', 'status', 'source', 'firstContactAt', 'lastContactAt', 'nextAction', 'nextActionAt', 'notes', 'contractId', 'createdAt', 'updatedAt', 'honoreeName', 'address', 'eventTime', 'serviceHours', 'campaign', 'objection', 'followUpAttempts', 'suggestedMessage', 'lossReason', 'estimatedCost', 'allocatedAdCost'],
+      'Gastos': ['id', 'date', 'category', 'subcategory', 'concept', 'supplier', 'paymentMethod', 'paymentStatus', 'amount', 'notes', 'createdAt', 'updatedAt', 'relatedClientId', 'receiptReference', 'account'],
+      'Contratos': ['id', 'clientId', 'clientName', 'folio', 'eventType', 'eventDate', 'status', 'originalFileName', 'originalFileId', 'clientSignedFileId', 'finalFileId', 'signatureFileId', 'tokenHash', 'tokenExpiresAt', 'tokenStatus', 'sentAt', 'viewedAt', 'acceptedAt', 'clientSignedAt', 'ownerAuthorizedAt', 'documentHash', 'signedDocumentHash', 'finalDocumentHash', 'signerIp', 'signerUserAgent', 'consentText', 'createdAt', 'updatedAt'],
+      'Firma_Administrador': ['id', 'fileId', 'updatedAt']
     };
 
     for (var sheetName in sheetsMap) {
@@ -433,6 +448,374 @@ function loadActiveConfig() {
   return '';
 }
 
+var BUSINESS_HEADERS = {
+  clients: ['id', 'recordType', 'name', 'phone', 'email', 'eventType', 'eventDate', 'eventLocation', 'packageName', 'totalAmount', 'paidAmount', 'status', 'source', 'firstContactAt', 'lastContactAt', 'nextAction', 'nextActionAt', 'notes', 'contractId', 'createdAt', 'updatedAt', 'honoreeName', 'address', 'eventTime', 'serviceHours', 'campaign', 'objection', 'followUpAttempts', 'suggestedMessage', 'lossReason', 'estimatedCost', 'allocatedAdCost'],
+  expenses: ['id', 'date', 'category', 'subcategory', 'concept', 'supplier', 'paymentMethod', 'paymentStatus', 'amount', 'notes', 'createdAt', 'updatedAt', 'relatedClientId', 'receiptReference', 'account'],
+  contracts: ['id', 'clientId', 'clientName', 'folio', 'eventType', 'eventDate', 'status', 'originalFileName', 'originalFileId', 'clientSignedFileId', 'finalFileId', 'signatureFileId', 'tokenHash', 'tokenExpiresAt', 'tokenStatus', 'sentAt', 'viewedAt', 'acceptedAt', 'clientSignedAt', 'ownerAuthorizedAt', 'documentHash', 'signedDocumentHash', 'finalDocumentHash', 'signerIp', 'signerUserAgent', 'consentText', 'createdAt', 'updatedAt'],
+  ownerSignature: ['id', 'fileId', 'updatedAt']
+};
+
+function businessNow() {
+  return new Date().toISOString();
+}
+
+function businessId(prefix) {
+  return String(prefix || 'xph') + '-' + Utilities.getUuid();
+}
+
+function cleanBusinessText(value, maxLength) {
+  return String(value === undefined || value === null ? '' : value).trim().substring(0, maxLength || 2000);
+}
+
+function readBusinessRecords(ss, sheetName, headers) {
+  var sheet = ss.getSheetByName(sheetName);
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  var values = sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).getValues();
+  return values.filter(function(row) { return cleanBusinessText(row[0], 200) !== ''; }).map(function(row) {
+    var record = {};
+    headers.forEach(function(header, index) { record[header] = row[index] === undefined || row[index] === null ? '' : row[index]; });
+    return record;
+  });
+}
+
+function upsertBusinessRecord(ss, sheetName, headers, record) {
+  var sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    initSpreadsheetSheets(ss);
+    sheet = ss.getSheetByName(sheetName);
+  }
+  var rowNumber = -1;
+  if (sheet.getLastRow() >= 2) {
+    var ids = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getDisplayValues();
+    for (var i = 0; i < ids.length; i++) {
+      if (String(ids[i][0]) === String(record.id)) { rowNumber = i + 2; break; }
+    }
+  }
+  var row = headers.map(function(header) {
+    var value = record[header];
+    return value === undefined || value === null ? '' : value;
+  });
+  if (rowNumber > 0) sheet.getRange(rowNumber, 1, 1, headers.length).setValues([row]);
+  else sheet.appendRow(row);
+  return record;
+}
+
+function findBusinessRecord(ss, sheetName, headers, id) {
+  var records = readBusinessRecords(ss, sheetName, headers);
+  for (var i = 0; i < records.length; i++) if (String(records[i].id) === String(id)) return records[i];
+  return null;
+}
+
+function getContractsFolder() {
+  var parent;
+  try { parent = DriveApp.getFolderById(FOLDER_ID); } catch (_) { parent = DriveApp.getRootFolder(); }
+  var folders = parent.getFoldersByName('Contratos_XPH');
+  return folders.hasNext() ? folders.next() : parent.createFolder('Contratos_XPH');
+}
+
+function base64Blob(dataUrl, mimeType, filename) {
+  var value = cleanBusinessText(dataUrl, 20000000);
+  if (value.indexOf(',') > -1) value = value.split(',').pop();
+  return Utilities.newBlob(Utilities.base64Decode(value.replace(/\s/g, '')), mimeType, filename);
+}
+
+function fileBase64(fileId) {
+  var blob = DriveApp.getFileById(fileId).getBlob();
+  return Utilities.base64Encode(blob.getBytes());
+}
+
+function tokenHashFromRaw(token) {
+  var digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(token || ''), Utilities.Charset.UTF_8);
+  return Utilities.base64EncodeWebSafe(digest).replace(/=+$/g, '');
+}
+
+function publicContractRecord(record) {
+  return {
+    id: record.id || '',
+    clientId: record.clientId || '',
+    clientName: record.clientName || '',
+    folio: record.folio || '',
+    eventType: record.eventType || '',
+    eventDate: record.eventDate || '',
+    status: record.status || 'Borrador',
+    originalFileName: record.originalFileName || '',
+    expiresAt: record.tokenExpiresAt || '',
+    sentAt: record.sentAt || '',
+    viewedAt: record.viewedAt || '',
+    acceptedAt: record.acceptedAt || '',
+    clientSignedAt: record.clientSignedAt || '',
+    ownerAuthorizedAt: record.ownerAuthorizedAt || '',
+    documentHash: record.documentHash || '',
+    finalDocumentHash: record.finalDocumentHash || '',
+    createdAt: record.createdAt || '',
+    updatedAt: record.updatedAt || ''
+  };
+}
+
+function resolveSigningContract(ss, token) {
+  var hash = tokenHashFromRaw(token);
+  var contracts = readBusinessRecords(ss, 'Contratos', BUSINESS_HEADERS.contracts);
+  for (var i = 0; i < contracts.length; i++) {
+    var contract = contracts[i];
+    if (String(contract.tokenHash || '') !== hash) continue;
+    if (String(contract.tokenStatus || '') !== 'ACTIVO') throw new Error('La liga ya no está activa.');
+    if (!contract.tokenExpiresAt || new Date(contract.tokenExpiresAt).getTime() <= Date.now()) throw new Error('La liga de firma ha caducado.');
+    if (['Firmado por cliente', 'Finalizado', 'Cancelado'].indexOf(String(contract.status || '')) >= 0) throw new Error('El contrato ya no admite esta firma.');
+    return contract;
+  }
+  throw new Error('Liga de firma inválida.');
+}
+
+function normalizedClient(input, existing) {
+  var current = existing || {};
+  var timestamp = businessNow();
+  return {
+    id: cleanBusinessText(input.id || current.id || businessId('crm'), 120),
+    recordType: cleanBusinessText(input.recordType || current.recordType || 'Prospecto', 40),
+    name: cleanBusinessText(input.name !== undefined ? input.name : current.name, 160),
+    phone: cleanBusinessText(input.phone !== undefined ? input.phone : current.phone, 40),
+    email: cleanBusinessText(input.email !== undefined ? input.email : current.email, 180),
+    eventType: cleanBusinessText(input.eventType !== undefined ? input.eventType : current.eventType, 100),
+    eventDate: cleanBusinessText(input.eventDate !== undefined ? input.eventDate : current.eventDate, 40),
+    eventLocation: cleanBusinessText(input.eventLocation !== undefined ? input.eventLocation : current.eventLocation, 500),
+    packageName: cleanBusinessText(input.packageName !== undefined ? input.packageName : current.packageName, 180),
+    totalAmount: Math.max(0, Number(input.totalAmount !== undefined ? input.totalAmount : current.totalAmount) || 0),
+    paidAmount: Math.max(0, Number(input.paidAmount !== undefined ? input.paidAmount : current.paidAmount) || 0),
+    status: cleanBusinessText(input.status || current.status || 'Nuevo', 60),
+    source: cleanBusinessText(input.source !== undefined ? input.source : current.source, 180),
+    firstContactAt: cleanBusinessText(input.firstContactAt !== undefined ? input.firstContactAt : current.firstContactAt, 40),
+    lastContactAt: cleanBusinessText(input.lastContactAt !== undefined ? input.lastContactAt : current.lastContactAt, 40),
+    nextAction: cleanBusinessText(input.nextAction !== undefined ? input.nextAction : current.nextAction, 300),
+    nextActionAt: cleanBusinessText(input.nextActionAt !== undefined ? input.nextActionAt : current.nextActionAt, 50),
+    notes: cleanBusinessText(input.notes !== undefined ? input.notes : current.notes, 4000),
+    contractId: cleanBusinessText(input.contractId !== undefined ? input.contractId : current.contractId, 120),
+    createdAt: cleanBusinessText(current.createdAt || input.createdAt || timestamp, 40),
+    updatedAt: timestamp,
+    honoreeName: cleanBusinessText(input.honoreeName !== undefined ? input.honoreeName : current.honoreeName, 240),
+    address: cleanBusinessText(input.address !== undefined ? input.address : current.address, 600),
+    eventTime: cleanBusinessText(input.eventTime !== undefined ? input.eventTime : current.eventTime, 20),
+    serviceHours: Math.max(0, Math.min(48, Number(input.serviceHours !== undefined ? input.serviceHours : current.serviceHours) || 0)),
+    campaign: cleanBusinessText(input.campaign !== undefined ? input.campaign : current.campaign, 200),
+    objection: cleanBusinessText(input.objection !== undefined ? input.objection : current.objection, 1000),
+    followUpAttempts: Math.max(0, Math.min(100, Math.floor(Number(input.followUpAttempts !== undefined ? input.followUpAttempts : current.followUpAttempts) || 0))),
+    suggestedMessage: cleanBusinessText(input.suggestedMessage !== undefined ? input.suggestedMessage : current.suggestedMessage, 4000),
+    lossReason: cleanBusinessText(input.lossReason !== undefined ? input.lossReason : current.lossReason, 1000),
+    estimatedCost: Math.max(0, Number(input.estimatedCost !== undefined ? input.estimatedCost : current.estimatedCost) || 0),
+    allocatedAdCost: Math.max(0, Number(input.allocatedAdCost !== undefined ? input.allocatedAdCost : current.allocatedAdCost) || 0)
+  };
+}
+
+function normalizedExpense(input, existing) {
+  var current = existing || {};
+  var timestamp = businessNow();
+  return {
+    id: cleanBusinessText(input.id || current.id || businessId('gasto'), 120),
+    date: cleanBusinessText(input.date || current.date || timestamp.substring(0, 10), 40),
+    category: cleanBusinessText(input.category || current.category || 'Equipo y fotografía', 100),
+    subcategory: cleanBusinessText(input.subcategory !== undefined ? input.subcategory : current.subcategory, 180),
+    concept: cleanBusinessText(input.concept !== undefined ? input.concept : current.concept, 300),
+    supplier: cleanBusinessText(input.supplier !== undefined ? input.supplier : current.supplier, 200),
+    paymentMethod: cleanBusinessText(input.paymentMethod !== undefined ? input.paymentMethod : current.paymentMethod, 100),
+    paymentStatus: cleanBusinessText(input.paymentStatus || current.paymentStatus || 'Pagado', 40),
+    amount: Math.max(0, Number(input.amount !== undefined ? input.amount : current.amount) || 0),
+    notes: cleanBusinessText(input.notes !== undefined ? input.notes : current.notes, 3000),
+    createdAt: cleanBusinessText(current.createdAt || input.createdAt || timestamp, 40),
+    updatedAt: timestamp,
+    relatedClientId: cleanBusinessText(input.relatedClientId !== undefined ? input.relatedClientId : current.relatedClientId, 120),
+    receiptReference: cleanBusinessText(input.receiptReference !== undefined ? input.receiptReference : current.receiptReference, 200),
+    account: cleanBusinessText(input.account || current.account || 'Banco', 40)
+  };
+}
+
+function handleBusinessAction(ss, action, payload) {
+  payload = payload || {};
+  if (action === 'businessSnapshot') {
+    var signatureRows = readBusinessRecords(ss, 'Firma_Administrador', BUSINESS_HEADERS.ownerSignature);
+    return {
+      status: 'success',
+      snapshot: {
+        clients: readBusinessRecords(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients),
+        expenses: readBusinessRecords(ss, 'Gastos', BUSINESS_HEADERS.expenses),
+        contracts: readBusinessRecords(ss, 'Contratos', BUSINESS_HEADERS.contracts).map(publicContractRecord),
+        ownerSignatureConfigured: Boolean(signatureRows.length && signatureRows[0].fileId)
+      }
+    };
+  }
+
+  if (action === 'crmUpsert') {
+    var clientInput = payload.client || {};
+    var existingClient = clientInput.id ? findBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, clientInput.id) : null;
+    var client = normalizedClient(clientInput, existingClient);
+    if (!client.name && !client.phone) throw new Error('Registra por lo menos el nombre o el teléfono.');
+    var clientStatuses = ['Nuevo', 'Contactado', 'Cotización enviada', 'Seguimiento', 'Cierre prioritario', 'Contratado', 'No interesado', 'Archivado'];
+    if (clientStatuses.indexOf(client.status) < 0) throw new Error('Estado de cliente no válido.');
+    if (client.totalAmount > 0 && client.paidAmount > client.totalAmount) throw new Error('Lo pagado no puede ser mayor al total contratado.');
+    upsertBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, client);
+    logAudit(ss, 'CRM_CLIENTE_GUARDADO', client.name || client.phone || client.id, client.id, 'Admin XPH');
+    return { status: 'success', client: client };
+  }
+
+  if (action === 'expenseUpsert') {
+    var expenseInput = payload.expense || {};
+    var existingExpense = expenseInput.id ? findBusinessRecord(ss, 'Gastos', BUSINESS_HEADERS.expenses, expenseInput.id) : null;
+    var expense = normalizedExpense(expenseInput, existingExpense);
+    var expenseCategories = ['Equipo y fotografía', 'Maquillaje e insumos', 'Transporte', 'Comida', 'Gastos personales', 'Publicidad', 'Otros del negocio'];
+    if (expenseCategories.indexOf(expense.category) < 0) throw new Error('Categoría de gasto no válida.');
+    if (['Pagado', 'Pendiente'].indexOf(expense.paymentStatus) < 0) throw new Error('Estado de gasto no válido.');
+    if (['Banco', 'Efectivo', 'Bote de reserva', 'Otro'].indexOf(expense.account) < 0) throw new Error('Cuenta de gasto no válida.');
+    if (!expense.concept || expense.amount <= 0) throw new Error('El gasto requiere concepto y monto válido.');
+    upsertBusinessRecord(ss, 'Gastos', BUSINESS_HEADERS.expenses, expense);
+    logAudit(ss, 'GASTO_GUARDADO', expense.category + ': ' + expense.concept, expense.id, 'Admin XPH');
+    return { status: 'success', expense: expense };
+  }
+
+  if (action === 'contractUpload') {
+    var upload = payload.contract || {};
+    if (!upload.clientId || !upload.clientName || !upload.folio || !upload.base64) throw new Error('Contrato incompleto.');
+    var contractId = businessId('contrato');
+    var filename = cleanBusinessText(upload.filename || ('Contrato-' + upload.folio + '.pdf'), 220);
+    var originalFile = getContractsFolder().createFile(base64Blob(upload.base64, 'application/pdf', filename));
+    var created = businessNow();
+    var contract = {
+      id: contractId,
+      clientId: cleanBusinessText(upload.clientId, 120),
+      clientName: cleanBusinessText(upload.clientName, 180),
+      folio: cleanBusinessText(upload.folio, 100),
+      eventType: cleanBusinessText(upload.eventType, 120),
+      eventDate: cleanBusinessText(upload.eventDate, 40),
+      status: 'Preparado',
+      originalFileName: filename,
+      originalFileId: originalFile.getId(),
+      clientSignedFileId: '', finalFileId: '', signatureFileId: '', tokenHash: '', tokenExpiresAt: '', tokenStatus: '',
+      sentAt: '', viewedAt: '', acceptedAt: '', clientSignedAt: '', ownerAuthorizedAt: '', documentHash: '', signedDocumentHash: '', finalDocumentHash: '', signerIp: '', signerUserAgent: '', consentText: '',
+      createdAt: created, updatedAt: created
+    };
+    upsertBusinessRecord(ss, 'Contratos', BUSINESS_HEADERS.contracts, contract);
+    var linkedClient = findBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, contract.clientId);
+    if (linkedClient) {
+      linkedClient.contractId = contract.id;
+      linkedClient.updatedAt = created;
+      upsertBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, linkedClient);
+    }
+    logAudit(ss, 'CONTRATO_PRIVADO_CARGADO', contract.folio, contract.id, 'Admin XPH');
+    return { status: 'success', contract: publicContractRecord(contract) };
+  }
+
+  if (action === 'contractCreateLink') {
+    var linkContract = findBusinessRecord(ss, 'Contratos', BUSINESS_HEADERS.contracts, payload.contractId);
+    if (!linkContract) throw new Error('Contrato no encontrado.');
+    if (['Firmado por cliente', 'Finalizado', 'Cancelado'].indexOf(String(linkContract.status || '')) >= 0) throw new Error('El contrato ya no admite una liga nueva.');
+    linkContract.tokenHash = cleanBusinessText(payload.tokenHash, 180);
+    linkContract.tokenExpiresAt = cleanBusinessText(payload.expiresAt, 50);
+    linkContract.tokenStatus = 'ACTIVO';
+    linkContract.status = 'Enviado';
+    linkContract.sentAt = businessNow();
+    linkContract.updatedAt = linkContract.sentAt;
+    upsertBusinessRecord(ss, 'Contratos', BUSINESS_HEADERS.contracts, linkContract);
+    logAudit(ss, 'LIGA_FIRMA_CREADA', 'Liga móvil privada con vencimiento ' + linkContract.tokenExpiresAt, linkContract.id, 'Admin XPH');
+    return { status: 'success', contract: publicContractRecord(linkContract) };
+  }
+
+  if (action === 'contractInvalidate') {
+    var invalidHash = tokenHashFromRaw(payload.token);
+    var invalidContracts = readBusinessRecords(ss, 'Contratos', BUSINESS_HEADERS.contracts);
+    for (var c = 0; c < invalidContracts.length; c++) {
+      if (String(invalidContracts[c].tokenHash || '') === invalidHash) {
+        invalidContracts[c].tokenStatus = 'INVALIDADO_ESCRITORIO';
+        if (String(invalidContracts[c].status || '') === 'Enviado' || String(invalidContracts[c].status || '') === 'Visto') invalidContracts[c].status = 'Preparado';
+        invalidContracts[c].updatedAt = businessNow();
+        upsertBusinessRecord(ss, 'Contratos', BUSINESS_HEADERS.contracts, invalidContracts[c]);
+        logAudit(ss, 'LIGA_FIRMA_INVALIDADA', 'La liga fue abierta desde un dispositivo no móvil.', invalidContracts[c].id, 'Sistema XPH');
+        break;
+      }
+    }
+    return { status: 'success' };
+  }
+
+  if (action === 'contractResolve') {
+    var resolved = resolveSigningContract(ss, payload.token);
+    if (payload.markViewed) {
+      resolved.viewedAt = resolved.viewedAt || businessNow();
+      resolved.status = 'Visto';
+      resolved.updatedAt = businessNow();
+      upsertBusinessRecord(ss, 'Contratos', BUSINESS_HEADERS.contracts, resolved);
+    }
+    var resolvedOutput = { status: 'success', contract: publicContractRecord(resolved) };
+    if (payload.includePdf) resolvedOutput.pdfBase64 = fileBase64(resolved.originalFileId);
+    return resolvedOutput;
+  }
+
+  if (action === 'contractCompleteSignature') {
+    var signedContract = resolveSigningContract(ss, payload.token);
+    var folder = getContractsFolder();
+    var signedName = 'Firmado-cliente-' + (signedContract.folio || signedContract.id) + '.pdf';
+    var signedFile = folder.createFile(base64Blob(payload.signedPdfBase64, 'application/pdf', signedName));
+    var signatureFile = folder.createFile(base64Blob(payload.signatureDataUrl, 'image/png', 'Firma-cliente-' + signedContract.id + '.png'));
+    var audit = payload.audit || {};
+    signedContract.clientSignedFileId = signedFile.getId();
+    signedContract.signatureFileId = signatureFile.getId();
+    signedContract.tokenStatus = 'CONSUMIDO';
+    signedContract.status = 'Firmado por cliente';
+    signedContract.acceptedAt = cleanBusinessText(audit.acceptedAt || businessNow(), 50);
+    signedContract.clientSignedAt = businessNow();
+    signedContract.documentHash = cleanBusinessText(payload.originalDocumentHash, 180);
+    signedContract.signedDocumentHash = cleanBusinessText(payload.signedDocumentHash, 180);
+    signedContract.signerIp = cleanBusinessText(audit.ip, 150);
+    signedContract.signerUserAgent = cleanBusinessText(audit.userAgent, 900);
+    signedContract.consentText = cleanBusinessText(audit.consentText, 600);
+    signedContract.updatedAt = signedContract.clientSignedAt;
+    upsertBusinessRecord(ss, 'Contratos', BUSINESS_HEADERS.contracts, signedContract);
+    logAudit(ss, 'CONTRATO_FIRMADO_CLIENTE', signedContract.folio + ' | hash ' + signedContract.signedDocumentHash, signedContract.id, signedContract.clientName);
+    return { status: 'success', contract: publicContractRecord(signedContract) };
+  }
+
+  if (action === 'ownerSignatureSave') {
+    var ownerFile = getContractsFolder().createFile(base64Blob(payload.signatureDataUrl, 'image/png', 'Firma-Javier-' + Date.now() + '.png'));
+    var signatureRecord = { id: 'xavi-owner-signature', fileId: ownerFile.getId(), updatedAt: businessNow() };
+    upsertBusinessRecord(ss, 'Firma_Administrador', BUSINESS_HEADERS.ownerSignature, signatureRecord);
+    logAudit(ss, 'FIRMA_ADMIN_GUARDADA', 'Firma privada de autorización actualizada.', signatureRecord.id, 'Admin XPH');
+    return { status: 'success' };
+  }
+
+  if (action === 'contractAdminPdfData') {
+    var adminContract = findBusinessRecord(ss, 'Contratos', BUSINESS_HEADERS.contracts, payload.contractId);
+    if (!adminContract) throw new Error('Contrato no encontrado.');
+    var requestedVersion = cleanBusinessText(payload.version || 'latest', 20);
+    var selectedFileId = '';
+    if (requestedVersion === 'original') selectedFileId = adminContract.originalFileId;
+    else if (requestedVersion === 'signed') selectedFileId = adminContract.clientSignedFileId;
+    else if (requestedVersion === 'final') selectedFileId = adminContract.finalFileId;
+    else selectedFileId = adminContract.finalFileId || adminContract.clientSignedFileId || adminContract.originalFileId;
+    if (!selectedFileId) throw new Error('La versión solicitada del contrato no está disponible.');
+    return { status: 'success', pdfBase64: fileBase64(selectedFileId), folio: adminContract.folio || adminContract.id };
+  }
+
+  if (action === 'contractFinalizeData') {
+    var finalSource = findBusinessRecord(ss, 'Contratos', BUSINESS_HEADERS.contracts, payload.contractId);
+    if (!finalSource || String(finalSource.status || '') !== 'Firmado por cliente' || !finalSource.clientSignedFileId) throw new Error('El cliente todavía no ha firmado este contrato.');
+    var ownerRows = readBusinessRecords(ss, 'Firma_Administrador', BUSINESS_HEADERS.ownerSignature);
+    if (!ownerRows.length || !ownerRows[0].fileId) throw new Error('Guarda primero la firma privada de Javier.');
+    return { status: 'success', pdfBase64: fileBase64(finalSource.clientSignedFileId), ownerSignatureDataUrl: 'data:image/png;base64,' + fileBase64(ownerRows[0].fileId) };
+  }
+
+  if (action === 'contractFinalize') {
+    var finalContract = findBusinessRecord(ss, 'Contratos', BUSINESS_HEADERS.contracts, payload.contractId);
+    if (!finalContract || String(finalContract.status || '') !== 'Firmado por cliente') throw new Error('Contrato no disponible para autorización.');
+    var finalName = 'Contrato-final-' + (finalContract.folio || finalContract.id) + '.pdf';
+    var finalFile = getContractsFolder().createFile(base64Blob(payload.finalizedPdfBase64, 'application/pdf', finalName));
+    finalContract.finalFileId = finalFile.getId();
+    finalContract.finalDocumentHash = cleanBusinessText(payload.finalDocumentHash, 180);
+    finalContract.ownerAuthorizedAt = cleanBusinessText(payload.authorizedAt || businessNow(), 50);
+    finalContract.status = 'Finalizado';
+    finalContract.updatedAt = businessNow();
+    upsertBusinessRecord(ss, 'Contratos', BUSINESS_HEADERS.contracts, finalContract);
+    logAudit(ss, 'CONTRATO_FINALIZADO', finalContract.folio + ' | hash ' + finalContract.finalDocumentHash, finalContract.id, 'Javier Garcia');
+    return { status: 'success', contract: publicContractRecord(finalContract) };
+  }
+
+  throw new Error('Acción privada no reconocida.');
+}
+
 /**
  * =========================================================================
  * ENDPOINT POST: Subidas a Drive + Actualizaciones en Tablas Google Sheets
@@ -451,6 +834,7 @@ function doPost(e) {
     var auditType = '';
     var auditDetails = '';
     var apiSecret = '';
+    var payload = {};
 
     if (e && e.postData && e.postData.contents) {
       var raw = e.postData.contents;
@@ -470,6 +854,7 @@ function doPost(e) {
           auditType    = j.auditType || '';
           auditDetails = j.auditDetails || '';
           apiSecret    = j.apiSecret || '';
+          payload      = j.payload && typeof j.payload === 'object' ? j.payload : {};
           parsed = true;
         }
       } catch (_) {}
@@ -513,6 +898,24 @@ function doPost(e) {
     if (!isAuthorizedApiSecret(apiSecret)) return unauthorizedOutput();
 
     var ss = getDatabaseSpreadsheet();
+
+    var businessActions = [
+      'businessSnapshot', 'crmUpsert', 'expenseUpsert', 'contractUpload', 'contractCreateLink',
+      'contractInvalidate', 'contractResolve', 'contractCompleteSignature', 'ownerSignatureSave',
+      'contractAdminPdfData', 'contractFinalizeData', 'contractFinalize'
+    ];
+    if (businessActions.indexOf(action) >= 0) {
+      if (action === 'businessSnapshot' || action === 'contractAdminPdfData') {
+        return jsonOutput(handleBusinessAction(ss, action, payload));
+      }
+      var businessLock = LockService.getScriptLock();
+      businessLock.waitLock(30000);
+      try {
+        return jsonOutput(handleBusinessAction(ss, action, payload));
+      } finally {
+        businessLock.releaseLock();
+      }
+    }
 
     // ACCIÓN 1: GUARDAR Y SINCRONIZAR EN GOOGLE SHEETS
     if (action === 'saveConfig' || (configData && configData.length > 0)) {
