@@ -83,6 +83,26 @@ const expenseCategories: ExpenseCategory[] = [
   'Otros del negocio',
 ];
 
+const blankExpense = (): Partial<BusinessExpense> => ({
+  date: today(), category: 'Equipo y fotografía', subcategory: '', concept: '', supplier: '',
+  paymentMethod: '', paymentStatus: 'Pagado', amount: 0, notes: '', relatedClientId: '',
+  receiptReference: '', account: 'Banco',
+});
+
+const expenseFingerprint = (expense: Partial<BusinessExpense>) => [
+  expense.date,
+  expense.category,
+  expense.subcategory,
+  expense.concept,
+  expense.supplier,
+  expense.paymentMethod,
+  expense.paymentStatus,
+  Number(expense.amount || 0).toFixed(2),
+  expense.relatedClientId,
+  expense.receiptReference,
+  expense.account,
+].map((value) => String(value || '').trim().toLocaleLowerCase('es-MX')).join('|');
+
 interface Props {
   notify: (message: string) => void;
 }
@@ -94,11 +114,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
   const [showClientForm, setShowClientForm] = useState(false);
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [clientDraft, setClientDraft] = useState<Partial<CrmClient>>(blankClient);
-  const [expenseDraft, setExpenseDraft] = useState<Partial<BusinessExpense>>({
-    date: today(), category: 'Equipo y fotografía', subcategory: '', concept: '', supplier: '',
-    paymentMethod: '', paymentStatus: 'Pagado', amount: 0, notes: '', relatedClientId: '',
-    receiptReference: '', account: 'Banco',
-  });
+  const [expenseDraft, setExpenseDraft] = useState<Partial<BusinessExpense>>(blankExpense);
   const [contractDraft, setContractDraft] = useState({ clientId: '', folio: '', eventType: '', eventDate: '', file: null as File | null });
   const [latestLink, setLatestLink] = useState('');
   const [ownerSignature, setOwnerSignature] = useState('');
@@ -154,6 +170,15 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
     };
   }, [snapshot.clients, snapshot.expenses]);
 
+  const duplicateExpenseIds = useMemo(() => {
+    const groups = new Map<string, string[]>();
+    snapshot.expenses.forEach((expense) => {
+      const key = expenseFingerprint(expense);
+      groups.set(key, [...(groups.get(key) || []), expense.id]);
+    });
+    return new Set(Array.from(groups.values()).filter((ids) => ids.length > 1).flat());
+  }, [snapshot.expenses]);
+
   const saveClient = async (event: React.FormEvent) => {
     event.preventDefault();
     setBusy(true);
@@ -173,9 +198,9 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
     try {
       const saved = await saveBusinessExpense(expenseDraft);
       setSnapshot((prev) => ({ ...prev, expenses: [saved, ...prev.expenses.filter((item) => item.id !== saved.id)] }));
-      setExpenseDraft({ date: today(), category: 'Equipo y fotografía', subcategory: '', concept: '', supplier: '', paymentMethod: '', paymentStatus: 'Pagado', amount: 0, notes: '', relatedClientId: '', receiptReference: '', account: 'Banco' });
+      setExpenseDraft(blankExpense());
       setShowExpenseForm(false);
-      notify('Gasto registrado.');
+      notify(expenseDraft.id ? 'Gasto actualizado.' : 'Gasto registrado.');
     } catch (error: any) { notify(error?.message || 'No se pudo guardar el gasto.'); }
     finally { setBusy(false); }
   };
@@ -330,10 +355,11 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
 
       {tab === 'expenses' && (
         <div className="space-y-4">
-          <div className="flex justify-end"><button onClick={() => setShowExpenseForm(true)} className="inline-flex items-center gap-2 rounded-xl bg-[#D4AF37] px-4 py-3 text-sm font-bold text-black"><Plus className="h-4 w-4" />Registrar gasto</button></div>
-          {showExpenseForm && <ExpenseForm draft={expenseDraft} clients={snapshot.clients} onChange={setExpenseDraft} onSubmit={saveExpense} onCancel={() => setShowExpenseForm(false)} busy={busy} />}
+          <div className="flex justify-end"><button onClick={() => { setExpenseDraft(blankExpense()); setShowExpenseForm(true); }} className="inline-flex items-center gap-2 rounded-xl bg-[#D4AF37] px-4 py-3 text-sm font-bold text-black"><Plus className="h-4 w-4" />Registrar gasto</button></div>
+          {showExpenseForm && <ExpenseForm draft={expenseDraft} clients={snapshot.clients} onChange={setExpenseDraft} onSubmit={saveExpense} onCancel={() => { setExpenseDraft(blankExpense()); setShowExpenseForm(false); }} busy={busy} />}
+          {duplicateExpenseIds.size > 0 && <div className="rounded-2xl border border-amber-400/25 bg-amber-400/10 p-4 text-sm text-amber-100"><strong>Revisión pendiente:</strong> hay {duplicateExpenseIds.size} registros dentro de grupos que coinciden en todos sus datos visibles. Edítalos para distinguirlos o revisa sus comprobantes antes de ajustar tus totales.</div>}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{expenseCategories.map((category) => <div key={category} className="rounded-2xl border border-white/10 bg-[#161C28] p-4"><div className="text-xs text-gray-400">{category}</div><div className="mt-2 text-xl font-bold">{money(snapshot.expenses.filter((item) => item.category === category).reduce((sum, item) => sum + Number(item.amount || 0), 0))}</div></div>)}</div>
-          <div className="overflow-x-auto rounded-2xl border border-white/10 bg-[#161C28]"><table className="min-w-full text-left text-sm"><thead className="bg-black/20 text-xs uppercase tracking-wider text-[#D4AF37]"><tr><th className="p-4">Fecha</th><th className="p-4">Categoría</th><th className="p-4">Concepto</th><th className="p-4">Estado</th><th className="p-4">Monto</th></tr></thead><tbody className="divide-y divide-white/5">{snapshot.expenses.map((expense) => <tr key={expense.id}><td className="p-4">{expense.date}</td><td className="p-4">{expense.category}<div className="text-xs text-gray-500">{expense.subcategory}</div></td><td className="p-4">{expense.concept}<div className="text-xs text-gray-500">{expense.supplier}</div></td><td className="p-4">{expense.paymentStatus}</td><td className="p-4 font-semibold">{money(expense.amount)}</td></tr>)}{!snapshot.expenses.length && <tr><td colSpan={5} className="p-10 text-center text-gray-500">Aún no hay gastos registrados.</td></tr>}</tbody></table></div>
+          <div className="overflow-x-auto rounded-2xl border border-white/10 bg-[#161C28]"><table className="min-w-full text-left text-sm"><thead className="bg-black/20 text-xs uppercase tracking-wider text-[#D4AF37]"><tr><th className="p-4">Fecha</th><th className="p-4">Categoría</th><th className="p-4">Concepto</th><th className="p-4">Estado</th><th className="p-4">Monto</th><th className="p-4">Acciones</th></tr></thead><tbody className="divide-y divide-white/5">{snapshot.expenses.map((expense) => <tr key={expense.id} className={duplicateExpenseIds.has(expense.id) ? 'bg-amber-400/5' : ''}><td className="p-4">{expense.date}</td><td className="p-4">{expense.category}<div className="text-xs text-gray-500">{expense.subcategory}</div></td><td className="p-4">{expense.concept}<div className="text-xs text-gray-500">{expense.supplier}</div>{duplicateExpenseIds.has(expense.id) && <div className="mt-1 text-xs font-semibold text-amber-300">Posible duplicado</div>}</td><td className="p-4"><span className={expense.paymentStatus === 'Pagado' ? 'text-emerald-300' : 'text-amber-300'}>{expense.paymentStatus}</span></td><td className="p-4 font-semibold">{money(expense.amount)}</td><td className="p-4"><button onClick={() => { setExpenseDraft(expense); setShowExpenseForm(true); }} className="text-xs font-semibold text-[#D4AF37]">Editar</button></td></tr>)}{!snapshot.expenses.length && <tr><td colSpan={6} className="p-10 text-center text-gray-500">Aún no hay gastos registrados.</td></tr>}</tbody></table></div>
         </div>
       )}
 
@@ -425,6 +451,6 @@ const ExpenseForm = ({ draft, clients, onChange, onSubmit, onCancel, busy }: { d
     <select value={draft.relatedClientId || ''} onChange={(e) => patch('relatedClientId', e.target.value)} className={inputClass}><option value="">Sin cliente relacionado</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name || client.phone}</option>)}</select>
     <input value={draft.receiptReference || ''} onChange={(e) => patch('receiptReference', e.target.value)} placeholder="Folio de ticket o factura" className={inputClass} />
     <textarea value={draft.notes || ''} onChange={(e) => patch('notes', e.target.value)} placeholder="Notas" className={`${inputClass} min-h-24 sm:col-span-2 lg:col-span-4`} />
-    <div className="flex gap-2 sm:col-span-2 lg:col-span-4"><button type="button" onClick={onCancel} className="rounded-xl border border-white/15 px-4 py-2.5 text-sm">Cancelar</button><button type="submit" disabled={busy} className="rounded-xl bg-[#D4AF37] px-5 py-2.5 text-sm font-bold text-black disabled:opacity-40">Guardar gasto</button></div>
+    <div className="flex gap-2 sm:col-span-2 lg:col-span-4"><button type="button" onClick={onCancel} className="rounded-xl border border-white/15 px-4 py-2.5 text-sm">Cancelar</button><button type="submit" disabled={busy} className="rounded-xl bg-[#D4AF37] px-5 py-2.5 text-sm font-bold text-black disabled:opacity-40">{draft.id ? 'Actualizar gasto' : 'Guardar gasto'}</button></div>
   </form>;
 };
