@@ -43,6 +43,13 @@ export interface CrmClient {
   lossReason: string;
   estimatedCost: number;
   allocatedAdCost: number;
+  preSessionApplies: boolean;
+  preSessionDate: string;
+  preSessionTime: string;
+  preSessionLocation: string;
+  inviteClientToCalendar: boolean;
+  calendarEventId: string;
+  preSessionCalendarEventId: string;
 }
 
 export type ExpenseCategory =
