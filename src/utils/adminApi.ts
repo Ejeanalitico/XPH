@@ -338,22 +338,38 @@ export async function sendClientEmail(clientId: string, templateId: string, vari
 type PrivateDriveUploadKind = 'contract' | 'logo' | 'gallery' | 'media';
 
 async function uploadPrivateDriveFile(uploadUrl: string, file: File, kind: PrivateDriveUploadKind): Promise<string> {
-  const response = await fetch('/api/proxy?action=adminDriveUploadBody', {
-    method: 'POST',
-    headers: {
-      'Content-Type': file.type || 'application/octet-stream',
-      'X-XPH-Upload-Url': uploadUrl,
-      'X-XPH-Upload-Kind': kind,
-      'X-XPH-Upload-Size': String(file.size),
-    },
-    credentials: 'include',
-    cache: 'no-store',
-    body: file,
-  });
-  const uploaded = await parseResponse(response);
-  const fileId = String(uploaded.fileId || '');
-  if (!fileId) throw new Error('Google Drive no devolvió el identificador del archivo.');
-  return fileId;
+  const chunkBytes = 1_000_000;
+  let offset = 0;
+
+  while (offset < file.size) {
+    const chunk = file.slice(offset, Math.min(offset + chunkBytes, file.size), file.type || 'application/octet-stream');
+    const response = await fetch('/api/proxy?action=adminDriveUploadBody', {
+      method: 'POST',
+      headers: {
+        'Content-Type': file.type || 'application/octet-stream',
+        'X-XPH-Upload-Url': uploadUrl,
+        'X-XPH-Upload-Kind': kind,
+        'X-XPH-Upload-Size': String(file.size),
+        'X-XPH-Upload-Start': String(offset),
+      },
+      credentials: 'include',
+      cache: 'no-store',
+      body: chunk,
+    });
+    const uploaded = await parseResponse(response);
+    const nextStart = Number(uploaded.nextStart);
+    if (!Number.isInteger(nextStart) || nextStart <= offset || nextStart > file.size) {
+      throw new Error('Google Drive no confirmó correctamente el avance de la carga.');
+    }
+    offset = nextStart;
+    if (uploaded.complete) {
+      const fileId = String(uploaded.fileId || '');
+      if (!fileId) throw new Error('Google Drive no devolvió el identificador del archivo.');
+      return fileId;
+    }
+  }
+
+  throw new Error('Google Drive no confirmó que la carga terminara.');
 }
 
 export async function uploadEmailLogo(file: File): Promise<GmailConfig> {
