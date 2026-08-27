@@ -771,6 +771,7 @@ export default async function handler(req, res) {
     const adminBusinessActions = [
       'adminBusinessSnapshot',
       'adminCrmUpsert',
+      'adminCalendarSync',
       'adminExpenseUpsert',
       'adminPaymentUpsert',
       'adminContractUpload',
@@ -802,6 +803,12 @@ export default async function handler(req, res) {
           return res.status(400).json({ status: 'error', message: 'Lo pagado no puede ser mayor al total contratado.' });
         }
         const result = await forwardBusinessAction('crmUpsert', { client });
+        return res.status(200).json({ status: 'success', client: result.client });
+      }
+      if (action === 'adminCalendarSync') {
+        const clientId = String(submitted.clientId || '').trim();
+        if (!clientId) return res.status(400).json({ status: 'error', message: 'Cliente no identificado.' });
+        const result = await forwardBusinessAction('calendarSync', { clientId });
         return res.status(200).json({ status: 'success', client: result.client });
       }
       if (action === 'adminExpenseUpsert') {
