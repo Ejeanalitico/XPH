@@ -1,7 +1,8 @@
 import React from 'react';
 import { Check, Minus, Plus, Sparkles, X } from 'lucide-react';
-import { AddOnOption, BookingState, EventType, PackageOption, RoutePath } from '../types';
+import { AddOnOption, BookingState, CatalogCategory, EventType, PackageOption, RoutePath } from '../types';
 import { ADDONS_CATALOG, PACKAGES_BY_EVENT } from '../data/packages';
+import { DEFAULT_CATALOG_CATEGORIES, isBuiltInCategoryRoute } from '../utils/catalogCategories';
 
 interface Props {
   currentRoute: RoutePath;
@@ -11,6 +12,7 @@ interface Props {
   onProceedToBooking: () => void;
   packages?: Record<EventType, PackageOption[]>;
   addons?: AddOnOption[];
+  categories?: CatalogCategory[];
 }
 
 export const PricingQuoteEngineV2: React.FC<Props> = ({
@@ -20,11 +22,12 @@ export const PricingQuoteEngineV2: React.FC<Props> = ({
   onNavigateRoute,
   packages: providedPackages = PACKAGES_BY_EVENT,
   addons: providedAddons = ADDONS_CATALOG,
+  categories = DEFAULT_CATALOG_CATEGORIES,
 }) => {
   const packages = providedPackages;
   const addons = providedAddons;
   const configured = packages[bookingState.eventType];
-  const currentPackages = [...(configured?.length ? configured : PACKAGES_BY_EVENT[bookingState.eventType])].sort((a, b) => a.price - b.price);
+  const currentPackages = [...((configured?.length ? configured : PACKAGES_BY_EVENT[bookingState.eventType]) || [])].sort((a, b) => a.price - b.price);
   const selectedPackage = currentPackages.find((pkg) => pkg.id === bookingState.selectedPackageId);
   const extraHoursAddon = addons.find((addon) => addon.id === 'extra_hours');
   const extraHoursRate = extraHoursAddon?.price || 0;
@@ -43,13 +46,7 @@ export const PricingQuoteEngineV2: React.FC<Props> = ({
   const quotedTotal = calculateTotal(selectedPackage, selectedAddonIds, bookingState.extraHours);
   const isCustomQuote = selectedPackage?.price === 0;
 
-  const categoryLabels: Record<EventType, string> = {
-    bodas: 'Bodas',
-    'xv-anos': 'XV Años',
-    bautizos: 'Bautizos',
-    retratos: 'Retratos',
-    empresarial: 'Empresarial',
-  };
+  const visibleCategories = categories.filter((category) => category.active && (packages[category.id] || []).length > 0);
 
   const commitState = (next: Partial<BookingState>, nextTotal?: number) => {
     onUpdateBookingState((prev) => {
@@ -66,7 +63,7 @@ export const PricingQuoteEngineV2: React.FC<Props> = ({
       extraHours: 0,
       total: 0,
     }, 0);
-    onNavigateRoute?.(eventType as RoutePath);
+    if (isBuiltInCategoryRoute(eventType)) onNavigateRoute?.(eventType);
   };
 
   const handleSelectPackage = (packageId: string) => {
@@ -116,7 +113,7 @@ export const PricingQuoteEngineV2: React.FC<Props> = ({
           <p className="text-gray-300 text-sm sm:text-base">Selecciona un paquete y añade los complementos que necesites. El total estimado se actualiza automáticamente.</p>
         </header>
 
-        <div className="flex justify-center"><div className="p-1.5 rounded-2xl bg-[#161C28] border border-white/10 inline-flex flex-wrap justify-center gap-2">{(Object.keys(categoryLabels) as EventType[]).map((category) => <button key={category} type="button" onClick={() => handleSelectEventType(category)} className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all ${bookingState.eventType === category ? 'gold-gradient-bg text-black font-bold' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>{categoryLabels[category]}</button>)}</div></div>
+        <div className="flex justify-center"><div className="p-1.5 rounded-2xl bg-[#161C28] border border-white/10 inline-flex flex-wrap justify-center gap-2">{visibleCategories.map((category) => <button key={category.id} type="button" onClick={() => handleSelectEventType(category.id)} className={`px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all inline-flex items-center gap-2 ${bookingState.eventType === category.id ? 'gold-gradient-bg text-black font-bold' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>{category.imageUrl && <img src={category.imageUrl} alt="" className="h-7 w-7 rounded-lg object-cover" />}<span>{category.name}</span></button>)}</div></div>
 
         <div className={`grid gap-6 xl:gap-8 items-stretch ${packageGridClass}`}>
           {currentPackages.map((pkg) => {

@@ -31,7 +31,6 @@ import {
   FooterQuickLink,
   FooterServiceLink,
   FooterSocialLink,
-  GalleryCategory,
   GalleryImage,
   HeroCoverSetting,
   PackageOption,
@@ -45,6 +44,7 @@ import { AnalyticsAdminPanel } from './AnalyticsAdminPanel';
 import { BusinessAdminPanel } from './BusinessAdminPanel';
 import { setAnalyticsExcluded } from '../utils/analyticsPrivacy';
 import { normalizeSeoSettings } from '../utils/seo';
+import { DEFAULT_CATALOG_CATEGORIES } from '../utils/catalogCategories';
 import {
   AdminSession,
   DriveImageRecord,
@@ -70,9 +70,7 @@ const CATEGORY_LABELS: Record<EventType, string> = {
   empresarial: 'Empresarial & Branding',
 };
 
-const DEFAULT_CATEGORIES: CatalogCategory[] = (Object.entries(CATEGORY_LABELS) as [EventType, string][]).map(([id, name], index) => ({
-  id, name, slug: id, description: '', imageUrl: '', active: true, order: index + 1,
-}));
+const DEFAULT_CATEGORIES: CatalogCategory[] = DEFAULT_CATALOG_CATEGORIES;
 
 const COVER_LABELS: Record<RoutePath, string> = {
   inicio: 'Inicio',
@@ -91,15 +89,6 @@ const DEFAULT_COVER_TEXT: Record<RoutePath, { label: string; description: string
   retratos: { label: 'RETRATOS & EDITORIAL', description: 'Sesiones personales, creativas y editoriales.' },
   empresarial: { label: 'EMPRESARIAL & BRANDING', description: 'Contenido visual para tu marca, equipo y negocio.' },
 };
-
-const PUBLIC_CATEGORIES: Array<{ value: Exclude<GalleryCategory, 'all'>; label: string }> = [
-  { value: 'bodas', label: 'Bodas' },
-  { value: 'xv-anos', label: 'XV Años' },
-  { value: 'bautizos', label: 'Bautizos & Familia' },
-  { value: 'retratos', label: 'Retratos & Editorial' },
-  { value: 'empresarial', label: 'Empresarial & Branding' },
-  { value: 'previa', label: 'Sesión previa / Save the date' },
-];
 
 const titleFromFilename = (name: string) => name.replace(/\.[^/.]+$/, '').replace(/[-_]+/g, ' ').trim() || 'Fotografía';
 const slugify = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
@@ -161,10 +150,12 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
   const [seoSettings, setSeoSettings] = useState<SeoSettings>(() => normalizeSeoSettings({}));
 
   const [activeCategory, setActiveCategory] = useState<string>('bodas');
-  const [publicCategory, setPublicCategory] = useState<Exclude<GalleryCategory, 'all'>>('bodas');
+  const [publicCategory, setPublicCategory] = useState<string>('bodas');
+  const [categoryImagePickerId, setCategoryImagePickerId] = useState('');
   const [publicLocation, setPublicLocation] = useState('CDMX');
   const [publicFiles, setPublicFiles] = useState<File[]>([]);
   const [selectedDriveIds, setSelectedDriveIds] = useState<string[]>([]);
+  const [selectedPublicImageIds, setSelectedPublicImageIds] = useState<string[]>([]);
 
   const [coverRoute, setCoverRoute] = useState<RoutePath>('inicio');
   const [coverFile, setCoverFile] = useState<File | null>(null);
@@ -180,7 +171,15 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
   const privateGalleries = useMemo(() => privateGallerySummaries(galleryImages), [galleryImages]);
   const selectedGallery = privateGalleries.find((item) => item.galleryId === selectedGalleryId) || null;
   const selectedGalleryMedia = galleryImages.filter((item) => item.galleryId === selectedGalleryId && item.mediaType !== 'gallery-meta');
-  const publicImages = galleryImages.filter((item) => item.visibility !== 'private' && item.visibility !== 'cover' && item.mediaType !== 'gallery-meta' && item.mediaType !== 'cover-meta' && item.mediaType !== 'video' && item.category !== 'private');
+  const publicImages = useMemo(() => galleryImages.filter((item) => item.visibility !== 'private' && item.visibility !== 'cover' && item.mediaType !== 'gallery-meta' && item.mediaType !== 'cover-meta' && item.mediaType !== 'video' && item.category !== 'private'), [galleryImages]);
+  const publicCategoryOptions = useMemo(() => {
+    const options = catalogCategories.map((category) => ({ value: category.id, label: `${category.name}${category.active ? '' : ' · inactiva'}` }));
+    if (!options.some((item) => item.value === 'previa')) options.push({ value: 'previa', label: 'Sesión previa / Save the date' });
+    publicImages.forEach((image) => {
+      if (!options.some((item) => item.value === image.category)) options.push({ value: image.category, label: image.category });
+    });
+    return options;
+  }, [catalogCategories, publicImages]);
   const currentCover = { ...emptyCover(coverRoute), ...(heroSettings[coverRoute] || {}) };
 
   const notify = (text: string) => {
@@ -422,6 +421,19 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
     finally { setBusy(false); }
   };
 
+  const assignExistingGallerySelection = async () => {
+    if (!session || !selectedPublicImageIds.length) return;
+    setBusy(true);
+    try {
+      const selectedIds = new Set(selectedPublicImageIds);
+      const next = galleryImages.map((item) => selectedIds.has(item.id) ? { ...item, category: publicCategory } : item);
+      await persistGallery(next, 'ADMIN_GALERIA_RECLASIFICADA', `${selectedIds.size} imágenes públicas asignadas a ${publicCategory}`);
+      setSelectedPublicImageIds([]);
+      notify(`${selectedIds.size} imágenes asignadas a ${publicCategoryOptions.find((item) => item.value === publicCategory)?.label || publicCategory}.`);
+    } catch (error: any) { notify(error?.message || 'No se pudieron reasignar las imágenes de la galería.'); }
+    finally { setBusy(false); }
+  };
+
   const updateCover = (patch: Partial<HeroCoverSetting>) => {
     setHeroSettings((prev) => ({ ...prev, [coverRoute]: { ...emptyCover(coverRoute), ...(prev[coverRoute] || {}), ...patch } }));
   };
@@ -571,7 +583,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
           <section className="space-y-7">
             <div className="rounded-2xl border border-white/10 bg-[#161C28] p-5">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-xl font-bold">Categorías comerciales</h2><p className="mt-1 text-xs text-gray-400">Crea, edita, ordena, activa o desactiva categorías sin modificar código.</p></div><button onClick={addCategory} className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-4 py-2.5 text-sm"><Plus className="h-4 w-4" />Nueva categoría</button></div>
-              <div className="mt-4 grid gap-3 lg:grid-cols-2">{catalogCategories.map((category, index) => <article key={category.id} className={`rounded-xl border p-4 ${activeCategory === category.id ? 'border-[#D4AF37]/60 bg-[#D4AF37]/5' : 'border-white/10 bg-[#0B0F17]/50'}`}><div className="flex items-start gap-3">{category.imageUrl ? <img src={category.imageUrl} alt={category.name} className="h-16 w-16 shrink-0 rounded-lg object-cover" /> : <div className="grid h-16 w-16 shrink-0 place-items-center rounded-lg border border-dashed border-white/15 text-[10px] text-gray-500">Sin imagen</div>}<div className="min-w-0 flex-1 space-y-2"><input value={category.name} onChange={(event) => updateCategory(category.id, { name: event.target.value })} onFocus={() => setActiveCategory(category.id)} className="w-full rounded-lg border border-white/10 bg-[#0B0F17] px-3 py-2 text-sm font-semibold" /><input value={category.slug} onChange={(event) => updateCategory(category.id, { slug: slugify(event.target.value) })} className="w-full rounded-lg border border-white/10 bg-[#0B0F17] px-3 py-2 font-mono text-xs" placeholder="slug" /></div></div><textarea value={category.description} onChange={(event) => updateCategory(category.id, { description: event.target.value })} placeholder="Descripción de la categoría" className="mt-3 min-h-16 w-full rounded-lg border border-white/10 bg-[#0B0F17] px-3 py-2 text-xs" /><div className="mt-3 flex flex-wrap items-center gap-2"><label className="cursor-pointer rounded-lg border border-white/10 px-3 py-2 text-xs"><Upload className="mr-1 inline h-3.5 w-3.5" />Subir imagen<input type="file" accept="image/*" className="hidden" onChange={(event) => uploadCategoryImage(category, event.target.files?.[0])} /></label><button onClick={() => updateCategory(category.id, { active: !category.active })} className={`rounded-lg px-3 py-2 text-xs ${category.active ? 'bg-emerald-500/15 text-emerald-300' : 'bg-white/5 text-gray-400'}`}>{category.active ? 'Activa' : 'Inactiva'}</button><button onClick={() => moveCategory(category.id, -1)} disabled={index === 0} className="rounded-lg border border-white/10 px-3 py-2 text-xs disabled:opacity-30">↑</button><button onClick={() => moveCategory(category.id, 1)} disabled={index === catalogCategories.length - 1} className="rounded-lg border border-white/10 px-3 py-2 text-xs disabled:opacity-30">↓</button><button onClick={() => setActiveCategory(category.id)} className="ml-auto rounded-lg border border-[#D4AF37]/30 px-3 py-2 text-xs text-[#F5D76E]">Ver paquetes</button></div></article>)}</div>
+              <div className="mt-4 grid gap-3 lg:grid-cols-2">{catalogCategories.map((category, index) => <article key={category.id} className={`rounded-xl border p-4 ${activeCategory === category.id ? 'border-[#D4AF37]/60 bg-[#D4AF37]/5' : 'border-white/10 bg-[#0B0F17]/50'}`}><div className="flex items-start gap-3">{category.imageUrl ? <img src={category.imageUrl} alt={category.name} className="h-16 w-16 shrink-0 rounded-lg object-cover" /> : <div className="grid h-16 w-16 shrink-0 place-items-center rounded-lg border border-dashed border-white/15 text-[10px] text-gray-500">Sin imagen</div>}<div className="min-w-0 flex-1 space-y-2"><input value={category.name} onChange={(event) => updateCategory(category.id, { name: event.target.value })} onFocus={() => setActiveCategory(category.id)} className="w-full rounded-lg border border-white/10 bg-[#0B0F17] px-3 py-2 text-sm font-semibold" /><input value={category.slug} onChange={(event) => updateCategory(category.id, { slug: slugify(event.target.value) })} className="w-full rounded-lg border border-white/10 bg-[#0B0F17] px-3 py-2 font-mono text-xs" placeholder="slug" /></div></div><textarea value={category.description} onChange={(event) => updateCategory(category.id, { description: event.target.value })} placeholder="Descripción de la categoría" className="mt-3 min-h-16 w-full rounded-lg border border-white/10 bg-[#0B0F17] px-3 py-2 text-xs" /><div className="mt-3 flex flex-wrap items-center gap-2"><label className="cursor-pointer rounded-lg border border-white/10 px-3 py-2 text-xs"><Upload className="mr-1 inline h-3.5 w-3.5" />Subir imagen<input type="file" accept="image/*" className="hidden" onChange={(event) => uploadCategoryImage(category, event.target.files?.[0])} /></label><button onClick={() => setCategoryImagePickerId(categoryImagePickerId === category.id ? '' : category.id)} className="rounded-lg border border-white/10 px-3 py-2 text-xs"><ImageIcon className="mr-1 inline h-3.5 w-3.5" />Elegir de galería</button><button onClick={() => updateCategory(category.id, { active: !category.active })} className={`rounded-lg px-3 py-2 text-xs ${category.active ? 'bg-emerald-500/15 text-emerald-300' : 'bg-white/5 text-gray-400'}`}>{category.active ? 'Activa' : 'Inactiva'}</button><button onClick={() => moveCategory(category.id, -1)} disabled={index === 0} className="rounded-lg border border-white/10 px-3 py-2 text-xs disabled:opacity-30">↑</button><button onClick={() => moveCategory(category.id, 1)} disabled={index === catalogCategories.length - 1} className="rounded-lg border border-white/10 px-3 py-2 text-xs disabled:opacity-30">↓</button><button onClick={() => setActiveCategory(category.id)} className="ml-auto rounded-lg border border-[#D4AF37]/30 px-3 py-2 text-xs text-[#F5D76E]">Ver paquetes</button></div>{categoryImagePickerId === category.id && <div className="mt-3 rounded-xl border border-[#D4AF37]/25 bg-[#0B0F17] p-3"><p className="mb-2 text-[11px] text-gray-400">Selecciona una imagen ya publicada en tu galería.</p><div className="grid max-h-56 grid-cols-3 gap-2 overflow-auto sm:grid-cols-5">{publicImages.map((image) => <button key={image.id} type="button" onClick={() => { updateCategory(category.id, { imageUrl: image.url }); setCategoryImagePickerId(''); notify('Imagen seleccionada. Guarda y publica para reflejarla en la página.'); }} className="overflow-hidden rounded-lg border border-white/10 hover:border-[#D4AF37]"><img src={image.url} alt={image.title} className="aspect-square w-full object-cover" /></button>)}</div>{!publicImages.length && <p className="py-4 text-center text-xs text-gray-500">Aún no hay imágenes públicas disponibles.</p>}</div>}</article>)}</div>
             </div>
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
               <div className="flex overflow-x-auto gap-2">{catalogCategories.map((item) => <button key={item.id} onClick={() => setActiveCategory(item.id)} className={`px-4 py-2.5 rounded-xl text-xs font-semibold whitespace-nowrap ${activeCategory === item.id ? 'bg-white text-black' : 'bg-[#161C28] border border-white/10 text-gray-300'}`}>{item.name}{!item.active ? ' · inactiva' : ''}</button>)}</div>
@@ -608,9 +620,10 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
 
         {tab === 'public' && (
           <section className="space-y-6">
-            <div className="grid md:grid-cols-2 gap-4"><label className="text-xs text-gray-400">Sección<select value={publicCategory} onChange={(e) => setPublicCategory(e.target.value as Exclude<GalleryCategory, 'all'>)} className="mt-1 w-full px-4 py-3 rounded-xl bg-[#161C28] border border-white/10 text-white">{PUBLIC_CATEGORIES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label><label className="text-xs text-gray-400">Ubicación / etiqueta<input value={publicLocation} onChange={(e) => setPublicLocation(e.target.value)} className="mt-1 w-full px-4 py-3 rounded-xl bg-[#161C28] border border-white/10" /></label></div>
+            <div className="grid md:grid-cols-2 gap-4"><label className="text-xs text-gray-400">Sección<select value={publicCategory} onChange={(e) => setPublicCategory(e.target.value)} className="mt-1 w-full px-4 py-3 rounded-xl bg-[#161C28] border border-white/10 text-white">{publicCategoryOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label><label className="text-xs text-gray-400">Ubicación / etiqueta<input value={publicLocation} onChange={(e) => setPublicLocation(e.target.value)} className="mt-1 w-full px-4 py-3 rounded-xl bg-[#161C28] border border-white/10" /></label></div>
             <div className="rounded-2xl bg-[#161C28] border border-white/10 p-5 space-y-4"><h2 className="text-xl font-bold">Carga masiva</h2><input type="file" accept="image/*" multiple onChange={(e) => setPublicFiles(Array.from(e.target.files || []))} /><button onClick={uploadPublicFiles} disabled={!publicFiles.length || busy} className="px-5 py-3 rounded-xl bg-[#D4AF37] text-black font-bold disabled:opacity-40"><Upload className="inline w-4 h-4 mr-2" />Subir {publicFiles.length || ''} imágenes</button></div>
             <div className="rounded-2xl bg-[#161C28] border border-white/10 p-5 space-y-4"><div className="flex items-center justify-between"><div><h2 className="text-xl font-bold">Imágenes existentes en Google Drive</h2><p className="text-xs text-gray-400">Selecciona varias y asígnalas a la sección elegida.</p></div><button onClick={() => refresh()} className="px-4 py-2 rounded-xl border border-white/10 text-xs"><RefreshCw className="inline w-4 h-4 mr-1" />Recargar Drive</button></div><div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 max-h-[560px] overflow-auto">{driveImages.map((item) => { const selected = selectedDriveIds.includes(item.id); return <button key={item.id} onClick={() => setSelectedDriveIds((prev) => selected ? prev.filter((id) => id !== item.id) : [...prev, item.id])} className={`relative rounded-xl overflow-hidden border ${selected ? 'border-[#D4AF37] ring-2 ring-[#D4AF37]/30' : 'border-white/10'}`}><img src={item.url} alt={item.name} className="w-full aspect-square object-cover" /><div className="p-2 text-[10px] truncate">{item.name}</div>{selected && <span className="absolute top-2 right-2 w-6 h-6 rounded-full bg-[#D4AF37] text-black flex items-center justify-center"><Check className="w-4 h-4" /></span>}</button>; })}</div><div className="flex gap-2"><button onClick={() => setSelectedDriveIds(driveImages.map((item) => item.id))} className="px-3 py-2 rounded-lg bg-white/5 text-xs">Seleccionar todas</button><button onClick={() => setSelectedDriveIds([])} className="px-3 py-2 rounded-lg bg-white/5 text-xs">Limpiar</button><button onClick={registerDriveSelection} disabled={!selectedDriveIds.length || busy} className="ml-auto px-5 py-2 rounded-xl bg-[#D4AF37] text-black text-xs font-bold disabled:opacity-40">Registrar {selectedDriveIds.length || ''}</button></div></div>
+            <div className="rounded-2xl bg-[#161C28] border border-white/10 p-5 space-y-4"><div><h2 className="text-xl font-bold">Imágenes ya publicadas en la galería</h2><p className="text-xs text-gray-400">Selecciona las imágenes que quieras mover a la sección elegida arriba. No se vuelven a subir ni se duplican.</p></div><div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 max-h-[560px] overflow-auto">{publicImages.map((item) => { const selected = selectedPublicImageIds.includes(item.id); return <button key={item.id} type="button" onClick={() => setSelectedPublicImageIds((prev) => selected ? prev.filter((id) => id !== item.id) : [...prev, item.id])} className={`relative rounded-xl overflow-hidden border ${selected ? 'border-[#D4AF37] ring-2 ring-[#D4AF37]/30' : 'border-white/10'}`}><img src={item.url} alt={item.title} className="w-full aspect-square object-cover" /><div className="p-2 text-[10px] truncate">{item.title}<span className="block text-gray-500">{publicCategoryOptions.find((option) => option.value === item.category)?.label || item.category}</span></div>{selected && <span className="absolute top-2 right-2 w-6 h-6 rounded-full bg-[#D4AF37] text-black flex items-center justify-center"><Check className="w-4 h-4" /></span>}</button>; })}</div><div className="flex flex-wrap gap-2"><button onClick={() => setSelectedPublicImageIds(publicImages.map((item) => item.id))} className="px-3 py-2 rounded-lg bg-white/5 text-xs">Seleccionar todas</button><button onClick={() => setSelectedPublicImageIds([])} className="px-3 py-2 rounded-lg bg-white/5 text-xs">Limpiar</button><button onClick={assignExistingGallerySelection} disabled={!selectedPublicImageIds.length || busy} className="ml-auto px-5 py-2 rounded-xl bg-[#D4AF37] text-black text-xs font-bold disabled:opacity-40">Asignar {selectedPublicImageIds.length || ''} a {publicCategoryOptions.find((item) => item.value === publicCategory)?.label || publicCategory}</button></div></div>
             <p className="text-xs text-gray-500">La galería pública no ofrece descargas. Actualmente hay {publicImages.length} imágenes publicadas.</p>
           </section>
         )}
