@@ -718,8 +718,85 @@ function upsertClientCalendarEvent(calendar, eventId, title, start, durationHour
   return event;
 }
 
+function driveUploadFolder() {
+  try {
+    return DriveApp.getFolderById(FOLDER_ID);
+  } catch (_) {
+    return DriveApp.getRootFolder();
+  }
+}
+
+function createDriveResumableSession(payload) {
+  payload = payload || {};
+  var filename = cleanBusinessText(payload.filename || ('foto-xph-' + Date.now()), 180).replace(/[\\/]/g, '-');
+  var mimeType = cleanBusinessText(payload.mimeType || '', 120).toLowerCase();
+  var size = Number(payload.size || 0);
+  if (mimeType.indexOf('image/') !== 0 || size <= 0 || size > 100000000) {
+    throw new Error('La fotografía debe ser una imagen válida y pesar máximo 100 MB.');
+  }
+  var folder = driveUploadFolder();
+  var response = UrlFetchApp.fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,mimeType,size,parents', {
+    method: 'post',
+    contentType: 'application/json',
+    headers: {
+      Authorization: 'Bearer ' + ScriptApp.getOAuthToken(),
+      'X-Upload-Content-Type': mimeType,
+      'X-Upload-Content-Length': String(size)
+    },
+    payload: JSON.stringify({ name: filename, parents: [folder.getId()] }),
+    muteHttpExceptions: true
+  });
+  var status = response.getResponseCode();
+  var headers = response.getAllHeaders();
+  var uploadUrl = headers.Location || headers.location || '';
+  if (status < 200 || status >= 300 || !uploadUrl) {
+    throw new Error('Google Drive no pudo iniciar la carga original (HTTP ' + status + ').');
+  }
+  return { status: 'success', uploadUrl: String(uploadUrl) };
+}
+
+function finalizeDrivePhotoUpload(ss, payload) {
+  payload = payload || {};
+  var fileId = cleanBusinessText(payload.fileId || '', 100);
+  if (!fileId) throw new Error('Google Drive no devolvió el archivo cargado.');
+  var file = DriveApp.getFileById(fileId);
+  var mimeType = String(file.getMimeType() || '').toLowerCase();
+  if (mimeType.indexOf('image/') !== 0) throw new Error('El archivo recibido no es una fotografía válida.');
+  var folderId = driveUploadFolder().getId();
+  var parents = file.getParents();
+  var belongsToFolder = false;
+  while (parents.hasNext()) {
+    if (parents.next().getId() === folderId) { belongsToFolder = true; break; }
+  }
+  if (!belongsToFolder) throw new Error('La fotografía no pertenece a la carpeta autorizada.');
+  try { file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (_) {}
+  var title = cleanBusinessText(payload.title || file.getName().replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '), 180);
+  var category = cleanBusinessText(payload.category || 'bodas', 80).toLowerCase();
+  var location = cleanBusinessText(payload.location || 'CDMX', 180);
+  var directUrl = 'https://lh3.googleusercontent.com/d/' + fileId;
+  var sheet = ss.getSheetByName('Galeria_Fotos');
+  if (!sheet) { initSpreadsheetSheets(ss); sheet = ss.getSheetByName('Galeria_Fotos'); }
+  sheet.appendRow([fileId, title, category, directUrl, location, new Date().toISOString().split('T')[0], 'ACTIVO']);
+  var config = {};
+  try { var raw = loadActiveConfig(); if (raw) config = JSON.parse(raw); } catch (_) {}
+  var gallery = Array.isArray(config.galleryImages) ? config.galleryImages : [];
+  gallery.unshift({ id: fileId, title: title, category: category, url: directUrl, location: location });
+  config.galleryImages = gallery;
+  saveActiveConfig(ss, JSON.stringify(config));
+  logAudit(ss, 'SUBIDA_FOTOGRAFIA_DRIVE', 'Fotografía original registrada: ' + title, fileId, 'Admin XPH');
+  return { status: 'success', fileId: fileId, url: directUrl, driveUrl: 'https://drive.google.com/file/d/' + fileId + '/view' };
+}
+
 function handleBusinessAction(ss, action, payload) {
   payload = payload || {};
+  if (action === 'uploadInit') return createDriveResumableSession(payload);
+  if (action === 'uploadFinalize') return finalizeDrivePhotoUpload(ss, payload);
+  if (action === 'businessClients') {
+    return {
+      status: 'success',
+      clients: readBusinessRecords(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients)
+    };
+  }
   if (action === 'businessSnapshot') {
     var signatureRows = readBusinessRecords(ss, 'Firma_Administrador', BUSINESS_HEADERS.ownerSignature);
     return {
@@ -1062,12 +1139,12 @@ function doPost(e) {
     var ss = getDatabaseSpreadsheet();
 
     var businessActions = [
-      'businessSnapshot', 'crmUpsert', 'calendarSync', 'expenseUpsert', 'paymentUpsert', 'contractUpload', 'contractCreateLink',
+      'businessClients', 'businessSnapshot', 'uploadInit', 'uploadFinalize', 'crmUpsert', 'calendarSync', 'expenseUpsert', 'paymentUpsert', 'contractUpload', 'contractCreateLink',
       'contractInvalidate', 'contractResolve', 'contractCompleteSignature', 'ownerSignatureSave',
       'contractAdminPdfData', 'contractFinalizeData', 'contractFinalize'
     ];
     if (businessActions.indexOf(action) >= 0) {
-      if (action === 'businessSnapshot' || action === 'contractAdminPdfData') {
+      if (action === 'businessClients' || action === 'businessSnapshot' || action === 'uploadInit' || action === 'contractAdminPdfData') {
         return jsonOutput(handleBusinessAction(ss, action, payload));
       }
       var businessLock = LockService.getScriptLock();
