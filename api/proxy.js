@@ -90,30 +90,43 @@ function normalizeConfig(payload) {
   return raw && typeof raw === 'object' ? raw : {};
 }
 
+async function fetchAppsScriptJson(action, invalidMessage) {
+  const attempts = 3;
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const response = await fetch(appsScriptUrl(action), {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        redirect: 'follow',
+      });
+      const text = await response.text();
+      let parsed;
+      try { parsed = JSON.parse(text); } catch (_) {
+        throw new Error(`${invalidMessage} (HTTP ${response.status}).`);
+      }
+      if (!response.ok || !parsed || parsed.status !== 'success') {
+        throw new Error(parsed?.message || `${invalidMessage} (HTTP ${response.status}).`);
+      }
+      return parsed;
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) {
+        await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
+      }
+    }
+  }
+
+  throw lastError || new Error(invalidMessage);
+}
+
 async function fetchConfigFromScript() {
-  const response = await fetch(appsScriptUrl('loadConfig'), {
-    method: 'GET',
-    headers: { Accept: 'application/json' },
-    redirect: 'follow',
-  });
-  const text = await response.text();
-  let parsed;
-  try { parsed = JSON.parse(text); } catch (_) { throw new Error('Apps Script devolvió una respuesta no válida.'); }
-  if (!parsed || parsed.status !== 'success') throw new Error('Apps Script no devolvió una configuración válida.');
-  return parsed;
+  return fetchAppsScriptJson('loadConfig', 'Apps Script devolvió una configuración no válida');
 }
 
 async function fetchDriveListFromScript() {
-  const response = await fetch(appsScriptUrl('listDriveFolder'), {
-    method: 'GET',
-    headers: { Accept: 'application/json' },
-    redirect: 'follow',
-  });
-  const text = await response.text();
-  let parsed;
-  try { parsed = JSON.parse(text); } catch (_) { throw new Error('Apps Script no devolvió la carpeta de Drive correctamente.'); }
-  if (!parsed || parsed.status !== 'success') throw new Error(parsed?.message || 'No se pudo leer Google Drive.');
-  return parsed;
+  return fetchAppsScriptJson('listDriveFolder', 'Apps Script no devolvió la carpeta de Drive correctamente');
 }
 
 function validAdminCredentials(submitted) {
