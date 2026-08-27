@@ -124,6 +124,21 @@ export interface BusinessPayment {
   updatedAt: string;
 }
 
+export interface FinancialTransaction {
+  id: string;
+  paymentId: string;
+  clientId: string;
+  type: 'Ingreso de cliente' | string;
+  amount: number;
+  status: 'ACTIVO' | 'ANULADO';
+  date: string;
+  concept: string;
+  method: string;
+  reference: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type ContractStatus =
   | 'Borrador'
   | 'Preparado'
@@ -159,6 +174,7 @@ export interface BusinessSnapshot {
   followUps: CrmFollowUp[];
   expenses: BusinessExpense[];
   payments: BusinessPayment[];
+  transactions: FinancialTransaction[];
   contracts: BusinessContract[];
   ownerSignatureConfigured: boolean;
 }
