@@ -481,10 +481,21 @@ function cleanBusinessText(value, maxLength) {
 function readBusinessRecords(ss, sheetName, headers) {
   var sheet = ss.getSheetByName(sheetName);
   if (!sheet || sheet.getLastRow() < 2) return [];
+  var timeZone = ss.getSpreadsheetTimeZone() || Session.getScriptTimeZone() || 'America/Mexico_City';
+  var dateHeaders = { eventDate: true, preSessionDate: true, date: true, dueDate: true };
+  var timeHeaders = { eventTime: true, preSessionTime: true };
   var values = sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).getValues();
   return values.filter(function(row) { return cleanBusinessText(row[0], 200) !== ''; }).map(function(row) {
     var record = {};
-    headers.forEach(function(header, index) { record[header] = row[index] === undefined || row[index] === null ? '' : row[index]; });
+    headers.forEach(function(header, index) {
+      var value = row[index];
+      if (value === undefined || value === null) value = '';
+      if (value instanceof Date && !isNaN(value.getTime())) {
+        if (dateHeaders[header]) value = Utilities.formatDate(value, timeZone, 'yyyy-MM-dd');
+        else if (timeHeaders[header]) value = Utilities.formatDate(value, timeZone, 'HH:mm');
+      }
+      record[header] = value;
+    });
     return record;
   });
 }
@@ -594,7 +605,7 @@ function normalizedClient(input, existing) {
     phone: cleanBusinessText(input.phone !== undefined ? input.phone : current.phone, 40),
     email: cleanBusinessText(input.email !== undefined ? input.email : current.email, 180),
     eventType: cleanBusinessText(input.eventType !== undefined ? input.eventType : current.eventType, 100),
-    eventDate: cleanBusinessText(input.eventDate !== undefined ? input.eventDate : current.eventDate, 40),
+    eventDate: normalizeBusinessDate(input.eventDate !== undefined ? input.eventDate : current.eventDate),
     eventLocation: cleanBusinessText(input.eventLocation !== undefined ? input.eventLocation : current.eventLocation, 500),
     packageName: cleanBusinessText(input.packageName !== undefined ? input.packageName : current.packageName, 180),
     totalAmount: Math.max(0, Number(input.totalAmount !== undefined ? input.totalAmount : current.totalAmount) || 0),
@@ -611,7 +622,7 @@ function normalizedClient(input, existing) {
     updatedAt: timestamp,
     honoreeName: cleanBusinessText(input.honoreeName !== undefined ? input.honoreeName : current.honoreeName, 240),
     address: cleanBusinessText(input.address !== undefined ? input.address : current.address, 600),
-    eventTime: cleanBusinessText(input.eventTime !== undefined ? input.eventTime : current.eventTime, 20),
+    eventTime: normalizeBusinessTime(input.eventTime !== undefined ? input.eventTime : current.eventTime),
     serviceHours: Math.max(0, Math.min(48, Number(input.serviceHours !== undefined ? input.serviceHours : current.serviceHours) || 0)),
     campaign: cleanBusinessText(input.campaign !== undefined ? input.campaign : current.campaign, 200),
     objection: cleanBusinessText(input.objection !== undefined ? input.objection : current.objection, 1000),
@@ -621,8 +632,8 @@ function normalizedClient(input, existing) {
     estimatedCost: Math.max(0, Number(input.estimatedCost !== undefined ? input.estimatedCost : current.estimatedCost) || 0),
     allocatedAdCost: Math.max(0, Number(input.allocatedAdCost !== undefined ? input.allocatedAdCost : current.allocatedAdCost) || 0),
     preSessionApplies: input.preSessionApplies !== undefined ? Boolean(input.preSessionApplies) : String(current.preSessionApplies) === 'true',
-    preSessionDate: cleanBusinessText(input.preSessionDate !== undefined ? input.preSessionDate : current.preSessionDate, 40),
-    preSessionTime: cleanBusinessText(input.preSessionTime !== undefined ? input.preSessionTime : current.preSessionTime, 20),
+    preSessionDate: normalizeBusinessDate(input.preSessionDate !== undefined ? input.preSessionDate : current.preSessionDate),
+    preSessionTime: normalizeBusinessTime(input.preSessionTime !== undefined ? input.preSessionTime : current.preSessionTime),
     preSessionLocation: cleanBusinessText(input.preSessionLocation !== undefined ? input.preSessionLocation : current.preSessionLocation, 500),
     inviteClientToCalendar: input.inviteClientToCalendar !== undefined ? Boolean(input.inviteClientToCalendar) : String(current.inviteClientToCalendar) === 'true',
     calendarEventId: cleanBusinessText(current.calendarEventId || input.calendarEventId, 240),
@@ -736,17 +747,77 @@ function syncPaymentTransaction(ss, payment, existingPayment) {
   return transaction;
 }
 
+var BUSINESS_CALENDAR_TIME_ZONE_CACHE = '';
+
+function businessCalendarTimeZone() {
+  if (BUSINESS_CALENDAR_TIME_ZONE_CACHE) return BUSINESS_CALENDAR_TIME_ZONE_CACHE;
+  try {
+    var spreadsheet = getDatabaseSpreadsheet();
+    if (spreadsheet && spreadsheet.getSpreadsheetTimeZone()) {
+      BUSINESS_CALENDAR_TIME_ZONE_CACHE = spreadsheet.getSpreadsheetTimeZone();
+      return BUSINESS_CALENDAR_TIME_ZONE_CACHE;
+    }
+  } catch (_) {}
+  BUSINESS_CALENDAR_TIME_ZONE_CACHE = Session.getScriptTimeZone() || 'America/Mexico_City';
+  return BUSINESS_CALENDAR_TIME_ZONE_CACHE;
+}
+
+function normalizeBusinessDate(value) {
+  if (value === undefined || value === null || value === '') return '';
+  var timeZone = businessCalendarTimeZone();
+  if (value instanceof Date && !isNaN(value.getTime())) return Utilities.formatDate(value, timeZone, 'yyyy-MM-dd');
+  var text = String(value).trim();
+  var isoDate = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoDate) {
+    var year = Number(isoDate[1]);
+    var month = Number(isoDate[2]);
+    var day = Number(isoDate[3]);
+    var checked = new Date(year, month - 1, day, 12, 0, 0, 0);
+    if (checked.getFullYear() !== year || checked.getMonth() !== month - 1 || checked.getDate() !== day) {
+      throw new Error('La fecha no tiene un formato válido para Calendar.');
+    }
+    return isoDate[1] + '-' + isoDate[2] + '-' + isoDate[3];
+  }
+  var parsed = new Date(text);
+  if (!isNaN(parsed.getTime())) return Utilities.formatDate(parsed, timeZone, 'yyyy-MM-dd');
+  throw new Error('La fecha no tiene un formato válido para Calendar.');
+}
+
+function normalizeBusinessTime(value) {
+  if (value === undefined || value === null || value === '') return '';
+  var timeZone = businessCalendarTimeZone();
+  if (value instanceof Date && !isNaN(value.getTime())) return Utilities.formatDate(value, timeZone, 'HH:mm');
+  if (typeof value === 'number' && isFinite(value)) {
+    var minutes = Math.round((((value % 1) + 1) % 1) * 24 * 60) % (24 * 60);
+    return String(Math.floor(minutes / 60)).padStart(2, '0') + ':' + String(minutes % 60).padStart(2, '0');
+  }
+  var text = String(value).trim();
+  var directTime = text.match(/^(\d{1,2}):(\d{2})/);
+  if (directTime) {
+    var hours = Number(directTime[1]);
+    var minutesValue = Number(directTime[2]);
+    if (hours > 23 || minutesValue > 59) throw new Error('El horario no tiene un formato válido para Calendar.');
+    return String(hours).padStart(2, '0') + ':' + String(minutesValue).padStart(2, '0');
+  }
+  var isoCandidate = text.replace(/\.$/, 'Z');
+  var parsed = new Date(isoCandidate);
+  if (!isNaN(parsed.getTime())) return Utilities.formatDate(parsed, timeZone, 'HH:mm');
+  throw new Error('El horario no tiene un formato válido para Calendar.');
+}
+
 function calendarDateTime(dateValue, timeValue) {
-  var parts = String(dateValue || '').split('-');
-  var time = String(timeValue || '').split(':');
-  if (parts.length !== 3 || time.length < 2) throw new Error('La fecha y el horario son necesarios para Calendar.');
-  return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), Number(time[0]), Number(time[1]), 0, 0);
+  var parts = normalizeBusinessDate(dateValue).split('-');
+  var time = normalizeBusinessTime(timeValue).split(':');
+  var result = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), Number(time[0]), Number(time[1]), 0, 0);
+  if (isNaN(result.getTime())) throw new Error('La fecha y el horario no son válidos para Calendar.');
+  return result;
 }
 
 function calendarDateOnly(dateValue) {
-  var parts = String(dateValue || '').split('-');
-  if (parts.length !== 3) throw new Error('La fecha es necesaria para Calendar.');
-  return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 0, 0, 0, 0);
+  var parts = normalizeBusinessDate(dateValue).split('-');
+  var result = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 0, 0, 0, 0);
+  if (isNaN(result.getTime())) throw new Error('La fecha no es válida para Calendar.');
+  return result;
 }
 
 function authorizeCalendarIntegration() {
@@ -927,12 +998,16 @@ function handleBusinessAction(ss, action, payload) {
     var eventTitle = 'XPH · ' + (calendarClient.eventType || 'Evento') + ' · ' + (calendarClient.name || calendarClient.honoreeName || 'Cliente');
     var eventDescription = 'Cliente: ' + (calendarClient.name || '') + '\nTeléfono: ' + (calendarClient.phone || '') + '\nPaquete: ' + (calendarClient.packageName || 'Por confirmar') + '\nContrato: ' + (calendarClient.contractId || 'Pendiente');
     if (eventReady) {
+      calendarClient.eventDate = normalizeBusinessDate(calendarClient.eventDate);
+      calendarClient.eventTime = normalizeBusinessTime(calendarClient.eventTime);
       var eventAllDay = !calendarClient.eventTime;
       var eventStart = eventAllDay ? calendarDateOnly(calendarClient.eventDate) : calendarDateTime(calendarClient.eventDate, calendarClient.eventTime);
       var mainEvent = upsertClientCalendarEvent(calendar, calendarClient.calendarEventId, eventTitle, eventStart, calendarClient.serviceHours || 1, calendarClient.eventLocation, eventDescription, guest, eventAllDay);
       calendarClient.calendarEventId = mainEvent.getId();
     }
     if (sessionReady) {
+      calendarClient.preSessionDate = normalizeBusinessDate(calendarClient.preSessionDate);
+      calendarClient.preSessionTime = normalizeBusinessTime(calendarClient.preSessionTime);
       var sessionAllDay = !calendarClient.preSessionTime;
       var sessionStart = sessionAllDay ? calendarDateOnly(calendarClient.preSessionDate) : calendarDateTime(calendarClient.preSessionDate, calendarClient.preSessionTime);
       var sessionEvent = upsertClientCalendarEvent(calendar, calendarClient.preSessionCalendarEventId, 'XPH · Sesión previa · ' + (calendarClient.name || 'Cliente'), sessionStart, 2, calendarClient.preSessionLocation, eventDescription, guest, sessionAllDay);
