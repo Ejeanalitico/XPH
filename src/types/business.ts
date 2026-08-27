@@ -81,6 +81,8 @@ export interface BusinessPayment {
   transactionId: string;
   date: string;
   dueDate: string;
+  installmentNumber: 1 | 2 | 3;
+  percentage: number;
   concept: string;
   plannedAmount: number;
   receivedAmount: number;

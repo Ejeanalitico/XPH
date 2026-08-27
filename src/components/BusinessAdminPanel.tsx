@@ -93,7 +93,8 @@ const blankExpense = (): Partial<BusinessExpense> => ({
 });
 
 const blankPayment = (clientId = '', contractId = ''): Partial<BusinessPayment> => ({
-  clientId, contractId, date: today(), dueDate: '', concept: '', plannedAmount: 0, receivedAmount: 0,
+  clientId, contractId, date: today(), dueDate: '', installmentNumber: 1, percentage: 30,
+  concept: 'Pago 1 de 3', plannedAmount: 0, receivedAmount: 0,
   status: 'Pendiente', method: '', reference: '', notes: '',
 });
 
@@ -397,7 +398,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
             <Metric label="Pagos programados pendientes" value={money(snapshot.payments.filter((item) => item.status === 'Pendiente').reduce((sum, item) => sum + Number(item.plannedAmount || 0), 0))} icon={CreditCard} />
             <Metric label="Movimientos anulados" value={String(snapshot.payments.filter((item) => item.status === 'Anulado').length)} icon={RefreshCw} />
           </div>
-          <div className="overflow-x-auto rounded-2xl border border-white/10 bg-[#161C28]"><table className="min-w-full text-left text-sm"><thead className="bg-black/20 text-xs uppercase tracking-wider text-[#D4AF37]"><tr><th className="p-4">Cliente</th><th className="p-4">Fecha / concepto</th><th className="p-4">Programado</th><th className="p-4">Recibido</th><th className="p-4">Estado</th><th className="p-4">Comprobante</th><th className="p-4"></th></tr></thead><tbody className="divide-y divide-white/5">{snapshot.payments.map((payment) => { const client = snapshot.clients.find((item) => item.id === payment.clientId); return <tr key={payment.id}><td className="p-4">{client?.name || 'Cliente no localizado'}</td><td className="p-4"><div>{payment.date}</div><div className="text-xs text-gray-400">{payment.concept}</div></td><td className="p-4">{money(payment.plannedAmount)}</td><td className="p-4">{money(payment.receivedAmount)}</td><td className="p-4"><span className={payment.status === 'Liquidado' ? 'text-emerald-300' : payment.status === 'Pendiente' ? 'text-amber-300' : 'text-gray-400'}>{payment.status}</span></td><td className="p-4">{payment.receiptUrl ? <a href={payment.receiptUrl} target="_blank" rel="noreferrer" className="text-xs text-[#D4AF37]">Ver comprobante</a> : <span className="text-xs text-gray-500">Sin archivo</span>}</td><td className="p-4"><button onClick={() => { setPaymentDraft(payment); setPaymentReceipt(null); }} className="text-xs font-semibold text-[#D4AF37]">Editar</button></td></tr>; })}{!snapshot.payments.length && <tr><td colSpan={7} className="p-10 text-center text-gray-500">Aún no hay pagos en el historial. Los importes cobrados actuales se conservarán al registrar el primer movimiento de cada cliente.</td></tr>}</tbody></table></div>
+          <div className="overflow-x-auto rounded-2xl border border-white/10 bg-[#161C28]"><table className="min-w-full text-left text-sm"><thead className="bg-black/20 text-xs uppercase tracking-wider text-[#D4AF37]"><tr><th className="p-4">Cliente</th><th className="p-4">Pago</th><th className="p-4">Fecha / concepto</th><th className="p-4">Programado</th><th className="p-4">Recibido</th><th className="p-4">Estado</th><th className="p-4">Comprobante</th><th className="p-4"></th></tr></thead><tbody className="divide-y divide-white/5">{snapshot.payments.map((payment) => { const client = snapshot.clients.find((item) => item.id === payment.clientId); return <tr key={payment.id}><td className="p-4">{client?.name || 'Cliente no localizado'}</td><td className="p-4">{payment.installmentNumber ? `${payment.installmentNumber} de 3` : 'Histórico'}<div className="text-xs text-[#D4AF37]">{payment.percentage ? `${payment.percentage}%` : ''}</div></td><td className="p-4"><div>{payment.date}</div><div className="text-xs text-gray-400">{payment.concept}</div></td><td className="p-4">{money(payment.plannedAmount)}</td><td className="p-4">{money(payment.receivedAmount)}</td><td className="p-4"><span className={payment.status === 'Liquidado' ? 'text-emerald-300' : payment.status === 'Pendiente' ? 'text-amber-300' : 'text-gray-400'}>{payment.status}</span></td><td className="p-4">{payment.receiptUrl ? <a href={payment.receiptUrl} target="_blank" rel="noreferrer" className="text-xs text-[#D4AF37]">Ver comprobante</a> : <span className="text-xs text-gray-500">Sin archivo</span>}</td><td className="p-4"><button onClick={() => { setPaymentDraft(payment); setPaymentReceipt(null); }} className="text-xs font-semibold text-[#D4AF37]">Editar</button></td></tr>; })}{!snapshot.payments.length && <tr><td colSpan={8} className="p-10 text-center text-gray-500">Aún no hay pagos en el historial. Los importes cobrados actuales se conservarán al registrar el primer movimiento de cada cliente.</td></tr>}</tbody></table></div>
         </div>
       )}
 
@@ -506,13 +507,29 @@ const ExpenseForm = ({ draft, clients, onChange, onSubmit, onCancel, busy }: { d
 const PaymentForm = ({ draft, receipt, clients, contracts, onChange, onReceipt, onSubmit, onCancel, busy }: { draft: Partial<BusinessPayment>; receipt: File | null; clients: CrmClient[]; contracts: BusinessContract[]; onChange: (value: Partial<BusinessPayment>) => void; onReceipt: (file: File | null) => void; onSubmit: (event: React.FormEvent) => void; onCancel: () => void; busy: boolean }) => {
   const patch = (key: keyof BusinessPayment, value: unknown) => onChange({ ...draft, [key]: value, updatedAt: now() });
   const clientContracts = contracts.filter((contract) => contract.clientId === draft.clientId);
+  const selectedClient = clients.find((client) => client.id === draft.clientId);
+  const packageTotal = Number(selectedClient?.totalAmount || 0);
+  const applyInstallment = (installmentNumber: 1 | 2 | 3, percentage?: number) => {
+    const nextPercentage = percentage ?? (installmentNumber === 3 ? 40 : 30);
+    onChange({
+      ...draft,
+      installmentNumber,
+      percentage: nextPercentage,
+      concept: `Pago ${installmentNumber} de 3`,
+      plannedAmount: Number(((packageTotal * nextPercentage) / 100).toFixed(2)),
+      updatedAt: now(),
+    });
+  };
   return <form onSubmit={onSubmit} className="grid gap-3 rounded-2xl border border-[#D4AF37]/20 bg-[#161C28] p-5 sm:grid-cols-2 lg:grid-cols-4">
-    <select value={draft.clientId || ''} onChange={(e) => { const contract = contracts.find((item) => item.clientId === e.target.value); onChange({ ...draft, clientId: e.target.value, contractId: contract?.id || '' }); }} className={inputClass} required><option value="">Selecciona cliente</option>{clients.filter((client) => client.recordType === 'Cliente' || client.status === 'Contratado').map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select>
+    <select value={draft.clientId || ''} onChange={(e) => { const client = clients.find((item) => item.id === e.target.value); const contract = contracts.find((item) => item.clientId === e.target.value); const percentage = Number(draft.percentage || 30); onChange({ ...draft, clientId: e.target.value, contractId: contract?.id || '', plannedAmount: Number((((Number(client?.totalAmount) || 0) * percentage) / 100).toFixed(2)) }); }} className={inputClass} required><option value="">Selecciona cliente</option>{clients.filter((client) => client.recordType === 'Cliente' || client.status === 'Contratado').map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select>
     <select value={draft.contractId || ''} onChange={(e) => patch('contractId', e.target.value)} className={inputClass}><option value="">Sin contrato relacionado</option>{clientContracts.map((contract) => <option key={contract.id} value={contract.id}>{contract.folio}</option>)}</select>
+    <select value={draft.installmentNumber || 1} onChange={(e) => applyInstallment(Number(e.target.value) as 1 | 2 | 3)} className={inputClass} required><option value="1">Pago 1 de 3</option><option value="2">Pago 2 de 3</option><option value="3">Pago 3 de 3</option></select>
+    <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-gray-300"><input type="number" min="0.01" max="100" step="0.01" value={draft.percentage || 0} onChange={(e) => applyInstallment((draft.installmentNumber || 1) as 1 | 2 | 3, Number(e.target.value))} className="w-full bg-transparent py-2 outline-none" required /><span>%</span></label>
+    <div className="rounded-xl border border-[#D4AF37]/25 bg-[#D4AF37]/5 px-3 py-2 text-xs text-gray-300"><div>Paquete: <strong className="text-white">{money(packageTotal)}</strong></div><div>Este pago: <strong className="text-[#D4AF37]">{money(Number(draft.plannedAmount || 0))}</strong></div><div className="mt-1 text-gray-500">Sugerido: 30% · 30% · 40%</div></div>
     <input type="date" value={draft.date || today()} onChange={(e) => patch('date', e.target.value)} className={inputClass} required />
     <input type="date" value={draft.dueDate || ''} onChange={(e) => patch('dueDate', e.target.value)} className={inputClass} title="Fecha límite" />
     <input value={draft.concept || ''} onChange={(e) => patch('concept', e.target.value)} placeholder="Concepto: apartado, segundo pago, finiquito" className={inputClass} required />
-    <input type="number" min="0.01" step="0.01" value={draft.plannedAmount || 0} onChange={(e) => patch('plannedAmount', Number(e.target.value))} placeholder="Monto programado" className={inputClass} required />
+    <input type="number" min="0.01" step="0.01" value={draft.plannedAmount || 0} readOnly placeholder="Monto programado" className={`${inputClass} opacity-80`} required />
     <input type="number" min="0" step="0.01" value={draft.receivedAmount || 0} onChange={(e) => patch('receivedAmount', Number(e.target.value))} placeholder="Monto recibido" className={inputClass} />
     <select value={draft.status || 'Pendiente'} onChange={(e) => patch('status', e.target.value)} className={inputClass}><option>Pendiente</option><option>Liquidado</option><option>Anulado</option></select>
     <input value={draft.method || ''} onChange={(e) => patch('method', e.target.value)} placeholder="Método de pago" className={inputClass} />
