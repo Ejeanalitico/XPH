@@ -279,8 +279,8 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
   };
 
   const syncCalendar = async (client: CrmClient) => {
-    if (!dateValue(client.eventDate) || !timeValue(client.eventTime)) {
-      setModalNotice('Completa la fecha y el horario del evento antes de actualizar Calendar.');
+    if (!dateValue(client.eventDate) && !dateValue(client.preSessionDate)) {
+      setModalNotice('Completa la fecha del evento o de la sesión antes de actualizar Calendar.');
       return;
     }
     setBusy(true);
@@ -320,12 +320,28 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
     });
     try {
       const saved = await saveCrmClient(optimistic);
+      let confirmed = saved;
+      const calendarFields = ['eventDate', 'eventTime', 'eventLocation', 'preSessionApplies', 'preSessionDate', 'preSessionTime', 'preSessionLocation'];
+      const affectsCalendar = Object.keys(patch).some((key) => calendarFields.includes(key));
       setSnapshot((previous) => {
         const clients = previous.clients.map((item) => item.id === saved.id ? saved : item);
         cacheBusinessClients(clients);
         return { ...previous, clients };
       });
-      setModalNotice('Cambios guardados correctamente.');
+      if (affectsCalendar && (dateValue(saved.eventDate) || dateValue(saved.preSessionDate))) {
+        try {
+          confirmed = await syncClientCalendar(saved);
+        } catch (calendarError: any) {
+          setModalNotice(`Los cambios sí se guardaron en el CRM, pero Google Calendar no pudo actualizarse: ${calendarError?.message || 'error de sincronización'}`);
+          return;
+        }
+      }
+      setSnapshot((previous) => {
+        const clients = previous.clients.map((item) => item.id === confirmed.id ? confirmed : item);
+        cacheBusinessClients(clients);
+        return { ...previous, clients };
+      });
+      setModalNotice(affectsCalendar ? 'Cambios guardados y sincronizados con Google Calendar.' : 'Cambios guardados correctamente.');
     } catch (error: any) {
       setSnapshot((previous) => {
         const clients = previous.clients.map((item) => item.id === before.id ? before : item);
@@ -524,7 +540,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
             <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111722] shadow-2xl shadow-black/20">
               <div className="flex flex-col gap-3 border-b border-white/10 bg-[#161C28] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-3"><button onClick={() => { setSelectedClientId(''); setShowClientForm(false); }} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-gray-200 hover:bg-white/5">← Clientes</button><span className="inline-flex items-center gap-2 rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-3 py-2 text-xs text-emerald-200"><CheckCircle2 className="h-4 w-4" />{selectedClient.status}</span></div>
-                <div className="flex flex-wrap gap-2">{selectedClient.recordType === 'Prospecto' && <button onClick={convertSelectedProspect} disabled={busy} className="rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100">Convertir en cliente</button>}{selectedClient.recordType === 'Cliente' && (selectedClientPayments.length > 0 || Number(selectedClient.paidAmount || 0) > 0) && <button onClick={() => prepareNextPayment(selectedClient)} className="rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100">Registrar siguiente pago</button>}{selectedClientContract && <a href={adminContractPdfUrl(selectedClientContract.id, 'latest')} target="_blank" rel="noreferrer" className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm text-white">Ver contrato</a>}<button onClick={() => { setClientDraft(selectedClient); setShowClientForm(true); }} className="rounded-lg bg-[#D4AF37] px-4 py-2 text-sm font-bold text-black">Editar seguimiento</button>{selectedClient.recordType === 'Cliente' && <button onClick={() => syncCalendar(selectedClient)} disabled={busy || !dateValue(selectedClient.eventDate) || !timeValue(selectedClient.eventTime)} className="rounded-lg border border-sky-300/30 bg-sky-400/10 px-4 py-2 text-sm text-sky-100 disabled:border-white/10 disabled:bg-transparent disabled:text-gray-600">Actualizar Calendar</button>}</div>
+                <div className="flex flex-wrap gap-2">{selectedClient.recordType === 'Prospecto' && <button onClick={convertSelectedProspect} disabled={busy} className="rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100">Convertir en cliente</button>}{selectedClient.recordType === 'Cliente' && (selectedClientPayments.length > 0 || Number(selectedClient.paidAmount || 0) > 0) && <button onClick={() => prepareNextPayment(selectedClient)} className="rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100">Registrar siguiente pago</button>}{selectedClientContract && <a href={adminContractPdfUrl(selectedClientContract.id, 'latest')} target="_blank" rel="noreferrer" className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm text-white">Ver contrato</a>}<button onClick={() => { setClientDraft(selectedClient); setShowClientForm(true); }} className="rounded-lg bg-[#D4AF37] px-4 py-2 text-sm font-bold text-black">Editar seguimiento</button>{selectedClient.recordType === 'Cliente' && <button onClick={() => syncCalendar(selectedClient)} disabled={busy || (!dateValue(selectedClient.eventDate) && !dateValue(selectedClient.preSessionDate))} className="rounded-lg border border-sky-300/30 bg-sky-400/10 px-4 py-2 text-sm text-sky-100 disabled:border-white/10 disabled:bg-transparent disabled:text-gray-600">Actualizar Calendar</button>}</div>
               </div>
               {showInlinePayment && <div className="border-b border-white/10 p-5"><div className="mb-3 flex items-center justify-between"><h3 className="font-semibold text-white">Registrar siguiente pago de {selectedClient.name}</h3><button onClick={() => setShowInlinePayment(false)} className="text-xs text-gray-400">Cerrar</button></div><PaymentForm draft={paymentDraft} receipt={paymentReceipt} clients={snapshot.clients} contracts={snapshot.contracts} onChange={setPaymentDraft} onReceipt={setPaymentReceipt} onSubmit={savePayment} onCancel={() => { setPaymentDraft(blankPayment()); setPaymentReceipt(null); setShowInlinePayment(false); }} busy={busy} /></div>}
               {showClientForm ? <ClientForm draft={clientDraft} onChange={setClientDraft} onSubmit={saveClient} onCancel={() => setShowClientForm(false)} busy={busy} /> : <ClientDetails client={selectedClient} paid={paidForClient(selectedClient)} followUps={selectedFollowUps} followUpDraft={followUpDraft} onFollowUpChange={setFollowUpDraft} onFollowUpSubmit={saveFollowUp} onInlineSave={saveInlineClient} busy={busy} />}

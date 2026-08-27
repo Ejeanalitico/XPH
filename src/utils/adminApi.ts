@@ -233,7 +233,7 @@ export async function convertProspectToClient(prospectId: string): Promise<CrmCl
 }
 
 export async function syncClientCalendar(client: CrmClient): Promise<CrmClient> {
-  const data = await adminBusinessRequest<{ client: CrmClient }>('adminCalendarSync', { clientId: client.id, eventDate: client.eventDate, eventTime: client.eventTime });
+  const data = await adminBusinessRequest<{ client: CrmClient }>('adminCalendarSync', { clientId: client.id, eventDate: client.eventDate, eventTime: client.eventTime, preSessionDate: client.preSessionDate, preSessionTime: client.preSessionTime });
   return data.client;
 }
 
