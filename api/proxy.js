@@ -823,6 +823,9 @@ export default async function handler(req, res) {
         if (Number(payment.plannedAmount || 0) <= 0 || (payment.status === 'Liquidado' && Number(payment.receivedAmount || 0) <= 0)) {
           return res.status(400).json({ status: 'error', message: 'Revisa los montos programado y recibido.' });
         }
+        if (![1, 2, 3].includes(Number(payment.installmentNumber)) || Number(payment.percentage || 0) <= 0 || Number(payment.percentage || 0) > 100) {
+          return res.status(400).json({ status: 'error', message: 'Selecciona uno de los tres pagos y un porcentaje válido.' });
+        }
         if (payment.receiptBase64 && (!['image/jpeg', 'image/png', 'application/pdf'].includes(String(payment.receiptMimeType || '')) || String(payment.receiptBase64).length > 3_600_000)) {
           return res.status(400).json({ status: 'error', message: 'El comprobante debe ser JPG, PNG o PDF y pesar máximo 2.6 MB.' });
         }
