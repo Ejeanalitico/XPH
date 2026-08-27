@@ -743,17 +743,27 @@ function calendarDateTime(dateValue, timeValue) {
   return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), Number(time[0]), Number(time[1]), 0, 0);
 }
 
+function calendarDateOnly(dateValue) {
+  var parts = String(dateValue || '').split('-');
+  if (parts.length !== 3) throw new Error('La fecha es necesaria para Calendar.');
+  return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 0, 0, 0, 0);
+}
+
 function authorizeCalendarIntegration() {
   return CalendarApp.getDefaultCalendar().getName();
 }
 
-function upsertClientCalendarEvent(calendar, eventId, title, start, durationHours, location, description, guestEmail) {
+function upsertClientCalendarEvent(calendar, eventId, title, start, durationHours, location, description, guestEmail, allDay) {
   var event = eventId ? calendar.getEventById(eventId) : null;
   var end = new Date(start.getTime() + Math.max(0.5, Number(durationHours) || 1) * 60 * 60 * 1000);
   if (event) {
-    event.setTitle(title).setTime(start, end).setLocation(location || '').setDescription(description || '');
+    event.setTitle(title).setLocation(location || '').setDescription(description || '');
+    if (allDay) event.setAllDayDate(start);
+    else event.setTime(start, end);
   } else {
-    event = calendar.createEvent(title, start, end, { location: location || '', description: description || '' });
+    event = allDay
+      ? calendar.createAllDayEvent(title, start, { location: location || '', description: description || '' })
+      : calendar.createEvent(title, start, end, { location: location || '', description: description || '' });
   }
   event.removeAllReminders();
   event.addPopupReminder(10080);
@@ -909,23 +919,28 @@ function handleBusinessAction(ss, action, payload) {
   if (action === 'calendarSync') {
     var calendarClient = findBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, payload.clientId);
     if (!calendarClient) throw new Error('Cliente no localizado.');
-    if (!calendarClient.eventDate || !calendarClient.eventTime) throw new Error('Registra la fecha y hora del evento antes de sincronizar.');
+    var eventReady = Boolean(calendarClient.eventDate);
+    var sessionReady = Boolean(calendarClient.preSessionApplies && calendarClient.preSessionDate);
+    if (!eventReady && !sessionReady) throw new Error('Registra al menos la fecha del evento o de la sesión antes de sincronizar.');
     var calendar = CalendarApp.getDefaultCalendar();
     var guest = calendarClient.inviteClientToCalendar && calendarClient.email ? calendarClient.email : '';
-    var eventStart = calendarDateTime(calendarClient.eventDate, calendarClient.eventTime);
     var eventTitle = 'XPH · ' + (calendarClient.eventType || 'Evento') + ' · ' + (calendarClient.name || calendarClient.honoreeName || 'Cliente');
     var eventDescription = 'Cliente: ' + (calendarClient.name || '') + '\nTeléfono: ' + (calendarClient.phone || '') + '\nPaquete: ' + (calendarClient.packageName || 'Por confirmar') + '\nContrato: ' + (calendarClient.contractId || 'Pendiente');
-    var mainEvent = upsertClientCalendarEvent(calendar, calendarClient.calendarEventId, eventTitle, eventStart, calendarClient.serviceHours || 1, calendarClient.eventLocation, eventDescription, guest);
-    calendarClient.calendarEventId = mainEvent.getId();
-    if (calendarClient.preSessionApplies) {
-      if (!calendarClient.preSessionDate || !calendarClient.preSessionTime) throw new Error('Completa fecha y hora de la sesión previa.');
-      var sessionStart = calendarDateTime(calendarClient.preSessionDate, calendarClient.preSessionTime);
-      var sessionEvent = upsertClientCalendarEvent(calendar, calendarClient.preSessionCalendarEventId, 'XPH · Sesión previa · ' + (calendarClient.name || 'Cliente'), sessionStart, 2, calendarClient.preSessionLocation, eventDescription, guest);
+    if (eventReady) {
+      var eventAllDay = !calendarClient.eventTime;
+      var eventStart = eventAllDay ? calendarDateOnly(calendarClient.eventDate) : calendarDateTime(calendarClient.eventDate, calendarClient.eventTime);
+      var mainEvent = upsertClientCalendarEvent(calendar, calendarClient.calendarEventId, eventTitle, eventStart, calendarClient.serviceHours || 1, calendarClient.eventLocation, eventDescription, guest, eventAllDay);
+      calendarClient.calendarEventId = mainEvent.getId();
+    }
+    if (sessionReady) {
+      var sessionAllDay = !calendarClient.preSessionTime;
+      var sessionStart = sessionAllDay ? calendarDateOnly(calendarClient.preSessionDate) : calendarDateTime(calendarClient.preSessionDate, calendarClient.preSessionTime);
+      var sessionEvent = upsertClientCalendarEvent(calendar, calendarClient.preSessionCalendarEventId, 'XPH · Sesión previa · ' + (calendarClient.name || 'Cliente'), sessionStart, 2, calendarClient.preSessionLocation, eventDescription, guest, sessionAllDay);
       calendarClient.preSessionCalendarEventId = sessionEvent.getId();
     }
     calendarClient.updatedAt = businessNow();
     upsertBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, calendarClient);
-    logAudit(ss, 'CALENDARIO_SINCRONIZADO', eventTitle, calendarClient.id, 'Admin XPH');
+    logAudit(ss, 'CALENDARIO_SINCRONIZADO', eventTitle + (sessionReady ? ' + sesión previa' : ''), calendarClient.id, 'Admin XPH');
     return { status: 'success', client: calendarClient };
   }
 

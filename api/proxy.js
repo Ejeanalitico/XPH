@@ -852,8 +852,10 @@ export default async function handler(req, res) {
       if (action === 'adminCalendarSync') {
         const clientId = String(submitted.clientId || '').trim();
         if (!clientId) return res.status(400).json({ status: 'error', message: 'Cliente no identificado.' });
-        if (!/^\d{4}-\d{2}-\d{2}/.test(String(submitted.eventDate || '')) || !/^\d{2}:\d{2}/.test(String(submitted.eventTime || ''))) {
-          return res.status(400).json({ status: 'error', message: 'Completa una fecha y un horario válidos antes de actualizar Calendar.' });
+        const eventReady = /^\d{4}-\d{2}-\d{2}/.test(String(submitted.eventDate || ''));
+        const sessionReady = /^\d{4}-\d{2}-\d{2}/.test(String(submitted.preSessionDate || ''));
+        if (!eventReady && !sessionReady) {
+          return res.status(400).json({ status: 'error', message: 'Completa la fecha del evento o de la sesión antes de actualizar Calendar.' });
         }
         try {
           const result = await forwardBusinessAction('calendarSync', { clientId });
