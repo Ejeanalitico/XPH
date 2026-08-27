@@ -808,6 +808,9 @@ export default async function handler(req, res) {
       if (action === 'adminCalendarSync') {
         const clientId = String(submitted.clientId || '').trim();
         if (!clientId) return res.status(400).json({ status: 'error', message: 'Cliente no identificado.' });
+        if (!/^\d{4}-\d{2}-\d{2}/.test(String(submitted.eventDate || '')) || !/^\d{2}:\d{2}/.test(String(submitted.eventTime || ''))) {
+          return res.status(400).json({ status: 'error', message: 'Completa una fecha y un horario válidos antes de actualizar Calendar.' });
+        }
         try {
           const result = await forwardBusinessAction('calendarSync', { clientId });
           return res.status(200).json({ status: 'success', client: result.client });

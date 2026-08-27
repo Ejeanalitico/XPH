@@ -208,8 +208,8 @@ export async function saveCrmClient(client: Partial<CrmClient>): Promise<CrmClie
   return data.client;
 }
 
-export async function syncClientCalendar(clientId: string): Promise<CrmClient> {
-  const data = await adminBusinessRequest<{ client: CrmClient }>('adminCalendarSync', { clientId });
+export async function syncClientCalendar(client: CrmClient): Promise<CrmClient> {
+  const data = await adminBusinessRequest<{ client: CrmClient }>('adminCalendarSync', { clientId: client.id, eventDate: client.eventDate, eventTime: client.eventTime });
   return data.client;
 }
 
