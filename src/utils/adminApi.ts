@@ -403,12 +403,20 @@ export async function uploadBusinessContract(input: {
   const initialized = await adminBusinessRequest<{ uploadUrl: string }>('adminContractUploadInit', {
     filename: input.file.name, mimeType: input.file.type || 'application/pdf', size: input.file.size,
   });
-  const uploadResponse = await fetch(initialized.uploadUrl, { method: 'PUT', headers: { 'Content-Type': input.file.type || 'application/pdf' }, body: input.file });
-  if (!uploadResponse.ok) throw new Error(`Google Drive no pudo recibir el contrato (HTTP ${uploadResponse.status}).`);
-  const uploaded = await uploadResponse.json().catch(() => ({}));
-  if (!uploaded.id) throw new Error('Google Drive no devolvió el identificador del contrato.');
+  const uploadResponse = await fetch('/api/proxy?action=adminContractUploadBody', {
+    method: 'POST',
+    headers: {
+      'Content-Type': input.file.type || 'application/pdf',
+      'X-XPH-Upload-Url': initialized.uploadUrl,
+    },
+    credentials: 'include',
+    cache: 'no-store',
+    body: input.file,
+  });
+  const uploaded = await parseResponse(uploadResponse);
+  if (!uploaded.fileId) throw new Error('Google Drive no devolvió el identificador del contrato.');
   const finalized = await adminBusinessRequest<{ contract: BusinessContract }>('adminContractUploadFinalize', { contract: {
-    fileId: uploaded.id, clientId: input.clientId, clientName: input.clientName, folio: input.folio, eventType: input.eventType, eventDate: input.eventDate,
+    fileId: uploaded.fileId, clientId: input.clientId, clientName: input.clientName, folio: input.folio, eventType: input.eventType, eventDate: input.eventDate,
   } });
   return finalized.contract;
 }
