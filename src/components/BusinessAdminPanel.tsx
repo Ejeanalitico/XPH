@@ -222,6 +222,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session }) => {
   const [calendarView, setCalendarView] = useState<'month' | 'week' | 'day' | 'upcoming'>('month');
   const [showMiniCalendar, setShowMiniCalendar] = useState(false);
   const [modalNotice, setModalNotice] = useState('');
+  const [notificationPendingId, setNotificationPendingId] = useState('');
   const [followUpDraft, setFollowUpDraft] = useState<Partial<CrmFollowUp>>({ occurredAt: now(), conversation: '', result: '', nextAction: '', nextActionAt: '' });
   const [internalEventDraft, setInternalEventDraft] = useState<Partial<InternalCalendarEvent> | null>(null);
 
@@ -383,10 +384,16 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session }) => {
   };
 
   const readNotification = async (notificationId: string) => {
+    if (notificationPendingId) return;
+    setNotificationPendingId(notificationId);
     try {
       const saved = await markNotification(notificationId, 'LEIDA');
       setSnapshot((current) => ({ ...current, notifications: current.notifications.map((item) => item.id === saved.id ? saved : item) }));
-    } catch (error: any) { setModalNotice(error?.message || 'No se pudo actualizar la notificación.'); }
+    } catch (error: any) {
+      setModalNotice(error?.message || 'No se pudo actualizar la notificación.');
+    } finally {
+      setNotificationPendingId('');
+    }
   };
 
   const syncCalendar = async (client: CrmClient) => {
@@ -693,7 +700,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session }) => {
 
       {tab === 'overview' && (
         <div className="space-y-5">
-          {snapshot.notifications.some((item) => item.status === 'PENDIENTE') && <section className="rounded-2xl border border-amber-400/25 bg-amber-400/5 p-5"><div className="flex items-center justify-between gap-3"><div><h3 className="font-semibold text-amber-100">Notificaciones pendientes</h3><p className="mt-1 text-xs text-amber-100/60">Seguimientos, pagos, eventos, sesiones, personal y sincronización.</p></div><span className="rounded-full bg-amber-300 px-3 py-1 text-xs font-bold text-black">{snapshot.notifications.filter((item) => item.status === 'PENDIENTE').length}</span></div><div className="mt-4 grid gap-2 lg:grid-cols-2">{snapshot.notifications.filter((item) => item.status === 'PENDIENTE').slice(0, 8).map((item) => <button key={item.id} onClick={() => readNotification(item.id)} className="rounded-xl border border-white/10 bg-[#161C28] p-3 text-left hover:bg-white/5"><div className="flex items-start justify-between gap-3"><span className="font-semibold text-white">{item.title}</span><span className="text-[10px] uppercase text-gray-500">Marcar leída</span></div><p className="mt-1 text-xs text-gray-300">{item.message}</p>{item.dueAt && <p className="mt-1 text-[11px] text-amber-200">{dateTimeDisplay(item.dueAt)}</p>}</button>)}</div></section>}
+          {snapshot.notifications.some((item) => item.status === 'PENDIENTE') && <section className="rounded-2xl border border-amber-400/25 bg-amber-400/5 p-5"><div className="flex items-center justify-between gap-3"><div><h3 className="font-semibold text-amber-100">Notificaciones pendientes</h3><p className="mt-1 text-xs text-amber-100/60">Seguimientos, pagos, eventos, sesiones, personal y sincronización.</p></div><span className="rounded-full bg-amber-300 px-3 py-1 text-xs font-bold text-black">{snapshot.notifications.filter((item) => item.status === 'PENDIENTE').length}</span></div><div className="mt-4 grid gap-2 lg:grid-cols-2">{snapshot.notifications.filter((item) => item.status === 'PENDIENTE').slice(0, 8).map((item) => <button key={item.id} type="button" disabled={Boolean(notificationPendingId)} onClick={() => readNotification(item.id)} className="rounded-xl border border-white/10 bg-[#161C28] p-3 text-left hover:bg-white/5 disabled:cursor-wait disabled:opacity-60"><div className="flex items-start justify-between gap-3"><span className="font-semibold text-white">{item.title}</span><span className="text-[10px] uppercase text-gray-500">{notificationPendingId === item.id ? 'Guardando…' : 'Marcar leída'}</span></div><p className="mt-1 text-xs text-gray-300">{item.message}</p>{item.dueAt && <p className="mt-1 text-[11px] text-amber-200">{dateTimeDisplay(item.dueAt)}</p>}</button>)}</div></section>}
           <div className="grid gap-4 xl:grid-cols-4"><DashboardGroup title="Comercial" rows={[['Prospectos activos', dashboardStats.prospectsActive], ['Seguimientos de hoy', dashboardStats.followUpsToday], ['Seguimientos vencidos', dashboardStats.followUpsOverdue], ['Por cerrar', dashboardStats.prospectsClosing]]} /><DashboardGroup title="Clientes" rows={[['Clientes activos', dashboardStats.clientsActive], ['Próximos eventos', dashboardStats.upcomingEvents], ['Sesiones pendientes', dashboardStats.sessionsPending], ['Servicios pendientes', dashboardStats.servicesPending]]} /><DashboardGroup title="Pagos" rows={[['Cobrado', money(financials.collected)], ['Por cobrar', money(financials.receivable)], ['Pagos vencidos', money(financials.overdueAmount)], ['Próximos pagos', snapshot.payments.filter((item) => { const diff = dayDifference(item.dueDate); return pendingPaymentAmount(item) > 0 && diff >= 0 && diff <= 7; }).length]]} /><DashboardGroup title="Calendario" rows={[['Eventos de hoy', dashboardStats.eventsToday], ['Esta semana', dashboardStats.eventsWeek], ['Próximos eventos', dashboardStats.upcomingEvents], ['Conflictos', dashboardStats.conflicts]]} /></div>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <Metric label="Bote acumulado cobrado" value={money(financials.collected)} icon={BadgeDollarSign} />
