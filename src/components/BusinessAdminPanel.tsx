@@ -45,6 +45,7 @@ const emptySnapshot: BusinessSnapshot = { clients: [], expenses: [], payments: [
 const today = () => new Date().toISOString().slice(0, 10);
 const now = () => new Date().toISOString();
 const dateValue = (value?: string) => String(value || '').slice(0, 10);
+const timeValue = (value?: string) => /^\d{2}:\d{2}/.test(String(value || '')) ? String(value).slice(0, 5) : '';
 const money = (value: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(Number(value) || 0);
 
 const blankClient = (): Partial<CrmClient> => ({
@@ -260,13 +261,13 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
   };
 
   const syncCalendar = async (client: CrmClient) => {
-    if (!dateValue(client.eventDate) || !client.eventTime) {
+    if (!dateValue(client.eventDate) || !timeValue(client.eventTime)) {
       notify('Completa la fecha y el horario del evento antes de actualizar Calendar.');
       return;
     }
     setBusy(true);
     try {
-      const saved = await syncClientCalendar(client.id);
+      const saved = await syncClientCalendar(client);
       setSnapshot((prev) => ({ ...prev, clients: prev.clients.map((item) => item.id === saved.id ? saved : item) }));
       notify('Evento y sesión previa sincronizados con Google Calendar.');
     } catch (error: any) { notify(error?.message || 'No se pudo sincronizar Google Calendar.'); }
@@ -423,8 +424,8 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
           {selectedClient ? (
             <div className="space-y-4">
               <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-[#161C28] p-5 sm:flex-row sm:items-center sm:justify-between">
-                <div><button onClick={() => { setSelectedClientId(''); setShowClientForm(false); }} className="mb-3 text-xs text-[#D4AF37]">← Volver a clientes</button><h3 className="text-xl font-bold">{selectedClient.name || 'Cliente sin nombre'}</h3><p className="mt-1 text-sm text-gray-400">{selectedClient.eventType || 'Evento por confirmar'} · {dateValue(selectedClient.eventDate) || 'Sin fecha'} · {selectedClient.eventTime || 'Sin horario'}</p></div>
-                <div className="flex flex-wrap gap-2"><button onClick={() => { setClientDraft(selectedClient); setShowClientForm(true); }} className="rounded-xl bg-[#D4AF37] px-4 py-2.5 text-sm font-bold text-black">Editar detalles</button><button onClick={() => syncCalendar(selectedClient)} disabled={busy || !dateValue(selectedClient.eventDate) || !selectedClient.eventTime} className="rounded-xl border border-sky-400/30 px-4 py-2.5 text-sm text-sky-200 disabled:border-white/10 disabled:text-gray-600">Actualizar Calendar</button></div>
+                <div><button onClick={() => { setSelectedClientId(''); setShowClientForm(false); }} className="mb-3 text-xs text-[#D4AF37]">← Volver a clientes</button><h3 className="text-xl font-bold">{selectedClient.name || 'Cliente sin nombre'}</h3><p className="mt-1 text-sm text-gray-400">{selectedClient.eventType || 'Evento por confirmar'} · {dateValue(selectedClient.eventDate) || 'Sin fecha'} · {timeValue(selectedClient.eventTime) || 'Sin horario'}</p></div>
+                <div className="flex flex-wrap gap-2"><button onClick={() => { setClientDraft(selectedClient); setShowClientForm(true); }} className="rounded-xl bg-[#D4AF37] px-4 py-2.5 text-sm font-bold text-black">Editar detalles</button><button onClick={() => syncCalendar(selectedClient)} disabled={busy || !dateValue(selectedClient.eventDate) || !timeValue(selectedClient.eventTime)} className="rounded-xl border border-sky-400/30 px-4 py-2.5 text-sm text-sky-200 disabled:border-white/10 disabled:text-gray-600">Actualizar Calendar</button></div>
               </div>
               {showClientForm ? <ClientForm draft={clientDraft} onChange={setClientDraft} onSubmit={saveClient} onCancel={() => setShowClientForm(false)} busy={busy} /> : <ClientDetails client={selectedClient} paid={paidForClient(selectedClient)} />}
             </div>
@@ -458,7 +459,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
         <div className="space-y-4">
           <div className="rounded-2xl border border-white/10 bg-[#161C28] p-5"><h3 className="text-xl font-bold">Calendario de clientes</h3><p className="mt-1 text-sm text-gray-400">Selecciona un evento para abrir el expediente, completar datos o editarlo.</p></div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {calendarClients.map((client) => <button key={client.id} onClick={() => openClientDetails(client)} className="rounded-2xl border border-white/10 bg-[#161C28] p-5 text-left transition hover:border-[#D4AF37]/50"><div className="flex items-start justify-between gap-3"><div><div className="text-xs font-semibold uppercase tracking-wider text-[#D4AF37]">{dateValue(client.eventDate)} · {client.eventTime || 'Horario pendiente'}</div><h4 className="mt-2 font-bold text-white">{client.name || 'Cliente sin nombre'}</h4><p className="mt-1 text-sm text-gray-400">{client.eventType || 'Evento'} · {client.eventLocation || 'Lugar pendiente'}</p></div><CalendarDays className="h-5 w-5 shrink-0 text-[#D4AF37]" /></div><div className={`mt-4 text-xs ${client.eventTime ? 'text-emerald-300' : 'text-amber-300'}`}>{client.eventTime ? 'Listo para sincronizar' : 'Falta registrar el horario'}</div></button>)}
+            {calendarClients.map((client) => { const eventTime = timeValue(client.eventTime); return <button key={client.id} onClick={() => openClientDetails(client)} className="rounded-2xl border border-white/10 bg-[#161C28] p-5 text-left transition hover:border-[#D4AF37]/50"><div className="flex items-start justify-between gap-3"><div><div className="text-xs font-semibold uppercase tracking-wider text-[#D4AF37]">{dateValue(client.eventDate)} · {eventTime || 'Horario pendiente'}</div><h4 className="mt-2 font-bold text-white">{client.name || 'Cliente sin nombre'}</h4><p className="mt-1 text-sm text-gray-400">{client.eventType || 'Evento'} · {client.eventLocation || 'Lugar pendiente'}</p></div><CalendarDays className="h-5 w-5 shrink-0 text-[#D4AF37]" /></div><div className={`mt-4 text-xs ${eventTime ? 'text-emerald-300' : 'text-amber-300'}`}>{eventTime ? 'Listo para sincronizar' : 'Falta registrar el horario'}</div></button>; })}
             {!calendarClients.length && <div className="rounded-2xl border border-white/10 bg-[#161C28] p-10 text-center text-gray-500 md:col-span-2 xl:col-span-3">No hay clientes con fecha de evento registrada.</div>}
           </div>
         </div>
@@ -515,7 +516,7 @@ const FinancialRow = ({ label, value, detail }: { label: string; value: number; 
 const ClientDetails = ({ client, paid }: { client: CrmClient; paid: number }) => {
   const rows = [
     ['Teléfono', client.phone], ['Correo', client.email], ['Festejado(s) / pareja', client.honoreeName], ['Domicilio', client.address],
-    ['Evento', client.eventType], ['Fecha y horario', `${dateValue(client.eventDate) || 'Pendiente'} · ${client.eventTime || 'Pendiente'}`],
+    ['Evento', client.eventType], ['Fecha y horario', `${dateValue(client.eventDate) || 'Pendiente'} · ${timeValue(client.eventTime) || 'Pendiente'}`],
     ['Lugar', client.eventLocation], ['Paquete', client.packageName], ['Cobertura', client.serviceHours ? `${client.serviceHours} horas` : 'Pendiente'],
     ['Total', money(client.totalAmount)], ['Pagado', money(paid)], ['Por cobrar', money(Math.max(0, Number(client.totalAmount || 0) - paid))],
     ['Próxima acción', client.nextAction], ['Fecha de seguimiento', client.nextActionAt], ['Fuente', client.source], ['Campaña', client.campaign],
@@ -535,7 +536,7 @@ const ClientForm = ({ draft, onChange, onSubmit, onCancel, busy }: { draft: Part
     <input value={draft.address || ''} onChange={(e) => patch('address', e.target.value)} placeholder="Domicilio del contratante" className={inputClass} />
     <input value={draft.eventType || ''} onChange={(e) => patch('eventType', e.target.value)} placeholder="Tipo de evento" className={inputClass} />
     <input type="date" value={dateValue(draft.eventDate)} onChange={(e) => patch('eventDate', e.target.value)} className={inputClass} />
-    <input type="time" value={draft.eventTime || ''} onChange={(e) => patch('eventTime', e.target.value)} className={inputClass} />
+    <input type="time" value={timeValue(draft.eventTime)} onChange={(e) => patch('eventTime', e.target.value)} className={inputClass} />
     <input type="number" min="0" step="0.5" value={draft.serviceHours || 0} onChange={(e) => patch('serviceHours', Number(e.target.value))} placeholder="Horas de cobertura" className={inputClass} />
     <input value={draft.eventLocation || ''} onChange={(e) => patch('eventLocation', e.target.value)} placeholder="Lugar del evento" className={inputClass} />
     <input value={draft.packageName || ''} onChange={(e) => patch('packageName', e.target.value)} placeholder="Paquete" className={inputClass} />
