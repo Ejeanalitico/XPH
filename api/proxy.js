@@ -1051,7 +1051,7 @@ export default async function handler(req, res) {
         const mimeType = String(req.headers?.['content-type'] || '').split(';')[0].trim().toLowerCase();
         const totalSize = Number(req.headers?.['x-xph-upload-size'] || 0);
         const chunkStart = Number(req.headers?.['x-xph-upload-start'] || 0);
-        const maxChunkBytes = 1_000_000;
+        const maxChunkBytes = 1_048_576;
         const uploadRules = {
           contract: { maxBytes: 5_000_000, validMime: mimeType === 'application/pdf' },
           logo: { maxBytes: 5_000_000, validMime: ['image/png', 'image/jpeg', 'image/webp'].includes(mimeType) },
