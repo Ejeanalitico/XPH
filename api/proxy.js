@@ -769,7 +769,10 @@ export default async function handler(req, res) {
     }
 
     const adminBusinessActions = [
+      'adminBusinessClients',
       'adminBusinessSnapshot',
+      'adminUploadInit',
+      'adminUploadFinalize',
       'adminCrmUpsert',
       'adminCalendarSync',
       'adminExpenseUpsert',
@@ -790,6 +793,31 @@ export default async function handler(req, res) {
       if (action === 'adminBusinessSnapshot') {
         const result = await forwardBusinessAction('businessSnapshot');
         return res.status(200).json({ status: 'success', snapshot: result.snapshot });
+      }
+      if (action === 'adminBusinessClients') {
+        const result = await forwardBusinessAction('businessClients');
+        return res.status(200).json({ status: 'success', clients: Array.isArray(result.clients) ? result.clients : [] });
+      }
+      if (action === 'adminUploadInit') {
+        const filename = String(submitted.filename || '').trim().slice(0, 180);
+        const mimeType = String(submitted.mimeType || '').trim().toLowerCase();
+        const size = Number(submitted.size || 0);
+        if (!filename || !mimeType.startsWith('image/') || size <= 0 || size > 100_000_000) {
+          return res.status(400).json({ status: 'error', message: 'La fotografía debe ser válida y pesar máximo 100 MB.' });
+        }
+        const result = await forwardBusinessAction('uploadInit', { filename, mimeType, size });
+        return res.status(200).json({ status: 'success', uploadUrl: result.uploadUrl });
+      }
+      if (action === 'adminUploadFinalize') {
+        const fileId = String(submitted.fileId || '').trim().slice(0, 100);
+        if (!fileId) return res.status(400).json({ status: 'error', message: 'No se recibió el archivo cargado.' });
+        const result = await forwardBusinessAction('uploadFinalize', {
+          fileId,
+          title: String(submitted.title || '').slice(0, 180),
+          category: String(submitted.category || '').slice(0, 80),
+          location: String(submitted.location || '').slice(0, 180),
+        });
+        return res.status(200).json({ status: 'success', fileId: result.fileId, url: result.url, driveUrl: result.driveUrl });
       }
       if (action === 'adminCrmUpsert') {
         const client = submitted.client || {};
