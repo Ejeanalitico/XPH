@@ -60,10 +60,7 @@ function getDatabaseSpreadsheet() {
     if (SPREADSHEET_ID) {
       try {
         var ssById = SpreadsheetApp.openById(SPREADSHEET_ID);
-        if (ssById) {
-          initSpreadsheetSheets(ssById);
-          return ssById;
-        }
+        if (ssById) return ssById;
       } catch (eId) {
         Logger.log('Spreadsheet openById notice: ' + eId);
       }
@@ -74,10 +71,7 @@ function getDatabaseSpreadsheet() {
     if (legacySpreadsheetMatch && legacySpreadsheetMatch[1]) {
       try {
         var ssByLegacyUrl = SpreadsheetApp.openById(legacySpreadsheetMatch[1]);
-        if (ssByLegacyUrl) {
-          initSpreadsheetSheets(ssByLegacyUrl);
-          return ssByLegacyUrl;
-        }
+        if (ssByLegacyUrl) return ssByLegacyUrl;
       } catch (eLegacy) {
         Logger.log('Spreadsheet legacy URL notice: ' + eLegacy);
       }
@@ -92,20 +86,20 @@ function getDatabaseSpreadsheet() {
 
     var files = folder.getFilesByName(SPREADSHEET_NAME);
     var ss = null;
+    var createdSpreadsheet = false;
 
     if (files.hasNext()) {
       ss = SpreadsheetApp.open(files.next());
     } else {
       ss = SpreadsheetApp.create(SPREADSHEET_NAME);
+      createdSpreadsheet = true;
       var file = DriveApp.getFileById(ss.getId());
       folder.addFile(file);
       try { DriveApp.getRootFolder().removeFile(file); } catch (_) {}
       // La base de datos permanece privada. La web accede únicamente mediante el proxy autenticado.
     }
 
-    if (ss) {
-      initSpreadsheetSheets(ss);
-    }
+    if (ss && createdSpreadsheet) initSpreadsheetSheets(ss);
     return ss;
   } catch (e) {
     Logger.log('Spreadsheet error: ' + e);
@@ -125,7 +119,7 @@ function initSpreadsheetSheets(ss) {
       'Galeria_Fotos': ['ID_Foto', 'Titulo', 'Categoria', 'URL_Google_Drive', 'Ubicacion', 'Fecha_Carga', 'Estado'],
       'Cotizaciones_Citas': ['ID_Cotizacion', 'Fecha_Registro', 'Cliente', 'Email', 'WhatsApp', 'Evento', 'Paquete', 'Total_MXN', 'Pago_Inicial_MXN', 'Saldo_Pendiente_MXN', 'Fecha_Evento', 'Ciudad', 'Estado_Cotizacion', 'Notas'],
       'Paquetes_Precios': ['Categoria', 'ID_Paquete', 'Nombre_Paquete', 'Precio_Base_MXN', 'Precio_Final_Por_Confirmar', 'Insignia_Badge', 'Descripcion', 'Que_Incluye', 'No_Incluye', 'Ultima_Modificacion'],
-      'CRM_Clientes': ['id', 'recordType', 'name', 'phone', 'email', 'eventType', 'eventDate', 'eventLocation', 'packageName', 'totalAmount', 'paidAmount', 'status', 'source', 'firstContactAt', 'lastContactAt', 'nextAction', 'nextActionAt', 'notes', 'contractId', 'createdAt', 'updatedAt', 'honoreeName', 'address', 'eventTime', 'serviceHours', 'campaign', 'objection', 'followUpAttempts', 'suggestedMessage', 'lossReason', 'estimatedCost', 'allocatedAdCost'],
+      'CRM_Clientes': ['id', 'recordType', 'name', 'phone', 'email', 'eventType', 'eventDate', 'eventLocation', 'packageName', 'totalAmount', 'paidAmount', 'status', 'source', 'firstContactAt', 'lastContactAt', 'nextAction', 'nextActionAt', 'notes', 'contractId', 'createdAt', 'updatedAt', 'honoreeName', 'address', 'eventTime', 'serviceHours', 'campaign', 'objection', 'followUpAttempts', 'suggestedMessage', 'lossReason', 'estimatedCost', 'allocatedAdCost', 'preSessionApplies', 'preSessionDate', 'preSessionTime', 'preSessionLocation', 'inviteClientToCalendar', 'calendarEventId', 'preSessionCalendarEventId'],
       'Gastos': ['id', 'date', 'category', 'subcategory', 'concept', 'supplier', 'paymentMethod', 'paymentStatus', 'amount', 'notes', 'createdAt', 'updatedAt', 'relatedClientId', 'receiptReference', 'account'],
       'Pagos_Clientes': ['id', 'clientId', 'contractId', 'transactionId', 'date', 'dueDate', 'concept', 'plannedAmount', 'receivedAmount', 'status', 'method', 'reference', 'notes', 'receiptFileId', 'receiptFileName', 'createdAt', 'updatedAt', 'installmentNumber', 'percentage'],
       'Contratos': ['id', 'clientId', 'clientName', 'folio', 'eventType', 'eventDate', 'status', 'originalFileName', 'originalFileId', 'clientSignedFileId', 'finalFileId', 'signatureFileId', 'tokenHash', 'tokenExpiresAt', 'tokenStatus', 'sentAt', 'viewedAt', 'acceptedAt', 'clientSignedAt', 'ownerAuthorizedAt', 'documentHash', 'signedDocumentHash', 'finalDocumentHash', 'signerIp', 'signerUserAgent', 'consentText', 'createdAt', 'updatedAt'],
@@ -461,7 +455,7 @@ function loadActiveConfig() {
 }
 
 var BUSINESS_HEADERS = {
-  clients: ['id', 'recordType', 'name', 'phone', 'email', 'eventType', 'eventDate', 'eventLocation', 'packageName', 'totalAmount', 'paidAmount', 'status', 'source', 'firstContactAt', 'lastContactAt', 'nextAction', 'nextActionAt', 'notes', 'contractId', 'createdAt', 'updatedAt', 'honoreeName', 'address', 'eventTime', 'serviceHours', 'campaign', 'objection', 'followUpAttempts', 'suggestedMessage', 'lossReason', 'estimatedCost', 'allocatedAdCost'],
+  clients: ['id', 'recordType', 'name', 'phone', 'email', 'eventType', 'eventDate', 'eventLocation', 'packageName', 'totalAmount', 'paidAmount', 'status', 'source', 'firstContactAt', 'lastContactAt', 'nextAction', 'nextActionAt', 'notes', 'contractId', 'createdAt', 'updatedAt', 'honoreeName', 'address', 'eventTime', 'serviceHours', 'campaign', 'objection', 'followUpAttempts', 'suggestedMessage', 'lossReason', 'estimatedCost', 'allocatedAdCost', 'preSessionApplies', 'preSessionDate', 'preSessionTime', 'preSessionLocation', 'inviteClientToCalendar', 'calendarEventId', 'preSessionCalendarEventId'],
   expenses: ['id', 'date', 'category', 'subcategory', 'concept', 'supplier', 'paymentMethod', 'paymentStatus', 'amount', 'notes', 'createdAt', 'updatedAt', 'relatedClientId', 'receiptReference', 'account'],
   payments: ['id', 'clientId', 'contractId', 'transactionId', 'date', 'dueDate', 'concept', 'plannedAmount', 'receivedAmount', 'status', 'method', 'reference', 'notes', 'receiptFileId', 'receiptFileName', 'createdAt', 'updatedAt', 'installmentNumber', 'percentage'],
   contracts: ['id', 'clientId', 'clientName', 'folio', 'eventType', 'eventDate', 'status', 'originalFileName', 'originalFileId', 'clientSignedFileId', 'finalFileId', 'signatureFileId', 'tokenHash', 'tokenExpiresAt', 'tokenStatus', 'sentAt', 'viewedAt', 'acceptedAt', 'clientSignedAt', 'ownerAuthorizedAt', 'documentHash', 'signedDocumentHash', 'finalDocumentHash', 'signerIp', 'signerUserAgent', 'consentText', 'createdAt', 'updatedAt'],
@@ -621,7 +615,14 @@ function normalizedClient(input, existing) {
     suggestedMessage: cleanBusinessText(input.suggestedMessage !== undefined ? input.suggestedMessage : current.suggestedMessage, 4000),
     lossReason: cleanBusinessText(input.lossReason !== undefined ? input.lossReason : current.lossReason, 1000),
     estimatedCost: Math.max(0, Number(input.estimatedCost !== undefined ? input.estimatedCost : current.estimatedCost) || 0),
-    allocatedAdCost: Math.max(0, Number(input.allocatedAdCost !== undefined ? input.allocatedAdCost : current.allocatedAdCost) || 0)
+    allocatedAdCost: Math.max(0, Number(input.allocatedAdCost !== undefined ? input.allocatedAdCost : current.allocatedAdCost) || 0),
+    preSessionApplies: input.preSessionApplies !== undefined ? Boolean(input.preSessionApplies) : String(current.preSessionApplies) === 'true',
+    preSessionDate: cleanBusinessText(input.preSessionDate !== undefined ? input.preSessionDate : current.preSessionDate, 40),
+    preSessionTime: cleanBusinessText(input.preSessionTime !== undefined ? input.preSessionTime : current.preSessionTime, 20),
+    preSessionLocation: cleanBusinessText(input.preSessionLocation !== undefined ? input.preSessionLocation : current.preSessionLocation, 500),
+    inviteClientToCalendar: input.inviteClientToCalendar !== undefined ? Boolean(input.inviteClientToCalendar) : String(current.inviteClientToCalendar) === 'true',
+    calendarEventId: cleanBusinessText(current.calendarEventId || input.calendarEventId, 240),
+    preSessionCalendarEventId: cleanBusinessText(current.preSessionCalendarEventId || input.preSessionCalendarEventId, 240)
   };
 }
 
@@ -691,6 +692,32 @@ function syncClientPaidAmount(ss, clientId) {
   upsertBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, client);
 }
 
+function calendarDateTime(dateValue, timeValue) {
+  var parts = String(dateValue || '').split('-');
+  var time = String(timeValue || '').split(':');
+  if (parts.length !== 3 || time.length < 2) throw new Error('La fecha y el horario son necesarios para Calendar.');
+  return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), Number(time[0]), Number(time[1]), 0, 0);
+}
+
+function authorizeCalendarIntegration() {
+  return CalendarApp.getDefaultCalendar().getName();
+}
+
+function upsertClientCalendarEvent(calendar, eventId, title, start, durationHours, location, description, guestEmail) {
+  var event = eventId ? calendar.getEventById(eventId) : null;
+  var end = new Date(start.getTime() + Math.max(0.5, Number(durationHours) || 1) * 60 * 60 * 1000);
+  if (event) {
+    event.setTitle(title).setTime(start, end).setLocation(location || '').setDescription(description || '');
+  } else {
+    event = calendar.createEvent(title, start, end, { location: location || '', description: description || '' });
+  }
+  event.removeAllReminders();
+  event.addPopupReminder(10080);
+  event.addPopupReminder(1440);
+  if (guestEmail) event.addGuest(guestEmail);
+  return event;
+}
+
 function handleBusinessAction(ss, action, payload) {
   payload = payload || {};
   if (action === 'businessSnapshot') {
@@ -718,6 +745,29 @@ function handleBusinessAction(ss, action, payload) {
     upsertBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, client);
     logAudit(ss, 'CRM_CLIENTE_GUARDADO', client.name || client.phone || client.id, client.id, 'Admin XPH');
     return { status: 'success', client: client };
+  }
+
+  if (action === 'calendarSync') {
+    var calendarClient = findBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, payload.clientId);
+    if (!calendarClient) throw new Error('Cliente no localizado.');
+    if (!calendarClient.eventDate || !calendarClient.eventTime) throw new Error('Registra la fecha y hora del evento antes de sincronizar.');
+    var calendar = CalendarApp.getDefaultCalendar();
+    var guest = calendarClient.inviteClientToCalendar && calendarClient.email ? calendarClient.email : '';
+    var eventStart = calendarDateTime(calendarClient.eventDate, calendarClient.eventTime);
+    var eventTitle = 'XPH · ' + (calendarClient.eventType || 'Evento') + ' · ' + (calendarClient.name || calendarClient.honoreeName || 'Cliente');
+    var eventDescription = 'Cliente: ' + (calendarClient.name || '') + '\nTeléfono: ' + (calendarClient.phone || '') + '\nPaquete: ' + (calendarClient.packageName || 'Por confirmar') + '\nContrato: ' + (calendarClient.contractId || 'Pendiente');
+    var mainEvent = upsertClientCalendarEvent(calendar, calendarClient.calendarEventId, eventTitle, eventStart, calendarClient.serviceHours || 1, calendarClient.eventLocation, eventDescription, guest);
+    calendarClient.calendarEventId = mainEvent.getId();
+    if (calendarClient.preSessionApplies) {
+      if (!calendarClient.preSessionDate || !calendarClient.preSessionTime) throw new Error('Completa fecha y hora de la sesión previa.');
+      var sessionStart = calendarDateTime(calendarClient.preSessionDate, calendarClient.preSessionTime);
+      var sessionEvent = upsertClientCalendarEvent(calendar, calendarClient.preSessionCalendarEventId, 'XPH · Sesión previa · ' + (calendarClient.name || 'Cliente'), sessionStart, 2, calendarClient.preSessionLocation, eventDescription, guest);
+      calendarClient.preSessionCalendarEventId = sessionEvent.getId();
+    }
+    calendarClient.updatedAt = businessNow();
+    upsertBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, calendarClient);
+    logAudit(ss, 'CALENDARIO_SINCRONIZADO', eventTitle, calendarClient.id, 'Admin XPH');
+    return { status: 'success', client: calendarClient };
   }
 
   if (action === 'expenseUpsert') {
@@ -1012,7 +1062,7 @@ function doPost(e) {
     var ss = getDatabaseSpreadsheet();
 
     var businessActions = [
-      'businessSnapshot', 'crmUpsert', 'expenseUpsert', 'paymentUpsert', 'contractUpload', 'contractCreateLink',
+      'businessSnapshot', 'crmUpsert', 'calendarSync', 'expenseUpsert', 'paymentUpsert', 'contractUpload', 'contractCreateLink',
       'contractInvalidate', 'contractResolve', 'contractCompleteSignature', 'ownerSignatureSave',
       'contractAdminPdfData', 'contractFinalizeData', 'contractFinalize'
     ];

@@ -149,6 +149,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
   const [addons, setAddons] = useState<AddOnOption[]>(ADDONS_CATALOG);
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([]);
   const [driveImages, setDriveImages] = useState<DriveImageRecord[]>([]);
+  const [driveLoaded, setDriveLoaded] = useState(false);
   const [heroSettings, setHeroSettings] = useState<Partial<Record<RoutePath, HeroCoverSetting>>>({});
   const [footerContact, setFooterContact] = useState<FooterContact>(DEFAULT_FOOTER_CONTACT);
   const [seoSettings, setSeoSettings] = useState<SeoSettings>(() => normalizeSeoSettings({}));
@@ -190,10 +191,16 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
     setSeoSettings(normalizeSeoSettings(config.seoSettings));
   };
 
+  const needsDrive = (targetTab: Tab) => targetTab === 'public' || targetTab === 'covers' || targetTab === 'private';
+
   const refresh = async () => {
-    const [config, drive] = await Promise.all([loadAdminConfig(session), loadDriveImages(session)]);
+    const config = await loadAdminConfig(session);
     applyConfig(config);
-    setDriveImages(drive);
+    if (needsDrive(tab)) {
+      const drive = await loadDriveImages(session);
+      setDriveImages(drive);
+      setDriveLoaded(true);
+    }
   };
 
   useEffect(() => {
@@ -202,12 +209,12 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
       .then(async (restored) => {
         if (!mounted) return;
         setSession(restored);
+        setCheckingSession(false);
         if (restored) {
           setAnalyticsExcluded(true);
-          const [config, drive] = await Promise.all([loadAdminConfig(restored), loadDriveImages(restored)]);
+          const config = await loadAdminConfig(restored);
           if (!mounted) return;
           applyConfig(config);
-          setDriveImages(drive);
         }
       })
       .catch(() => setSession(null))
@@ -223,9 +230,8 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
       const next = await adminLogin(email, password);
       setAnalyticsExcluded(true);
       setSession(next);
-      const [config, drive] = await Promise.all([loadAdminConfig(next), loadDriveImages(next)]);
+      const config = await loadAdminConfig(next);
       applyConfig(config);
-      setDriveImages(drive);
       setPassword('');
     } catch (error: any) {
       setAuthError(error?.message || 'No se pudo iniciar sesión.');
@@ -233,6 +239,13 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
       setBusy(false);
     }
   };
+
+  useEffect(() => {
+    if (!session || driveLoaded || !needsDrive(tab)) return;
+    loadDriveImages(session)
+      .then((drive) => { setDriveImages(drive); setDriveLoaded(true); })
+      .catch((error) => notify(error?.message || 'No se pudo cargar Google Drive.'));
+  }, [tab, session, driveLoaded]);
 
   const handleLogout = async () => {
     await adminLogout();
