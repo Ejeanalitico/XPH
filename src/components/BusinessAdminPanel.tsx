@@ -4,6 +4,7 @@ import {
   BriefcaseBusiness,
   CheckCircle2,
   ClipboardCopy,
+  CreditCard,
   Eye,
   FileSignature,
   Loader2,
@@ -20,6 +21,7 @@ import {
   finalizeBusinessContract,
   loadBusinessSnapshot,
   saveBusinessExpense,
+  saveBusinessPayment,
   saveCrmClient,
   saveOwnerSignature,
   uploadBusinessContract,
@@ -28,15 +30,16 @@ import {
 import {
   BusinessContract,
   BusinessExpense,
+  BusinessPayment,
   BusinessSnapshot,
   CrmClient,
   ExpenseCategory,
 } from '../types/business';
 import { SignaturePad } from './SignaturePad';
 
-type BusinessTab = 'overview' | 'clients' | 'expenses' | 'contracts';
+type BusinessTab = 'overview' | 'clients' | 'payments' | 'expenses' | 'contracts';
 
-const emptySnapshot: BusinessSnapshot = { clients: [], expenses: [], contracts: [], ownerSignatureConfigured: false };
+const emptySnapshot: BusinessSnapshot = { clients: [], expenses: [], payments: [], contracts: [], ownerSignatureConfigured: false };
 const today = () => new Date().toISOString().slice(0, 10);
 const now = () => new Date().toISOString();
 const money = (value: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(Number(value) || 0);
@@ -89,6 +92,11 @@ const blankExpense = (): Partial<BusinessExpense> => ({
   receiptReference: '', account: 'Banco',
 });
 
+const blankPayment = (clientId = '', contractId = ''): Partial<BusinessPayment> => ({
+  clientId, contractId, date: today(), dueDate: '', concept: '', plannedAmount: 0, receivedAmount: 0,
+  status: 'Pendiente', method: '', reference: '', notes: '',
+});
+
 const expenseFingerprint = (expense: Partial<BusinessExpense>) => [
   expense.date,
   expense.category,
@@ -115,6 +123,8 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [clientDraft, setClientDraft] = useState<Partial<CrmClient>>(blankClient);
   const [expenseDraft, setExpenseDraft] = useState<Partial<BusinessExpense>>(blankExpense);
+  const [paymentDraft, setPaymentDraft] = useState<Partial<BusinessPayment>>(blankPayment);
+  const [paymentReceipt, setPaymentReceipt] = useState<File | null>(null);
   const [contractDraft, setContractDraft] = useState({ clientId: '', folio: '', eventType: '', eventDate: '', file: null as File | null });
   const [latestLink, setLatestLink] = useState('');
   const [ownerSignature, setOwnerSignature] = useState('');
@@ -149,7 +159,11 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
   const financials = useMemo(() => {
     const contractedClients = snapshot.clients.filter((client) => client.recordType === 'Cliente' || client.status === 'Contratado');
     const contracted = contractedClients.reduce((sum, client) => sum + (Number(client.totalAmount) || 0), 0);
-    const collected = contractedClients.reduce((sum, client) => sum + Math.min(Number(client.paidAmount) || 0, Number(client.totalAmount) || 0), 0);
+    const collected = contractedClients.reduce((sum, client) => {
+      const clientPayments = snapshot.payments.filter((payment) => payment.clientId === client.id);
+      const liquidated = clientPayments.filter((payment) => payment.status === 'Liquidado').reduce((paymentSum, payment) => paymentSum + (Number(payment.receivedAmount) || 0), 0);
+      return sum + Math.min(clientPayments.length ? liquidated : Number(client.paidAmount) || 0, Number(client.totalAmount) || 0);
+    }, 0);
     const receivable = Math.max(0, contracted - collected);
     const paidExpenses = snapshot.expenses.filter((expense) => expense.paymentStatus === 'Pagado').reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0);
     const pendingExpenses = snapshot.expenses.filter((expense) => expense.paymentStatus === 'Pendiente').reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0);
@@ -168,7 +182,14 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
       netRegistered: collected - paidExpenses,
       projectedResult: contracted - paidExpenses - pendingExpenses - productionCosts,
     };
-  }, [snapshot.clients, snapshot.expenses]);
+  }, [snapshot.clients, snapshot.expenses, snapshot.payments]);
+
+  const paidForClient = (client: CrmClient) => {
+    const clientPayments = snapshot.payments.filter((payment) => payment.clientId === client.id);
+    return clientPayments.length
+      ? clientPayments.filter((payment) => payment.status === 'Liquidado').reduce((sum, payment) => sum + Number(payment.receivedAmount || 0), 0)
+      : Number(client.paidAmount || 0);
+  };
 
   const duplicateExpenseIds = useMemo(() => {
     const groups = new Map<string, string[]>();
@@ -202,6 +223,20 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
       setShowExpenseForm(false);
       notify(expenseDraft.id ? 'Gasto actualizado.' : 'Gasto registrado.');
     } catch (error: any) { notify(error?.message || 'No se pudo guardar el gasto.'); }
+    finally { setBusy(false); }
+  };
+
+  const savePayment = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    try {
+      const saved = await saveBusinessPayment(paymentDraft, paymentReceipt);
+      setSnapshot((prev) => ({ ...prev, payments: [saved, ...prev.payments.filter((item) => item.id !== saved.id)] }));
+      setPaymentDraft(blankPayment());
+      setPaymentReceipt(null);
+      notify(paymentDraft.id ? 'Pago actualizado y conciliado.' : 'Pago registrado y conciliado.');
+      await refresh();
+    } catch (error: any) { notify(error?.message || 'No se pudo guardar el pago.'); }
     finally { setBusy(false); }
   };
 
@@ -282,6 +317,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
         {[
           { id: 'overview' as const, label: 'Control financiero', icon: TrendingUp },
           { id: 'clients' as const, label: 'Clientes y prospectos', icon: Users },
+          { id: 'payments' as const, label: 'Pagos de clientes', icon: CreditCard },
           { id: 'expenses' as const, label: 'Control de gastos', icon: BadgeDollarSign },
           { id: 'contracts' as const, label: 'Contratos y firmas', icon: FileSignature },
         ].map((item) => { const Icon = item.icon; return (
@@ -342,7 +378,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
                   <td className="p-4"><div className="font-semibold text-white">{client.name || 'Sin nombre'}</div><div className="text-xs text-gray-400">{client.phone || 'Sin teléfono'} · {client.recordType}</div></td>
                   <td className="p-4"><div>{client.eventType || 'Por confirmar'}</div><div className="text-xs text-gray-400">{client.eventDate || 'Sin fecha'} · {client.eventLocation || 'Sin lugar'}</div></td>
                   <td className="p-4"><span className="rounded-full border border-[#D4AF37]/30 bg-[#D4AF37]/10 px-2.5 py-1 text-xs text-[#F5D76E]">{client.status}</span></td>
-                  <td className="p-4"><div>{money(client.totalAmount)}</div><div className="text-xs text-emerald-300">Pagado {money(client.paidAmount)}</div><div className="text-xs text-amber-300">Pendiente {money(Math.max(0, client.totalAmount - client.paidAmount))}</div></td>
+                  <td className="p-4"><div>{money(client.totalAmount)}</div><div className="text-xs text-emerald-300">Pagado {money(paidForClient(client))}</div><div className="text-xs text-amber-300">Pendiente {money(Math.max(0, client.totalAmount - paidForClient(client)))}</div></td>
                   <td className="p-4"><div>{client.nextAction || 'Sin acción'}</div><div className="text-xs text-gray-400">{client.nextActionAt || 'Sin fecha'}</div></td>
                   <td className="p-4"><button onClick={() => { setClientDraft(client); setShowClientForm(true); }} className="text-xs text-[#D4AF37]">Editar</button></td>
                 </tr>)}
@@ -350,6 +386,18 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {tab === 'payments' && (
+        <div className="space-y-4">
+          <PaymentForm draft={paymentDraft} receipt={paymentReceipt} clients={snapshot.clients} contracts={snapshot.contracts} onChange={setPaymentDraft} onReceipt={setPaymentReceipt} onSubmit={savePayment} onCancel={() => { setPaymentDraft(blankPayment()); setPaymentReceipt(null); }} busy={busy} />
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Metric label="Pagos liquidados" value={money(snapshot.payments.filter((item) => item.status === 'Liquidado').reduce((sum, item) => sum + Number(item.receivedAmount || 0), 0))} icon={CheckCircle2} />
+            <Metric label="Pagos programados pendientes" value={money(snapshot.payments.filter((item) => item.status === 'Pendiente').reduce((sum, item) => sum + Number(item.plannedAmount || 0), 0))} icon={CreditCard} />
+            <Metric label="Movimientos anulados" value={String(snapshot.payments.filter((item) => item.status === 'Anulado').length)} icon={RefreshCw} />
+          </div>
+          <div className="overflow-x-auto rounded-2xl border border-white/10 bg-[#161C28]"><table className="min-w-full text-left text-sm"><thead className="bg-black/20 text-xs uppercase tracking-wider text-[#D4AF37]"><tr><th className="p-4">Cliente</th><th className="p-4">Fecha / concepto</th><th className="p-4">Programado</th><th className="p-4">Recibido</th><th className="p-4">Estado</th><th className="p-4">Comprobante</th><th className="p-4"></th></tr></thead><tbody className="divide-y divide-white/5">{snapshot.payments.map((payment) => { const client = snapshot.clients.find((item) => item.id === payment.clientId); return <tr key={payment.id}><td className="p-4">{client?.name || 'Cliente no localizado'}</td><td className="p-4"><div>{payment.date}</div><div className="text-xs text-gray-400">{payment.concept}</div></td><td className="p-4">{money(payment.plannedAmount)}</td><td className="p-4">{money(payment.receivedAmount)}</td><td className="p-4"><span className={payment.status === 'Liquidado' ? 'text-emerald-300' : payment.status === 'Pendiente' ? 'text-amber-300' : 'text-gray-400'}>{payment.status}</span></td><td className="p-4">{payment.receiptUrl ? <a href={payment.receiptUrl} target="_blank" rel="noreferrer" className="text-xs text-[#D4AF37]">Ver comprobante</a> : <span className="text-xs text-gray-500">Sin archivo</span>}</td><td className="p-4"><button onClick={() => { setPaymentDraft(payment); setPaymentReceipt(null); }} className="text-xs font-semibold text-[#D4AF37]">Editar</button></td></tr>; })}{!snapshot.payments.length && <tr><td colSpan={7} className="p-10 text-center text-gray-500">Aún no hay pagos en el historial. Los importes cobrados actuales se conservarán al registrar el primer movimiento de cada cliente.</td></tr>}</tbody></table></div>
         </div>
       )}
 
@@ -452,5 +500,26 @@ const ExpenseForm = ({ draft, clients, onChange, onSubmit, onCancel, busy }: { d
     <input value={draft.receiptReference || ''} onChange={(e) => patch('receiptReference', e.target.value)} placeholder="Folio de ticket o factura" className={inputClass} />
     <textarea value={draft.notes || ''} onChange={(e) => patch('notes', e.target.value)} placeholder="Notas" className={`${inputClass} min-h-24 sm:col-span-2 lg:col-span-4`} />
     <div className="flex gap-2 sm:col-span-2 lg:col-span-4"><button type="button" onClick={onCancel} className="rounded-xl border border-white/15 px-4 py-2.5 text-sm">Cancelar</button><button type="submit" disabled={busy} className="rounded-xl bg-[#D4AF37] px-5 py-2.5 text-sm font-bold text-black disabled:opacity-40">{draft.id ? 'Actualizar gasto' : 'Guardar gasto'}</button></div>
+  </form>;
+};
+
+const PaymentForm = ({ draft, receipt, clients, contracts, onChange, onReceipt, onSubmit, onCancel, busy }: { draft: Partial<BusinessPayment>; receipt: File | null; clients: CrmClient[]; contracts: BusinessContract[]; onChange: (value: Partial<BusinessPayment>) => void; onReceipt: (file: File | null) => void; onSubmit: (event: React.FormEvent) => void; onCancel: () => void; busy: boolean }) => {
+  const patch = (key: keyof BusinessPayment, value: unknown) => onChange({ ...draft, [key]: value, updatedAt: now() });
+  const clientContracts = contracts.filter((contract) => contract.clientId === draft.clientId);
+  return <form onSubmit={onSubmit} className="grid gap-3 rounded-2xl border border-[#D4AF37]/20 bg-[#161C28] p-5 sm:grid-cols-2 lg:grid-cols-4">
+    <select value={draft.clientId || ''} onChange={(e) => { const contract = contracts.find((item) => item.clientId === e.target.value); onChange({ ...draft, clientId: e.target.value, contractId: contract?.id || '' }); }} className={inputClass} required><option value="">Selecciona cliente</option>{clients.filter((client) => client.recordType === 'Cliente' || client.status === 'Contratado').map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select>
+    <select value={draft.contractId || ''} onChange={(e) => patch('contractId', e.target.value)} className={inputClass}><option value="">Sin contrato relacionado</option>{clientContracts.map((contract) => <option key={contract.id} value={contract.id}>{contract.folio}</option>)}</select>
+    <input type="date" value={draft.date || today()} onChange={(e) => patch('date', e.target.value)} className={inputClass} required />
+    <input type="date" value={draft.dueDate || ''} onChange={(e) => patch('dueDate', e.target.value)} className={inputClass} title="Fecha límite" />
+    <input value={draft.concept || ''} onChange={(e) => patch('concept', e.target.value)} placeholder="Concepto: apartado, segundo pago, finiquito" className={inputClass} required />
+    <input type="number" min="0.01" step="0.01" value={draft.plannedAmount || 0} onChange={(e) => patch('plannedAmount', Number(e.target.value))} placeholder="Monto programado" className={inputClass} required />
+    <input type="number" min="0" step="0.01" value={draft.receivedAmount || 0} onChange={(e) => patch('receivedAmount', Number(e.target.value))} placeholder="Monto recibido" className={inputClass} />
+    <select value={draft.status || 'Pendiente'} onChange={(e) => patch('status', e.target.value)} className={inputClass}><option>Pendiente</option><option>Liquidado</option><option>Anulado</option></select>
+    <input value={draft.method || ''} onChange={(e) => patch('method', e.target.value)} placeholder="Método de pago" className={inputClass} />
+    <input value={draft.reference || ''} onChange={(e) => patch('reference', e.target.value)} placeholder="Referencia / folio" className={inputClass} />
+    <label className="flex cursor-pointer items-center justify-center rounded-xl border border-dashed border-white/15 px-3 py-2.5 text-sm text-gray-300">{receipt?.name || draft.receiptFileName || 'Comprobante JPG, PNG o PDF'}<input type="file" accept="image/jpeg,image/png,application/pdf" className="hidden" onChange={(e) => onReceipt(e.target.files?.[0] || null)} /></label>
+    <textarea value={draft.notes || ''} onChange={(e) => patch('notes', e.target.value)} placeholder="Notas" className={`${inputClass} min-h-20 lg:col-span-1`} />
+    <p className="text-xs leading-5 text-gray-400 sm:col-span-2 lg:col-span-4">Los movimientos pendientes no aumentan el ingreso. Al cambiar a Liquidado se contabiliza únicamente el monto recibido; Anulado conserva el historial y revierte su efecto financiero.</p>
+    <div className="flex gap-2 sm:col-span-2 lg:col-span-4"><button type="button" onClick={onCancel} className="rounded-xl border border-white/15 px-4 py-2.5 text-sm">Limpiar</button><button type="submit" disabled={busy} className="rounded-xl bg-[#D4AF37] px-5 py-2.5 text-sm font-bold text-black disabled:opacity-40">{draft.id ? 'Actualizar pago' : 'Registrar pago'}</button></div>
   </form>;
 };
