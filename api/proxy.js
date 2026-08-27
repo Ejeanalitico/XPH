@@ -808,8 +808,14 @@ export default async function handler(req, res) {
       if (action === 'adminCalendarSync') {
         const clientId = String(submitted.clientId || '').trim();
         if (!clientId) return res.status(400).json({ status: 'error', message: 'Cliente no identificado.' });
-        const result = await forwardBusinessAction('calendarSync', { clientId });
-        return res.status(200).json({ status: 'success', client: result.client });
+        try {
+          const result = await forwardBusinessAction('calendarSync', { clientId });
+          return res.status(200).json({ status: 'success', client: result.client });
+        } catch (error) {
+          const message = String(error?.message || error || 'No se pudo actualizar Calendar.').replace(/^Error:\s*/i, '');
+          if (/fecha y el horario|fecha.*horario/i.test(message)) return res.status(400).json({ status: 'error', message });
+          throw error;
+        }
       }
       if (action === 'adminExpenseUpsert') {
         const expense = submitted.expense || {};
