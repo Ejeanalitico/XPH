@@ -334,16 +334,22 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
     return saved;
   };
 
+  const uploadImagesInBatches = async <T,>(files: File[], upload: (file: File) => Promise<T>): Promise<T[]> => {
+    const results: T[] = [];
+    for (let index = 0; index < files.length; index += 3) {
+      results.push(...await Promise.all(files.slice(index, index + 3).map(upload)));
+    }
+    return results;
+  };
+
   const uploadPublicFiles = async () => {
     if (!session || !publicFiles.length) return;
     setBusy(true);
     try {
-      const added: GalleryImage[] = [];
-      for (const file of publicFiles) {
-        if (!file.type.startsWith('image/')) continue;
+      const added = await uploadImagesInBatches(publicFiles.filter((file) => file.type.startsWith('image/')), async (file): Promise<GalleryImage> => {
         const uploaded = await adminUploadMedia(session, file, { title: titleFromFilename(file.name), category: publicCategory, location: publicLocation || 'CDMX' });
-        added.push({ id: uploaded.fileId, title: titleFromFilename(file.name), category: publicCategory, url: uploaded.url, location: publicLocation || 'CDMX', visibility: 'public', mediaType: 'image', createdAt: new Date().toISOString() });
-      }
+        return { id: uploaded.fileId, title: titleFromFilename(file.name), category: publicCategory, url: uploaded.url, location: publicLocation || 'CDMX', visibility: 'public', mediaType: 'image', createdAt: new Date().toISOString() };
+      });
       const ids = new Set(added.map((item) => item.id));
       await persistGallery([...added, ...galleryImages.filter((item) => !ids.has(item.id))], 'ADMIN_GALERIA_PUBLICA', `${added.length} imágenes públicas cargadas`);
       setPublicFiles([]);
@@ -437,12 +443,10 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
     if (!session || !selectedGallery || !privateFiles.length) return;
     setBusy(true);
     try {
-      const added: GalleryImage[] = [];
-      for (const file of privateFiles) {
-        if (!file.type.startsWith('image/')) continue;
+      const added = await uploadImagesInBatches(privateFiles.filter((file) => file.type.startsWith('image/')), async (file): Promise<GalleryImage> => {
         const uploaded = await adminUploadMedia(session, file, { title: titleFromFilename(file.name), category: 'private', location: selectedGallery.clientName });
-        added.push({ id: uploaded.fileId, title: titleFromFilename(file.name), category: 'private', url: uploaded.url, location: selectedGallery.clientName, visibility: 'private', mediaType: 'image', galleryId: selectedGallery.galleryId, gallerySlug: selectedGallery.slug, galleryTitle: selectedGallery.title, galleryClient: selectedGallery.clientName, downloadUrl: driveDownloadUrl(uploaded.fileId), previewUrl: uploaded.url, createdAt: new Date().toISOString() });
-      }
+        return { id: uploaded.fileId, title: titleFromFilename(file.name), category: 'private', url: uploaded.url, location: selectedGallery.clientName, visibility: 'private', mediaType: 'image', galleryId: selectedGallery.galleryId, gallerySlug: selectedGallery.slug, galleryTitle: selectedGallery.title, galleryClient: selectedGallery.clientName, downloadUrl: driveDownloadUrl(uploaded.fileId), previewUrl: uploaded.url, createdAt: new Date().toISOString() };
+      });
       const ids = new Set(added.map((item) => item.id));
       await persistGallery([...added, ...galleryImages.filter((item) => !ids.has(item.id))], 'ADMIN_GALERIA_PRIVADA', `${added.length} fotografías agregadas a ${selectedGallery.title}`);
       setPrivateFiles([]); notify(`${added.length} fotografías agregadas.`);
