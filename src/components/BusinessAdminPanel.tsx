@@ -23,6 +23,7 @@ import {
   saveBusinessExpense,
   saveBusinessPayment,
   saveCrmClient,
+  syncClientCalendar,
   saveOwnerSignature,
   uploadBusinessContract,
   adminContractPdfUrl,
@@ -74,6 +75,11 @@ const blankClient = (): Partial<CrmClient> => ({
   lossReason: '',
   estimatedCost: 0,
   allocatedAdCost: 0,
+  preSessionApplies: false,
+  preSessionDate: '',
+  preSessionTime: '',
+  preSessionLocation: '',
+  inviteClientToCalendar: false,
 });
 
 const expenseCategories: ExpenseCategory[] = [
@@ -241,6 +247,16 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
     finally { setBusy(false); }
   };
 
+  const syncCalendar = async (client: CrmClient) => {
+    setBusy(true);
+    try {
+      const saved = await syncClientCalendar(client.id);
+      setSnapshot((prev) => ({ ...prev, clients: prev.clients.map((item) => item.id === saved.id ? saved : item) }));
+      notify('Evento y sesión previa sincronizados con Google Calendar.');
+    } catch (error: any) { notify(error?.message || 'No se pudo sincronizar Google Calendar.'); }
+    finally { setBusy(false); }
+  };
+
   const uploadContract = async (event: React.FormEvent) => {
     event.preventDefault();
     const client = snapshot.clients.find((item) => item.id === contractDraft.clientId);
@@ -381,7 +397,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
                   <td className="p-4"><span className="rounded-full border border-[#D4AF37]/30 bg-[#D4AF37]/10 px-2.5 py-1 text-xs text-[#F5D76E]">{client.status}</span></td>
                   <td className="p-4"><div>{money(client.totalAmount)}</div><div className="text-xs text-emerald-300">Pagado {money(paidForClient(client))}</div><div className="text-xs text-amber-300">Pendiente {money(Math.max(0, client.totalAmount - paidForClient(client)))}</div></td>
                   <td className="p-4"><div>{client.nextAction || 'Sin acción'}</div><div className="text-xs text-gray-400">{client.nextActionAt || 'Sin fecha'}</div></td>
-                  <td className="p-4"><button onClick={() => { setClientDraft(client); setShowClientForm(true); }} className="text-xs text-[#D4AF37]">Editar</button></td>
+                  <td className="p-4"><div className="flex flex-col gap-2"><button onClick={() => { setClientDraft(client); setShowClientForm(true); }} className="text-left text-xs text-[#D4AF37]">Editar</button>{client.recordType === 'Cliente' && <button onClick={() => syncCalendar(client)} disabled={busy || !client.eventDate || !client.eventTime} className="text-left text-xs text-sky-300 disabled:text-gray-600">Actualizar calendario</button>}</div></td>
                 </tr>)}
                 {!filteredClients.length && <tr><td colSpan={6} className="p-10 text-center text-gray-500">Aún no hay registros. Agrega el primer prospecto o cliente.</td></tr>}
               </tbody>
@@ -458,6 +474,11 @@ const ClientForm = ({ draft, onChange, onSubmit, onCancel, busy }: { draft: Part
     <input type="number" min="0" step="0.01" value={draft.paidAmount || 0} onChange={(e) => patch('paidAmount', Number(e.target.value))} placeholder="Pagado" className={inputClass} />
     <input type="number" min="0" step="0.01" value={draft.estimatedCost || 0} onChange={(e) => patch('estimatedCost', Number(e.target.value))} placeholder="Costo estimado del evento" className={inputClass} />
     <input type="number" min="0" step="0.01" value={draft.allocatedAdCost || 0} onChange={(e) => patch('allocatedAdCost', Number(e.target.value))} placeholder="Publicidad asignada" className={inputClass} />
+    <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-[#0B0F17] px-3 py-2.5 text-sm"><input type="checkbox" checked={Boolean(draft.preSessionApplies)} onChange={(e) => patch('preSessionApplies', e.target.checked)} />Incluye sesión previa</label>
+    <input type="date" value={draft.preSessionDate || ''} onChange={(e) => patch('preSessionDate', e.target.value)} disabled={!draft.preSessionApplies} className={inputClass} title="Fecha de sesión previa" />
+    <input type="time" value={draft.preSessionTime || ''} onChange={(e) => patch('preSessionTime', e.target.value)} disabled={!draft.preSessionApplies} className={inputClass} title="Hora de sesión previa" />
+    <input value={draft.preSessionLocation || ''} onChange={(e) => patch('preSessionLocation', e.target.value)} disabled={!draft.preSessionApplies} placeholder="Lugar de sesión previa" className={inputClass} />
+    <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-[#0B0F17] px-3 py-2.5 text-sm"><input type="checkbox" checked={Boolean(draft.inviteClientToCalendar)} onChange={(e) => patch('inviteClientToCalendar', e.target.checked)} disabled={!draft.email} />Invitar al cliente por correo</label>
     <select value={draft.status || 'Nuevo'} onChange={(e) => patch('status', e.target.value)} className={inputClass}>{['Nuevo','Contactado','Cotización enviada','Seguimiento','Cierre prioritario','Contratado','No interesado','Archivado'].map((item) => <option key={item}>{item}</option>)}</select>
     <input value={draft.source || ''} onChange={(e) => patch('source', e.target.value)} placeholder="Fuente / anuncio" className={inputClass} />
     <input value={draft.campaign || ''} onChange={(e) => patch('campaign', e.target.value)} placeholder="Campaña publicitaria" className={inputClass} />
