@@ -4,6 +4,8 @@ import {
   BriefcaseBusiness,
   CalendarDays,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   ClipboardCopy,
   CreditCard,
   Eye,
@@ -19,7 +21,9 @@ import {
 } from 'lucide-react';
 import {
   createContractSigningLink,
+  cacheBusinessClients,
   finalizeBusinessContract,
+  loadBusinessClients,
   loadBusinessSnapshot,
   saveBusinessExpense,
   saveBusinessPayment,
@@ -46,6 +50,9 @@ const today = () => new Date().toISOString().slice(0, 10);
 const now = () => new Date().toISOString();
 const dateValue = (value?: string) => String(value || '').slice(0, 10);
 const timeValue = (value?: string) => /^\d{2}:\d{2}/.test(String(value || '')) ? String(value).slice(0, 5) : '';
+const monthKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+const localDateKey = (date: Date) => `${monthKey(date)}-${String(date.getDate()).padStart(2, '0')}`;
+const monthLabel = (date: Date) => new Intl.DateTimeFormat('es-MX', { month: 'long', year: 'numeric' }).format(date);
 const money = (value: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(Number(value) || 0);
 
 const blankClient = (): Partial<CrmClient> => ({
@@ -141,6 +148,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
   const [query, setQuery] = useState('');
   const [selectedClientId, setSelectedClientId] = useState('');
   const [expenseSuccess, setExpenseSuccess] = useState('');
+  const [calendarCursor, setCalendarCursor] = useState(() => new Date());
 
   useEffect(() => {
     if (!expenseSuccess) return;
@@ -151,7 +159,11 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
   const refresh = async () => {
     setBusy(true);
     try {
-      setSnapshot(await loadBusinessSnapshot());
+      const clients = await loadBusinessClients();
+      setSnapshot((previous) => ({ ...previous, clients }));
+      const complete = await loadBusinessSnapshot();
+      cacheBusinessClients(complete.clients);
+      setSnapshot(complete);
     } catch (error: any) {
       notify(error?.message || 'No se pudo cargar el control del negocio.');
     } finally {
@@ -223,7 +235,11 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
     setBusy(true);
     try {
       const saved = await saveCrmClient(clientDraft);
-      setSnapshot((prev) => ({ ...prev, clients: [saved, ...prev.clients.filter((item) => item.id !== saved.id)] }));
+      setSnapshot((prev) => {
+        const clients = [saved, ...prev.clients.filter((item) => item.id !== saved.id)];
+        cacheBusinessClients(clients);
+        return { ...prev, clients };
+      });
       setClientDraft(blankClient());
       setShowClientForm(false);
       setSelectedClientId(saved.id);
@@ -284,6 +300,17 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
   const calendarClients = [...snapshot.clients]
     .filter((client) => dateValue(client.eventDate))
     .sort((a, b) => dateValue(a.eventDate).localeCompare(dateValue(b.eventDate)));
+  const calendarDays = useMemo(() => {
+    const first = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth(), 1);
+    const start = new Date(first);
+    start.setDate(first.getDate() - first.getDay());
+    return Array.from({ length: 42 }, (_, index) => {
+      const date = new Date(start);
+      date.setDate(start.getDate() + index);
+      const key = localDateKey(date);
+      return { date, key, currentMonth: date.getMonth() === calendarCursor.getMonth(), clients: calendarClients.filter((client) => dateValue(client.eventDate) === key) };
+    });
+  }, [calendarClients, calendarCursor]);
 
   const uploadContract = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -456,11 +483,20 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
       )}
 
       {tab === 'calendar' && (
-        <div className="space-y-4">
-          <div className="rounded-2xl border border-white/10 bg-[#161C28] p-5"><h3 className="text-xl font-bold">Calendario de clientes</h3><p className="mt-1 text-sm text-gray-400">Selecciona un evento para abrir el expediente, completar datos o editarlo.</p></div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {calendarClients.map((client) => { const eventTime = timeValue(client.eventTime); return <button key={client.id} onClick={() => openClientDetails(client)} className="rounded-2xl border border-white/10 bg-[#161C28] p-5 text-left transition hover:border-[#D4AF37]/50"><div className="flex items-start justify-between gap-3"><div><div className="text-xs font-semibold uppercase tracking-wider text-[#D4AF37]">{dateValue(client.eventDate)} · {eventTime || 'Horario pendiente'}</div><h4 className="mt-2 font-bold text-white">{client.name || 'Cliente sin nombre'}</h4><p className="mt-1 text-sm text-gray-400">{client.eventType || 'Evento'} · {client.eventLocation || 'Lugar pendiente'}</p></div><CalendarDays className="h-5 w-5 shrink-0 text-[#D4AF37]" /></div><div className={`mt-4 text-xs ${eventTime ? 'text-emerald-300' : 'text-amber-300'}`}>{eventTime ? 'Listo para sincronizar' : 'Falta registrar el horario'}</div></button>; })}
-            {!calendarClients.length && <div className="rounded-2xl border border-white/10 bg-[#161C28] p-10 text-center text-gray-500 md:col-span-2 xl:col-span-3">No hay clientes con fecha de evento registrada.</div>}
+        <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111722]">
+          <div className="flex flex-wrap items-center gap-3 border-b border-white/10 p-4">
+            <button onClick={() => setCalendarCursor(new Date())} className="rounded-full border border-white/15 px-5 py-2 text-sm font-semibold">Hoy</button>
+            <button aria-label="Mes anterior" onClick={() => setCalendarCursor((value) => new Date(value.getFullYear(), value.getMonth() - 1, 1))} className="rounded-full border border-white/15 bg-white/10 p-2 text-white hover:bg-white/20"><ChevronLeft className="h-5 w-5 stroke-[2.5]" /></button>
+            <button aria-label="Mes siguiente" onClick={() => setCalendarCursor((value) => new Date(value.getFullYear(), value.getMonth() + 1, 1))} className="rounded-full border border-white/15 bg-white/10 p-2 text-white hover:bg-white/20"><ChevronRight className="h-5 w-5 stroke-[2.5]" /></button>
+            <h3 className="min-w-[190px] text-xl font-bold capitalize">{monthLabel(calendarCursor)}</h3>
+            <span className="ml-auto text-xs text-gray-400">Haz clic en un evento para abrir al cliente</span>
+          </div>
+          <div className="grid grid-cols-7 border-b border-white/10 bg-black/15 text-center text-[10px] font-semibold uppercase tracking-wider text-gray-400">{['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'].map((day) => <div key={day} className="py-2">{day}</div>)}</div>
+          <div className="grid grid-cols-7">
+            {calendarDays.map(({ date, key, currentMonth, clients }) => <div key={key} className={`min-h-28 border-b border-r border-white/10 p-2 sm:min-h-36 ${currentMonth ? 'bg-[#111722]' : 'bg-black/20 text-gray-600'}`}>
+              <div className={`mb-2 text-center text-xs ${key === localDateKey(new Date()) ? 'mx-auto flex h-6 w-6 items-center justify-center rounded-full bg-[#D4AF37] font-bold text-black' : ''}`}>{date.getDate()}</div>
+              <div className="space-y-1">{clients.map((client) => <button key={client.id} onClick={() => openClientDetails(client)} title={`${client.name} · ${client.eventType || 'Evento'}`} className="block w-full truncate rounded-md border-l-4 border-[#D4AF37] bg-[#D4AF37]/15 px-1.5 py-1 text-left text-[10px] text-[#F5D76E] hover:bg-[#D4AF37]/25 sm:text-xs"><span className="font-semibold">{timeValue(client.eventTime) || '—'}</span> {client.name || 'Cliente'}</button>)}</div>
+            </div>)}
           </div>
         </div>
       )}
@@ -544,10 +580,13 @@ const ClientForm = ({ draft, onChange, onSubmit, onCancel, busy }: { draft: Part
     <input type="number" min="0" step="0.01" value={draft.paidAmount || 0} onChange={(e) => patch('paidAmount', Number(e.target.value))} placeholder="Pagado" className={inputClass} />
     <input type="number" min="0" step="0.01" value={draft.estimatedCost || 0} onChange={(e) => patch('estimatedCost', Number(e.target.value))} placeholder="Costo estimado del evento" className={inputClass} />
     <input type="number" min="0" step="0.01" value={draft.allocatedAdCost || 0} onChange={(e) => patch('allocatedAdCost', Number(e.target.value))} placeholder="Publicidad asignada" className={inputClass} />
-    <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-[#0B0F17] px-3 py-2.5 text-sm"><input type="checkbox" checked={Boolean(draft.preSessionApplies)} onChange={(e) => patch('preSessionApplies', e.target.checked)} />Incluye sesión previa</label>
-    <input type="date" value={draft.preSessionDate || ''} onChange={(e) => patch('preSessionDate', e.target.value)} disabled={!draft.preSessionApplies} className={inputClass} title="Fecha de sesión previa" />
-    <input type="time" value={draft.preSessionTime || ''} onChange={(e) => patch('preSessionTime', e.target.value)} disabled={!draft.preSessionApplies} className={inputClass} title="Hora de sesión previa" />
-    <input value={draft.preSessionLocation || ''} onChange={(e) => patch('preSessionLocation', e.target.value)} disabled={!draft.preSessionApplies} placeholder="Lugar de sesión previa" className={inputClass} />
+    <fieldset className="grid gap-3 rounded-2xl border border-sky-300/25 bg-sky-400/5 p-4 sm:col-span-2 sm:grid-cols-2 lg:col-span-4 lg:grid-cols-4">
+      <legend className="px-2 text-sm font-semibold text-sky-100">Detalles de la sesión previa</legend>
+      <label className="flex items-center gap-2 rounded-xl border border-sky-200/20 bg-[#0B0F17] px-3 py-2.5 text-sm text-sky-50"><input type="checkbox" checked={Boolean(draft.preSessionApplies)} onChange={(e) => patch('preSessionApplies', e.target.checked)} />¿Incluye sesión previa?</label>
+      <label className="text-xs text-sky-100">Fecha<input type="date" value={dateValue(draft.preSessionDate)} onChange={(e) => patch('preSessionDate', e.target.value)} disabled={!draft.preSessionApplies} className={`${inputClass} mt-1 disabled:cursor-not-allowed disabled:opacity-40`} /></label>
+      <label className="text-xs text-sky-100">Horario<input type="time" value={timeValue(draft.preSessionTime)} onChange={(e) => patch('preSessionTime', e.target.value)} disabled={!draft.preSessionApplies} className={`${inputClass} mt-1 disabled:cursor-not-allowed disabled:opacity-40`} /></label>
+      <label className="text-xs text-sky-100">Lugar<input value={draft.preSessionLocation || ''} onChange={(e) => patch('preSessionLocation', e.target.value)} disabled={!draft.preSessionApplies} placeholder="Lugar de la sesión" className={`${inputClass} mt-1 disabled:cursor-not-allowed disabled:opacity-40`} /></label>
+    </fieldset>
     <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-[#0B0F17] px-3 py-2.5 text-sm"><input type="checkbox" checked={Boolean(draft.inviteClientToCalendar)} onChange={(e) => patch('inviteClientToCalendar', e.target.checked)} disabled={!draft.email} />Invitar al cliente por correo</label>
     <select value={draft.status || 'Nuevo'} onChange={(e) => patch('status', e.target.value)} className={inputClass}>{['Nuevo','Contactado','Cotización enviada','Seguimiento','Cierre prioritario','Contratado','No interesado','Archivado'].map((item) => <option key={item}>{item}</option>)}</select>
     <input value={draft.source || ''} onChange={(e) => patch('source', e.target.value)} placeholder="Fuente / anuncio" className={inputClass} />
