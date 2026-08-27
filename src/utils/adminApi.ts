@@ -1,10 +1,13 @@
-import { GalleryImage } from '../types';
-import { BusinessContract, BusinessExpense, BusinessPayment, BusinessSnapshot, CrmClient, CrmFollowUp } from '../types/business';
+import { GalleryImage, PackageOption } from '../types';
+import { BusinessContract, BusinessExpense, BusinessPayment, BusinessSnapshot, ClientAddon, ClientGalleryRecord, ClientPackageSnapshot, ContractedService, CrmClient, CrmFollowUp, CrmNotification, EmailHistory, EmailTemplate, FinancialAdjustment, FinancialTransaction, GmailConfig, InternalCalendarEvent, TeamAssignment, TeamFunction, TeamUser } from '../types/business';
 import { CURRENT_CATALOG_VERSION, resolvePublishedAddons, resolvePublishedPackages } from './catalogMerge';
 
 export type AdminSession = {
   authenticated: true;
   email?: string;
+  userId: string;
+  role: 'SUPER_ADMIN' | 'COLLABORATOR';
+  permissions: string[];
 };
 
 export type DriveImageRecord = {
@@ -89,7 +92,7 @@ export async function resumeAdminSession(): Promise<AdminSession | null> {
     activeAdminSession = null;
     return null;
   }
-  activeAdminSession = { authenticated: true, email: data.email || '' };
+  activeAdminSession = { authenticated: true, email: data.email || '', userId: data.userId || '', role: data.role || 'COLLABORATOR', permissions: Array.isArray(data.permissions) ? data.permissions : [] };
   return activeAdminSession;
 }
 
@@ -102,7 +105,7 @@ export async function adminLogin(email: string, password: string): Promise<Admin
   });
   const data = await parseResponse(res);
   if (!data.authenticated) throw new Error('Credenciales incorrectas.');
-  activeAdminSession = { authenticated: true, email: data.email || email };
+  activeAdminSession = { authenticated: true, email: data.email || email, userId: data.userId || 'xph-super-admin', role: data.role || 'SUPER_ADMIN', permissions: Array.isArray(data.permissions) ? data.permissions : ['*'] };
   return activeAdminSession;
 }
 
@@ -200,6 +203,20 @@ export async function loadBusinessSnapshot(): Promise<BusinessSnapshot> {
     expenses: Array.isArray(data.snapshot?.expenses) ? data.snapshot.expenses : [],
     payments: Array.isArray(data.snapshot?.payments) ? data.snapshot.payments : [],
     transactions: Array.isArray(data.snapshot?.transactions) ? data.snapshot.transactions : [],
+    adjustments: Array.isArray(data.snapshot?.adjustments) ? data.snapshot.adjustments : [],
+    packageSnapshots: Array.isArray(data.snapshot?.packageSnapshots) ? data.snapshot.packageSnapshots : [],
+    services: Array.isArray(data.snapshot?.services) ? data.snapshot.services : [],
+    addons: Array.isArray(data.snapshot?.addons) ? data.snapshot.addons : [],
+    users: Array.isArray(data.snapshot?.users) ? data.snapshot.users : [],
+    teamFunctions: Array.isArray(data.snapshot?.teamFunctions) ? data.snapshot.teamFunctions : [],
+    assignments: Array.isArray(data.snapshot?.assignments) ? data.snapshot.assignments : [],
+    gmailConfig: data.snapshot?.gmailConfig || null,
+    emailTemplates: Array.isArray(data.snapshot?.emailTemplates) ? data.snapshot.emailTemplates : [],
+    emailHistory: Array.isArray(data.snapshot?.emailHistory) ? data.snapshot.emailHistory : [],
+    notifications: Array.isArray(data.snapshot?.notifications) ? data.snapshot.notifications : [],
+    auditLog: Array.isArray(data.snapshot?.auditLog) ? data.snapshot.auditLog : [],
+    galleries: Array.isArray(data.snapshot?.galleries) ? data.snapshot.galleries : [],
+    internalEvents: Array.isArray(data.snapshot?.internalEvents) ? data.snapshot.internalEvents.map((item) => ({ ...item, userIds: Array.isArray(item.userIds) ? item.userIds : [] })) : [],
     contracts: Array.isArray(data.snapshot?.contracts) ? data.snapshot.contracts : [],
     ownerSignatureConfigured: Boolean(data.snapshot?.ownerSignatureConfigured),
   };
@@ -242,15 +259,131 @@ export async function saveBusinessExpense(expense: Partial<BusinessExpense>): Pr
   return data.expense;
 }
 
-export async function saveBusinessPayment(payment: Partial<BusinessPayment>, receipt?: File | null): Promise<BusinessPayment> {
+export async function saveBusinessPayment(payment: Partial<BusinessPayment>, receipt?: File | null): Promise<{ payment: BusinessPayment; transaction: FinancialTransaction; client: CrmClient }> {
   let receiptData: Record<string, unknown> = {};
   if (receipt) {
     if (!['image/jpeg', 'image/png', 'application/pdf'].includes(receipt.type)) throw new Error('El comprobante debe ser JPG, PNG o PDF.');
     if (receipt.size > 2_600_000) throw new Error('El comprobante debe pesar máximo 2.6 MB.');
     receiptData = { receiptBase64: await fileToDataUrl(receipt), receiptFileName: receipt.name, receiptMimeType: receipt.type };
   }
-  const data = await adminBusinessRequest<{ payment: BusinessPayment }>('adminPaymentUpsert', { payment: { ...payment, ...receiptData } });
-  return data.payment;
+  return await adminBusinessRequest('adminPaymentUpsert', { payment: { ...payment, ...receiptData } });
+}
+
+export async function saveFinancialAdjustment(adjustment: Partial<FinancialAdjustment>): Promise<FinancialAdjustment> {
+  const data = await adminBusinessRequest<{ adjustment: FinancialAdjustment }>('adminAdjustmentUpsert', { adjustment });
+  return data.adjustment;
+}
+
+export async function assignClientPackage(input: { clientId: string; category: string; package: PackageOption; discount?: number; promotion?: string }): Promise<{ packageSnapshot: ClientPackageSnapshot; services: ContractedService[]; client: CrmClient }> {
+  return await adminBusinessRequest('adminClientPackageAssign', input);
+}
+
+export async function saveContractedService(service: Partial<ContractedService>): Promise<ContractedService> {
+  const data = await adminBusinessRequest<{ service: ContractedService }>('adminServiceUpsert', { service });
+  return data.service;
+}
+
+export async function saveClientAddon(addon: Partial<ClientAddon>): Promise<{ addon: ClientAddon; client: CrmClient; packageSnapshot: ClientPackageSnapshot | null }> {
+  return await adminBusinessRequest('adminAddonUpsert', { addon });
+}
+
+export async function saveTeamFunction(teamFunction: Partial<TeamFunction>): Promise<TeamFunction> {
+  const data = await adminBusinessRequest<{ teamFunction: TeamFunction }>('adminTeamFunctionUpsert', { teamFunction });
+  return data.teamFunction;
+}
+
+export async function saveTeamUser(user: Partial<TeamUser>): Promise<TeamUser> {
+  const data = await adminBusinessRequest<{ user: TeamUser }>('adminTeamUserUpsert', { user });
+  return data.user;
+}
+
+export async function inviteTeamUser(userId: string): Promise<{ user: TeamUser; expiresAt: string }> {
+  return await adminBusinessRequest('adminTeamInviteCreate', { userId });
+}
+
+export async function saveTeamAssignment(assignment: Partial<TeamAssignment>, allowOverride = false): Promise<{ assignment: TeamAssignment; conflict?: TeamAssignment | null }> {
+  const res = await fetch('/api/proxy?action=adminTeamAssignmentUpsert', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', cache: 'no-store',
+    body: JSON.stringify({ assignment, allowOverride }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const error = new Error(data?.message || `Solicitud fallida (${res.status})`) as Error & { conflict?: TeamAssignment };
+    error.conflict = data?.conflict;
+    throw error;
+  }
+  return data;
+}
+
+export async function saveGmailConfig(gmailConfig: Partial<GmailConfig>): Promise<GmailConfig> {
+  const data = await adminBusinessRequest<{ gmailConfig: GmailConfig }>('adminGmailConfigUpsert', { gmailConfig });
+  return data.gmailConfig;
+}
+
+export async function sendGmailTest(recipient: string): Promise<EmailHistory> {
+  const data = await adminBusinessRequest<{ emailHistory: EmailHistory }>('adminGmailTest', { recipient });
+  return data.emailHistory;
+}
+
+export async function saveEmailTemplate(emailTemplate: Partial<EmailTemplate>): Promise<EmailTemplate> {
+  const data = await adminBusinessRequest<{ emailTemplate: EmailTemplate }>('adminEmailTemplateUpsert', { emailTemplate });
+  return data.emailTemplate;
+}
+
+export async function sendClientEmail(clientId: string, templateId: string, variables: Record<string, string> = {}): Promise<EmailHistory> {
+  const data = await adminBusinessRequest<{ emailHistory: EmailHistory }>('adminEmailSend', { clientId, templateId, variables });
+  return data.emailHistory;
+}
+
+export async function uploadEmailLogo(file: File): Promise<GmailConfig> {
+  const allowed = ['image/png', 'image/jpeg', 'image/webp'];
+  if (!allowed.includes(file.type)) throw new Error('El logo debe estar en formato PNG, JPG o WebP.');
+  if (file.size <= 0 || file.size > 5_000_000) throw new Error('El logo debe pesar máximo 5 MB.');
+  const initialized = await adminBusinessRequest<{ uploadUrl: string }>('adminEmailLogoUploadInit', { filename: file.name, mimeType: file.type, size: file.size });
+  const uploadResponse = await fetch(initialized.uploadUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
+  if (!uploadResponse.ok) throw new Error(`Google Drive no pudo recibir el logo (HTTP ${uploadResponse.status}).`);
+  const uploaded = await uploadResponse.json().catch(() => ({}));
+  if (!uploaded.id) throw new Error('Google Drive no devolvió el identificador del logo.');
+  const finalized = await adminBusinessRequest<{ gmailConfig: GmailConfig }>('adminEmailLogoUploadFinalize', { fileId: uploaded.id });
+  return finalized.gmailConfig;
+}
+
+export async function markNotification(notificationId: string, status: 'PENDIENTE' | 'LEIDA' = 'LEIDA'): Promise<CrmNotification> {
+  const data = await adminBusinessRequest<{ notification: CrmNotification }>('adminNotificationRead', { notificationId, status });
+  return data.notification;
+}
+
+export async function runCrmReminders(): Promise<{ notificationsProcessed: number; emailsProcessed: number; processedAt: string }> {
+  return await adminBusinessRequest('adminRemindersRun');
+}
+
+export async function installCrmReminders(): Promise<void> {
+  await adminBusinessRequest('adminRemindersInstall');
+}
+
+export async function createClientGallery(client: CrmClient, title?: string): Promise<{ gallery: ClientGalleryRecord; created: boolean }> {
+  return await adminBusinessRequest('adminGalleryCreate', { clientId: client.id, clientName: client.name, title: title || '' });
+}
+
+export async function uploadClientGalleryPhoto(galleryId: string, file: File): Promise<{ gallery: ClientGalleryRecord; media: GalleryImage }> {
+  if (!file.type.startsWith('image/')) throw new Error('Selecciona una fotografía válida.');
+  if (file.size <= 0 || file.size > 100_000_000) throw new Error('La fotografía debe pesar máximo 100 MB.');
+  const initialized = await adminBusinessRequest<{ uploadUrl: string }>('adminGalleryUploadInit', { galleryId, filename: file.name, mimeType: file.type, size: file.size });
+  const uploadResponse = await fetch(initialized.uploadUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
+  if (!uploadResponse.ok) throw new Error(`Google Drive no pudo recibir la fotografía (HTTP ${uploadResponse.status}).`);
+  const uploaded = await uploadResponse.json().catch(() => ({}));
+  if (!uploaded.id) throw new Error('Google Drive no devolvió el identificador de la fotografía.');
+  return await adminBusinessRequest('adminGalleryUploadFinalize', { galleryId, fileId: uploaded.id, title: file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ') });
+}
+
+export async function updateClientGalleryStatus(galleryId: string, status: ClientGalleryRecord['status']): Promise<ClientGalleryRecord> {
+  const data = await adminBusinessRequest<{ gallery: ClientGalleryRecord }>('adminGalleryStatusUpdate', { galleryId, status });
+  return data.gallery;
+}
+
+export async function saveInternalCalendarEvent(internalEvent: Partial<InternalCalendarEvent>): Promise<InternalCalendarEvent> {
+  const data = await adminBusinessRequest<{ internalEvent: InternalCalendarEvent }>('adminInternalEventUpsert', { internalEvent });
+  return data.internalEvent;
 }
 
 export async function uploadBusinessContract(input: {
@@ -264,23 +397,20 @@ export async function uploadBusinessContract(input: {
   if (input.file.type && input.file.type !== 'application/pdf') {
     throw new Error('Selecciona un contrato en formato PDF.');
   }
-  if (input.file.size > 2_600_000) {
-    throw new Error('El PDF debe pesar máximo 2.6 MB para poder guardarlo de forma segura.');
+  if (input.file.size > 5_000_000) {
+    throw new Error('El PDF debe pesar máximo 5 MB para poder guardarlo de forma segura.');
   }
-  const base64 = await fileToDataUrl(input.file);
-  const data = await adminBusinessRequest<{ contract: BusinessContract }>('adminContractUpload', {
-    contract: {
-      clientId: input.clientId,
-      clientName: input.clientName,
-      folio: input.folio,
-      eventType: input.eventType,
-      eventDate: input.eventDate,
-      filename: input.file.name,
-      mimeType: input.file.type || 'application/pdf',
-      base64,
-    },
+  const initialized = await adminBusinessRequest<{ uploadUrl: string }>('adminContractUploadInit', {
+    filename: input.file.name, mimeType: input.file.type || 'application/pdf', size: input.file.size,
   });
-  return data.contract;
+  const uploadResponse = await fetch(initialized.uploadUrl, { method: 'PUT', headers: { 'Content-Type': input.file.type || 'application/pdf' }, body: input.file });
+  if (!uploadResponse.ok) throw new Error(`Google Drive no pudo recibir el contrato (HTTP ${uploadResponse.status}).`);
+  const uploaded = await uploadResponse.json().catch(() => ({}));
+  if (!uploaded.id) throw new Error('Google Drive no devolvió el identificador del contrato.');
+  const finalized = await adminBusinessRequest<{ contract: BusinessContract }>('adminContractUploadFinalize', { contract: {
+    fileId: uploaded.id, clientId: input.clientId, clientName: input.clientName, folio: input.folio, eventType: input.eventType, eventDate: input.eventDate,
+  } });
+  return finalized.contract;
 }
 
 export async function createContractSigningLink(contractId: string): Promise<{ url: string; expiresAt: string }> {

@@ -11,6 +11,8 @@ const VERCEL_PROJECT_ID = process.env.XPH_VERCEL_PROJECT_ID || 'prj_cg2Vva1lVKN4
 const VERCEL_TEAM_ID = process.env.XPH_VERCEL_TEAM_ID || 'team_dj8zggd573kLjdTDYe1CEta5';
 const SEARCH_CONSOLE_SCRIPT_URL = process.env.XPH_SEARCH_CONSOLE_SCRIPT_URL || '';
 const SEARCH_CONSOLE_SECRET = process.env.XPH_SEARCH_CONSOLE_SECRET || '';
+const GOOGLE_CLIENT_ID = process.env.XPH_GOOGLE_CLIENT_ID || '';
+const GOOGLE_CLIENT_SECRET = process.env.XPH_GOOGLE_CLIENT_SECRET || '';
 
 const SESSION_COOKIE = 'xph_admin_session';
 const SESSION_DAYS = 30;
@@ -151,9 +153,13 @@ function sessionSecret() {
   return SESSION_SECRET;
 }
 
-function signSession(email) {
+function signSession(input) {
+  const session = typeof input === 'string' ? { email: input } : (input || {});
   const payload = JSON.stringify({
-    email: String(email || '').trim().toLowerCase(),
+    email: String(session.email || '').trim().toLowerCase(),
+    userId: String(session.userId || 'xph-super-admin'),
+    role: String(session.role || 'SUPER_ADMIN'),
+    permissions: Array.isArray(session.permissions) ? session.permissions.slice(0, 100) : ['*'],
     exp: Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000,
   });
   const encoded = b64url(payload);
@@ -182,12 +188,56 @@ function verifySession(req) {
     if (left.length !== right.length || !timingSafeEqual(left, right)) return null;
     const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
     if (!payload?.email || Number(payload.exp) < Date.now()) return null;
-    const configuredEmail = String(ADMIN_EMAIL).trim().toLowerCase();
-    if (String(payload.email).toLowerCase() !== configuredEmail) return null;
+    if (!['SUPER_ADMIN', 'COLLABORATOR'].includes(String(payload.role || ''))) return null;
     return payload;
   } catch (_) {
     return null;
   }
+}
+
+function hasPermission(session, permission) {
+  if (!session) return false;
+  if (session.role === 'SUPER_ADMIN') return true;
+  const permissions = Array.isArray(session.permissions) ? session.permissions : [];
+  if (permission === 'CRM_OR_CLIENT_WRITE') return permissions.includes('CRM_WRITE') || permissions.includes('CLIENTS_WRITE');
+  if (permission === 'CRM_OR_CLIENT_READ') return permissions.includes('CRM_READ') || permissions.includes('CLIENTS_READ') || permissions.includes('CALENDAR');
+  return permissions.includes('*') || permissions.includes(permission);
+}
+
+function requirePermission(res, session, permission) {
+  if (!session) {
+    res.status(401).json({ status: 'error', authenticated: false, message: 'La sesión expiró. Inicia sesión nuevamente.' });
+    return false;
+  }
+  if (!hasPermission(session, permission)) {
+    res.status(403).json({ status: 'error', message: 'Tu usuario no tiene permiso para realizar esta acción.' });
+    return false;
+  }
+  return true;
+}
+
+function signOauthState(payload) {
+  const encoded = b64url(JSON.stringify({ ...payload, exp: Date.now() + 10 * 60 * 1000 }));
+  const signature = createHmac('sha256', sessionSecret()).update(`oauth:${encoded}`).digest('base64url');
+  return `${encoded}.${signature}`;
+}
+
+function verifyOauthState(value) {
+  if (!value || !String(value).includes('.')) return null;
+  const [encoded, signature] = String(value).split('.');
+  const expected = createHmac('sha256', sessionSecret()).update(`oauth:${encoded}`).digest('base64url');
+  try {
+    const left = Buffer.from(signature);
+    const right = Buffer.from(expected);
+    if (left.length !== right.length || !timingSafeEqual(left, right)) return null;
+    const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+    return Number(payload.exp) > Date.now() ? payload : null;
+  } catch (_) { return null; }
+}
+
+function requestOrigin(req) {
+  const protocol = String(req.headers?.['x-forwarded-proto'] || 'https').split(',')[0];
+  return `${protocol}://${String(req.headers?.host || 'www.xaviph.com')}`;
 }
 
 function setSessionCookie(res, token) {
@@ -243,6 +293,28 @@ function publicGalleryOnly(items) {
       delete clean.previewUrl;
       return clean;
     });
+}
+
+function operationalClientRecord(item) {
+  return {
+    ...item,
+    totalAmount: 0,
+    paidAmount: 0,
+    estimatedCost: 0,
+    allocatedAdCost: 0,
+    internalNotes: '',
+    notes: '',
+    objection: '',
+    suggestedMessage: '',
+    lossReason: '',
+    contractId: '',
+    source: '',
+    campaign: '',
+    nextAction: '',
+    nextActionAt: '',
+    lastContactAt: '',
+    firstContactAt: '',
+  };
 }
 
 const PROMOTION_META_ID = 'xph-promotion-popup-config';
@@ -468,19 +540,25 @@ async function appendClientSignature(pdfBase64, signatureDataUrl, contract, audi
   const signature = await pdf.embedPng(signatureBytes);
   const scaled = signature.scaleToFit(220, 92);
 
-  page.drawText('CONSTANCIA DE ACEPTACION Y FIRMA', { x: 54, y: 720, size: 16, font: bold, color: rgb(0.12, 0.14, 0.18) });
+  page.drawText('CONSTANCIA DE ACEPTACIÓN Y FIRMA', { x: 54, y: 720, size: 16, font: bold, color: rgb(0.12, 0.14, 0.18) });
   page.drawText(`Contrato: ${String(contract.folio || contract.id || '').slice(0, 100)}`, { x: 54, y: 685, size: 10, font });
   page.drawText(`Cliente: ${String(contract.clientName || '').slice(0, 120)}`, { x: 54, y: 667, size: 10, font });
   page.drawText(`Fecha del evento: ${String(contract.eventDate || 'Por confirmar').slice(0, 40)}`, { x: 54, y: 649, size: 10, font });
-  page.drawText('El cliente confirma que leyo el contrato completo y acepto sus terminos', { x: 54, y: 610, size: 9, font });
-  page.drawText('antes de realizar la firma manuscrita electronica que aparece abajo.', { x: 54, y: 596, size: 9, font });
+  page.drawText('El cliente confirma que leyó el contrato completo y aceptó sus términos', { x: 54, y: 610, size: 9, font });
+  page.drawText('antes de realizar la firma manuscrita electrónica que aparece abajo.', { x: 54, y: 596, size: 9, font });
   page.drawText(`Aceptado: ${audit.acceptedAt}`, { x: 54, y: 566, size: 8, font, color: rgb(0.3, 0.32, 0.36) });
   page.drawText(`IP: ${audit.ip || 'No disponible'}`, { x: 54, y: 552, size: 8, font, color: rgb(0.3, 0.32, 0.36) });
-  page.drawImage(signature, { x: 54, y: 365, width: scaled.width, height: scaled.height });
-  page.drawLine({ start: { x: 54, y: 355 }, end: { x: 274, y: 355 }, thickness: 0.8, color: rgb(0.15, 0.16, 0.18) });
-  page.drawText('Firma del cliente', { x: 54, y: 338, size: 9, font });
-  page.drawLine({ start: { x: 338, y: 355 }, end: { x: 558, y: 355 }, thickness: 0.8, color: rgb(0.15, 0.16, 0.18) });
-  page.drawText('Autorizacion de Javier Garcia - pendiente', { x: 338, y: 338, size: 9, font });
+  page.drawText('FIRMAS', { x: 54, y: 485, size: 13, font: bold, color: rgb(0.12, 0.14, 0.18) });
+  page.drawText('PRESTADOR DEL SERVICIO', { x: 54, y: 452, size: 10, font: bold });
+  page.drawText('CLIENTE', { x: 338, y: 452, size: 10, font: bold });
+  page.drawText('Pendiente de autorización', { x: 88, y: 374, size: 8, font, color: rgb(0.45, 0.46, 0.5) });
+  page.drawImage(signature, { x: 338, y: 335, width: scaled.width, height: scaled.height });
+  page.drawLine({ start: { x: 54, y: 325 }, end: { x: 274, y: 325 }, thickness: 0.8, color: rgb(0.15, 0.16, 0.18) });
+  page.drawLine({ start: { x: 338, y: 325 }, end: { x: 558, y: 325 }, thickness: 0.8, color: rgb(0.15, 0.16, 0.18) });
+  page.drawText('Javier García', { x: 54, y: 306, size: 10, font: bold });
+  page.drawText('Prestador del servicio', { x: 54, y: 290, size: 9, font });
+  page.drawText(String(contract.clientName || 'Cliente registrado').slice(0, 42), { x: 338, y: 306, size: 10, font: bold });
+  page.drawText('Cliente / Contratante', { x: 338, y: 290, size: 9, font });
   page.drawText('Xavi.ph conserva el documento original y esta constancia como evidencia del proceso.', { x: 54, y: 95, size: 8, font, color: rgb(0.35, 0.37, 0.42) });
 
   return Buffer.from(await pdf.save()).toString('base64');
@@ -494,11 +572,9 @@ async function applyOwnerSignature(pdfBase64, signatureDataUrl, authorizedAt) {
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const signature = await pdf.embedPng(Buffer.from(cleanBase64(signatureDataUrl), 'base64'));
   const scaled = signature.scaleToFit(220, 92);
-  page.drawRectangle({ x: 334, y: 330, width: 230, height: 125, color: rgb(1, 1, 1) });
-  page.drawImage(signature, { x: 338, y: 365, width: scaled.width, height: scaled.height });
-  page.drawLine({ start: { x: 338, y: 355 }, end: { x: 558, y: 355 }, thickness: 0.8, color: rgb(0.15, 0.16, 0.18) });
-  page.drawText('Javier Garcia - Xavi.ph', { x: 338, y: 338, size: 9, font });
-  page.drawText(`Autorizado: ${authorizedAt}`, { x: 338, y: 324, size: 7, font, color: rgb(0.35, 0.37, 0.42) });
+  page.drawRectangle({ x: 50, y: 332, width: 228, height: 105, color: rgb(1, 1, 1) });
+  page.drawImage(signature, { x: 54, y: 335, width: scaled.width, height: scaled.height });
+  page.drawText(`Autorizado: ${authorizedAt}`, { x: 54, y: 274, size: 7, font, color: rgb(0.35, 0.37, 0.42) });
   return Buffer.from(await pdf.save()).toString('base64');
 }
 
@@ -729,7 +805,7 @@ export default async function handler(req, res) {
 
     if (req.method === 'GET' && action === 'adminSession') {
       const session = verifySession(req);
-      return res.status(200).json({ status: 'success', authenticated: Boolean(session), email: session?.email || '' });
+      return res.status(200).json({ status: 'success', authenticated: Boolean(session), email: session?.email || '', userId: session?.userId || '', role: session?.role || '', permissions: session?.permissions || [] });
     }
 
     if (req.method === 'POST' && action === 'adminLogout') {
@@ -750,15 +826,67 @@ export default async function handler(req, res) {
         return res.status(401).json({ status: 'error', authenticated: false, message: 'Credenciales incorrectas.' });
       }
       const email = String(ADMIN_EMAIL).trim().toLowerCase();
-      setSessionCookie(res, signSession(email));
-      return res.status(200).json({ status: 'success', authenticated: true, email });
+      const adminSession = { email, userId: 'xph-super-admin', role: 'SUPER_ADMIN', permissions: ['*'] };
+      setSessionCookie(res, signSession(adminSession));
+      return res.status(200).json({ status: 'success', authenticated: true, ...adminSession });
+    }
+
+    if (req.method === 'GET' && action === 'teamGoogleStart') {
+      if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) return res.status(503).send('La conexión de Google todavía no está configurada por el Super Admin.');
+      const inviteToken = String(req.query?.invite || '').trim();
+      if (!inviteToken) return res.status(400).send('La invitación está incompleta.');
+      const tokenHash = createHash('sha256').update(inviteToken).digest('base64url');
+      const invitation = await forwardBusinessAction('teamInviteResolve', { tokenHash });
+      const callbackUrl = `${requestOrigin(req)}/api/proxy?action=teamGoogleCallback`;
+      const state = signOauthState({ tokenHash, callbackUrl, expectedEmail: invitation.user?.email || '' });
+      const authorize = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+      authorize.searchParams.set('client_id', GOOGLE_CLIENT_ID);
+      authorize.searchParams.set('redirect_uri', callbackUrl);
+      authorize.searchParams.set('response_type', 'code');
+      authorize.searchParams.set('scope', 'openid email profile https://www.googleapis.com/auth/calendar.events');
+      authorize.searchParams.set('access_type', 'offline');
+      authorize.searchParams.set('prompt', 'consent');
+      authorize.searchParams.set('login_hint', invitation.user?.email || '');
+      authorize.searchParams.set('state', state);
+      return res.redirect(302, authorize.toString());
+    }
+
+    if (req.method === 'GET' && action === 'teamGoogleCallback') {
+      const state = verifyOauthState(req.query?.state);
+      if (!state || !req.query?.code) return res.redirect(302, `/admin?google_error=${encodeURIComponent('La autorización de Google no es válida o caducó.')}`);
+      const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ code: String(req.query.code), client_id: GOOGLE_CLIENT_ID, client_secret: GOOGLE_CLIENT_SECRET, redirect_uri: String(state.callbackUrl), grant_type: 'authorization_code' }),
+      });
+      const tokens = await tokenResponse.json().catch(() => ({}));
+      if (!tokenResponse.ok || !tokens.id_token || !tokens.access_token) return res.redirect(302, `/admin?google_error=${encodeURIComponent('Google no entregó una autorización válida.')}`);
+      const identityResponse = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(tokens.id_token)}`);
+      const identity = await identityResponse.json().catch(() => ({}));
+      const googleEmail = String(identity.email || '').trim().toLowerCase();
+      if (!identityResponse.ok || !googleEmail || String(identity.aud || '') !== GOOGLE_CLIENT_ID || ![true, 'true'].includes(identity.email_verified)) {
+        return res.redirect(302, `/admin?google_error=${encodeURIComponent('No se pudo verificar la identidad de Google.')}`);
+      }
+      if (googleEmail !== String(state.expectedEmail || '').trim().toLowerCase()) {
+        return res.redirect(302, `/admin?google_error=${encodeURIComponent('Debes continuar con el mismo correo al que se envió la invitación.')}`);
+      }
+      const connected = await forwardBusinessAction('teamGoogleConnect', {
+        tokenHash: state.tokenHash,
+        googleEmail,
+        googleSubject: String(identity.sub || ''),
+        accessToken: String(tokens.access_token || ''),
+        refreshToken: String(tokens.refresh_token || ''),
+        expiresIn: Number(tokens.expires_in || 3600),
+      });
+      const user = connected.user;
+      const collaboratorSession = { email: user.email, userId: user.id, role: 'COLLABORATOR', permissions: Array.isArray(user.permissions) ? user.permissions : [] };
+      setSessionCookie(res, signSession(collaboratorSession));
+      return res.redirect(302, '/admin?google=connected');
     }
 
     if (req.method === 'POST' && action === 'adminAnalytics') {
       const session = verifySession(req);
-      if (!session) {
-        return res.status(401).json({ status: 'error', authenticated: false, message: 'La sesión expiró. Inicia sesión nuevamente.' });
-      }
+      if (!requirePermission(res, session, 'SEO_ADMIN')) return;
       const raw = await readBody(req);
       let submitted = {};
       try { submitted = JSON.parse(raw || '{}'); } catch (_) {}
@@ -779,7 +907,31 @@ export default async function handler(req, res) {
       'adminCalendarSync',
       'adminExpenseUpsert',
       'adminPaymentUpsert',
+      'adminAdjustmentUpsert',
+      'adminClientPackageAssign',
+      'adminServiceUpsert',
+      'adminAddonUpsert',
+      'adminTeamFunctionUpsert',
+      'adminTeamUserUpsert',
+      'adminTeamInviteCreate',
+      'adminTeamAssignmentUpsert',
+      'adminGmailConfigUpsert',
+      'adminGmailTest',
+      'adminEmailTemplateUpsert',
+      'adminEmailSend',
+      'adminEmailLogoUploadInit',
+      'adminEmailLogoUploadFinalize',
+      'adminNotificationRead',
+      'adminRemindersRun',
+      'adminRemindersInstall',
+      'adminGalleryCreate',
+      'adminGalleryUploadInit',
+      'adminGalleryUploadFinalize',
+      'adminGalleryStatusUpdate',
+      'adminInternalEventUpsert',
       'adminContractUpload',
+      'adminContractUploadInit',
+      'adminContractUploadFinalize',
       'adminContractCreateLink',
       'adminOwnerSignatureSave',
       'adminContractFinalize',
@@ -787,18 +939,67 @@ export default async function handler(req, res) {
 
     if (req.method === 'POST' && adminBusinessActions.includes(action)) {
       const session = verifySession(req);
-      if (!session) return res.status(401).json({ status: 'error', message: 'La sesión expiró. Inicia sesión nuevamente.' });
+      const permissionByAction = {
+        adminBusinessClients: 'CRM_OR_CLIENT_READ', adminBusinessSnapshot: 'CRM_OR_CLIENT_READ',
+        adminCrmUpsert: 'CRM_OR_CLIENT_WRITE', adminFollowUpCreate: 'CRM_WRITE', adminProspectConvert: 'CRM_WRITE',
+        adminCalendarSync: 'CALENDAR',
+        adminExpenseUpsert: 'FINANCE', adminPaymentUpsert: 'FINANCE', adminAdjustmentUpsert: 'FINANCE',
+        adminClientPackageAssign: 'CLIENTS_WRITE', adminServiceUpsert: 'CLIENTS_WRITE', adminAddonUpsert: 'CLIENTS_WRITE',
+        adminContractUpload: 'CONTRACTS', adminContractUploadInit: 'CONTRACTS', adminContractUploadFinalize: 'CONTRACTS', adminContractCreateLink: 'CONTRACTS', adminOwnerSignatureSave: 'CONTRACTS', adminContractFinalize: 'CONTRACTS',
+        adminUploadInit: 'GALLERIES', adminUploadFinalize: 'GALLERIES',
+        adminTeamFunctionUpsert: 'USERS_ADMIN', adminTeamUserUpsert: 'USERS_ADMIN', adminTeamInviteCreate: 'USERS_ADMIN',
+        adminTeamAssignmentUpsert: 'USERS_ADMIN',
+        adminGmailConfigUpsert: 'GMAIL_ADMIN', adminGmailTest: 'GMAIL_ADMIN', adminEmailTemplateUpsert: 'GMAIL_ADMIN',
+        adminEmailSend: 'EMAIL_SEND', adminEmailLogoUploadInit: 'GMAIL_ADMIN', adminEmailLogoUploadFinalize: 'GMAIL_ADMIN',
+        adminNotificationRead: 'CRM_OR_CLIENT_READ', adminRemindersRun: 'GMAIL_ADMIN', adminRemindersInstall: 'GMAIL_ADMIN',
+        adminGalleryCreate: 'GALLERIES', adminGalleryUploadInit: 'GALLERIES', adminGalleryUploadFinalize: 'GALLERIES', adminGalleryStatusUpdate: 'GALLERIES',
+        adminInternalEventUpsert: 'USERS_ADMIN',
+      };
+      if (!requirePermission(res, session, permissionByAction[action] || 'SUPER_ADMIN')) return;
       const raw = await readBody(req);
       let submitted = {};
       try { submitted = JSON.parse(raw || '{}'); } catch (_) {}
 
       if (action === 'adminBusinessSnapshot') {
         const result = await forwardBusinessAction('businessSnapshot');
+        if (session.role !== 'SUPER_ADMIN') {
+          const assignments = (result.snapshot?.assignments || []).filter((item) => String(item.userId) === String(session.userId) && item.status !== 'CANCELADA');
+          const allowedClientIds = new Set(assignments.map((item) => String(item.clientId)));
+          const canReadProspects = hasPermission(session, 'CRM_READ');
+          const visibleClients = (result.snapshot?.clients || []).filter((item) => (item.recordType === 'Prospecto' && canReadProspects) || (item.recordType === 'Cliente' && allowedClientIds.has(String(item.id))));
+          const visibleIds = new Set(visibleClients.map((item) => String(item.id)));
+          result.snapshot.clients = visibleClients.map((item) => item.recordType === 'Cliente' ? operationalClientRecord(item) : { ...item, totalAmount: 0, paidAmount: 0, estimatedCost: 0, allocatedAdCost: 0, internalNotes: '' });
+          result.snapshot.followUps = canReadProspects ? (result.snapshot.followUps || []).filter((item) => visibleIds.has(String(item.prospectId || item.clientId))) : [];
+          result.snapshot.expenses = [];
+          result.snapshot.payments = [];
+          result.snapshot.transactions = [];
+          result.snapshot.adjustments = [];
+          result.snapshot.contracts = [];
+          result.snapshot.packageSnapshots = [];
+          result.snapshot.addons = [];
+          result.snapshot.services = (result.snapshot?.services || []).filter((item) => allowedClientIds.has(String(item.clientId))).map((item) => ({ ...item, unitPrice: 0, total: 0 }));
+          result.snapshot.assignments = assignments;
+          result.snapshot.users = (result.snapshot?.users || []).filter((item) => String(item.id) === String(session.userId)).map((item) => ({ ...item, permissions: [] }));
+          result.snapshot.teamFunctions = [];
+          result.snapshot.gmailConfig = null;
+          result.snapshot.emailTemplates = hasPermission(session, 'EMAIL_SEND') ? (result.snapshot.emailTemplates || []).filter((item) => item.status === 'ACTIVA') : [];
+          result.snapshot.emailHistory = (result.snapshot.emailHistory || []).filter((item) => String(item.userId) === String(session.userId) && allowedClientIds.has(String(item.clientId)));
+          result.snapshot.notifications = (result.snapshot.notifications || []).filter((item) => String(item.userId) === String(session.userId));
+          result.snapshot.auditLog = [];
+          result.snapshot.galleries = hasPermission(session, 'GALLERIES') ? (result.snapshot.galleries || []).filter((item) => allowedClientIds.has(String(item.clientId))) : [];
+          result.snapshot.internalEvents = (result.snapshot.internalEvents || []).filter((item) => item.visibility === 'SELECTED' && Array.isArray(item.userIds) && item.userIds.includes(String(session.userId)));
+          result.snapshot.ownerSignatureConfigured = false;
+        }
         return res.status(200).json({ status: 'success', snapshot: result.snapshot });
       }
       if (action === 'adminBusinessClients') {
         const result = await forwardBusinessAction('businessClients');
-        return res.status(200).json({ status: 'success', clients: Array.isArray(result.clients) ? result.clients : [] });
+        if (session.role === 'SUPER_ADMIN') return res.status(200).json({ status: 'success', clients: Array.isArray(result.clients) ? result.clients : [] });
+        const snapshotResult = await forwardBusinessAction('businessSnapshot');
+        const assignedIds = new Set((snapshotResult.snapshot?.assignments || []).filter((item) => String(item.userId) === String(session.userId) && item.status !== 'CANCELADA').map((item) => String(item.clientId)));
+        const canReadProspects = hasPermission(session, 'CRM_READ');
+        const visible = (result.clients || []).filter((item) => (item.recordType === 'Prospecto' && canReadProspects) || (item.recordType === 'Cliente' && assignedIds.has(String(item.id))));
+        return res.status(200).json({ status: 'success', clients: visible.map((item) => item.recordType === 'Cliente' ? operationalClientRecord(item) : { ...item, totalAmount: 0, paidAmount: 0, estimatedCost: 0, allocatedAdCost: 0, internalNotes: '' }) });
       }
       if (action === 'adminUploadInit') {
         const filename = String(submitted.filename || '').trim().slice(0, 180);
@@ -832,6 +1033,16 @@ export default async function handler(req, res) {
         if (Number(client.paidAmount || 0) > Number(client.totalAmount || 0) && Number(client.totalAmount || 0) > 0) {
           return res.status(400).json({ status: 'error', message: 'Lo pagado no puede ser mayor al total contratado.' });
         }
+        if (session.role !== 'SUPER_ADMIN') {
+          const snapshotResult = await forwardBusinessAction('businessSnapshot');
+          const existing = (snapshotResult.snapshot?.clients || []).find((item) => String(item.id) === String(client.id || ''));
+          const isClientRecord = String(client.recordType || existing?.recordType || 'Prospecto') === 'Cliente';
+          if (isClientRecord) {
+            const assigned = (snapshotResult.snapshot?.assignments || []).some((item) => String(item.userId) === String(session.userId) && String(item.clientId) === String(client.id || '') && item.status !== 'CANCELADA');
+            if (!hasPermission(session, 'CLIENTS_WRITE') || !assigned) return res.status(403).json({ status: 'error', message: 'Solo puedes editar clientes que tienes asignados y autorizados.' });
+            client.totalAmount = existing?.totalAmount || 0; client.paidAmount = existing?.paidAmount || 0; client.estimatedCost = existing?.estimatedCost || 0; client.allocatedAdCost = existing?.allocatedAdCost || 0; client.internalNotes = existing?.internalNotes || '';
+          } else if (!hasPermission(session, 'CRM_WRITE')) return res.status(403).json({ status: 'error', message: 'No tienes permiso para editar prospectos.' });
+        }
         const result = await forwardBusinessAction('crmUpsert', { client });
         return res.status(200).json({ status: 'success', client: result.client });
       }
@@ -839,6 +1050,12 @@ export default async function handler(req, res) {
         const followUp = submitted.followUp || {};
         if (!String(followUp.recordId || '').trim() || (!String(followUp.conversation || '').trim() && !String(followUp.result || '').trim())) {
           return res.status(400).json({ status: 'error', message: 'Selecciona un registro y captura la conversación o el resultado.' });
+        }
+        if (session.role !== 'SUPER_ADMIN') {
+          const snapshotResult = await forwardBusinessAction('businessSnapshot');
+          const record = (snapshotResult.snapshot?.clients || []).find((item) => String(item.id) === String(followUp.recordId));
+          const assigned = (snapshotResult.snapshot?.assignments || []).some((item) => String(item.userId) === String(session.userId) && String(item.clientId) === String(followUp.recordId) && item.status !== 'CANCELADA');
+          if (!record || (record.recordType === 'Cliente' && !assigned)) return res.status(403).json({ status: 'error', message: 'No puedes registrar seguimiento en ese expediente.' });
         }
         const result = await forwardBusinessAction('followUpCreate', { followUp });
         return res.status(200).json({ status: 'success', followUp: result.followUp, client: result.client });
@@ -852,16 +1069,17 @@ export default async function handler(req, res) {
       if (action === 'adminCalendarSync') {
         const clientId = String(submitted.clientId || '').trim();
         if (!clientId) return res.status(400).json({ status: 'error', message: 'Cliente no identificado.' });
-        const eventReady = /^\d{4}-\d{2}-\d{2}/.test(String(submitted.eventDate || ''));
-        const sessionReady = /^\d{4}-\d{2}-\d{2}/.test(String(submitted.preSessionDate || ''));
-        if (!eventReady && !sessionReady) {
-          return res.status(400).json({ status: 'error', message: 'Completa la fecha del evento o de la sesión antes de actualizar Calendar.' });
+        if (session.role !== 'SUPER_ADMIN') {
+          const snapshotResult = await forwardBusinessAction('businessSnapshot');
+          const assigned = (snapshotResult.snapshot?.assignments || []).some((item) => String(item.userId) === String(session.userId) && String(item.clientId) === clientId && item.status !== 'CANCELADA');
+          if (!assigned || !hasPermission(session, 'CLIENTS_WRITE')) return res.status(403).json({ status: 'error', message: 'No puedes sincronizar un cliente que no tienes autorizado para editar.' });
         }
         try {
           const result = await forwardBusinessAction('calendarSync', { clientId });
           return res.status(200).json({ status: 'success', client: result.client });
         } catch (error) {
           const message = String(error?.message || error || 'No se pudo actualizar Calendar.').replace(/^Error:\s*/i, '');
+          await forwardBusinessAction('crmUpsert', { client: { id: clientId, calendarSyncStatus: 'Error', calendarSyncError: message } }).catch(() => null);
           if (/fecha y el horario|fecha.*horario/i.test(message)) return res.status(400).json({ status: 'error', message });
           throw error;
         }
@@ -879,20 +1097,236 @@ export default async function handler(req, res) {
       }
       if (action === 'adminPaymentUpsert') {
         const payment = submitted.payment || {};
-        if (!payment.clientId || !['Pendiente', 'Liquidado', 'Anulado'].includes(String(payment.status || ''))) {
+        if (!payment.clientId || !['Pendiente', 'Parcial', 'Liquidado', 'Anulado'].includes(String(payment.status || ''))) {
           return res.status(400).json({ status: 'error', message: 'Cliente o estado de pago no válido.' });
         }
-        if (Number(payment.plannedAmount || 0) <= 0 || (payment.status === 'Liquidado' && Number(payment.receivedAmount || 0) <= 0)) {
+        if (Number(payment.plannedAmount || 0) <= 0 || (['Parcial', 'Liquidado'].includes(String(payment.status)) && Number(payment.receivedAmount || 0) <= 0)) {
           return res.status(400).json({ status: 'error', message: 'Revisa los montos programado y recibido.' });
         }
-        if (![1, 2, 3].includes(Number(payment.installmentNumber)) || Number(payment.percentage || 0) <= 0 || Number(payment.percentage || 0) > 100) {
-          return res.status(400).json({ status: 'error', message: 'Selecciona uno de los tres pagos y un porcentaje válido.' });
+        if (Number(payment.installmentNumber || 0) < 0 || Number(payment.installmentNumber || 0) > 99 || Number(payment.percentage || 0) < 0 || Number(payment.percentage || 0) > 100) {
+          return res.status(400).json({ status: 'error', message: 'Número de pago o porcentaje no válido.' });
         }
         if (payment.receiptBase64 && (!['image/jpeg', 'image/png', 'application/pdf'].includes(String(payment.receiptMimeType || '')) || String(payment.receiptBase64).length > 3_600_000)) {
           return res.status(400).json({ status: 'error', message: 'El comprobante debe ser JPG, PNG o PDF y pesar máximo 2.6 MB.' });
         }
         const result = await forwardBusinessAction('paymentUpsert', { payment });
-        return res.status(200).json({ status: 'success', payment: result.payment });
+        return res.status(200).json({ status: 'success', payment: result.payment, transaction: result.transaction, client: result.client });
+      }
+      if (action === 'adminAdjustmentUpsert') {
+        const adjustment = submitted.adjustment || {};
+        if (!['Gasto no registrado', 'Pendiente por identificar', 'Ajuste financiero', 'Otro'].includes(String(adjustment.category || '')) || !['ACTIVO', 'ANULADO'].includes(String(adjustment.status || 'ACTIVO'))) {
+          return res.status(400).json({ status: 'error', message: 'Categoría o estado de ajuste no válido.' });
+        }
+        if (!String(adjustment.concept || '').trim() || Math.abs(Number(adjustment.amount || 0)) < 0.005) {
+          return res.status(400).json({ status: 'error', message: 'El ajuste requiere concepto e importe diferente de cero.' });
+        }
+        const result = await forwardBusinessAction('adjustmentUpsert', { adjustment });
+        return res.status(200).json({ status: 'success', adjustment: result.adjustment });
+      }
+      if (action === 'adminClientPackageAssign') {
+        const clientId = String(submitted.clientId || '').trim().slice(0, 120);
+        const selectedPackage = submitted.package || {};
+        if (!clientId || !String(selectedPackage.id || '').trim() || !String(selectedPackage.name || '').trim() || Number(selectedPackage.price || 0) < 0 || !Array.isArray(selectedPackage.features)) {
+          return res.status(400).json({ status: 'error', message: 'Selecciona un cliente y un paquete válido.' });
+        }
+        if (session.role !== 'SUPER_ADMIN') {
+          const snapshotResult = await forwardBusinessAction('businessSnapshot');
+          const assigned = (snapshotResult.snapshot?.assignments || []).some((item) => String(item.userId) === String(session.userId) && String(item.clientId) === clientId && item.status !== 'CANCELADA');
+          if (!assigned) return res.status(403).json({ status: 'error', message: 'No puedes modificar el paquete de un cliente no asignado.' });
+        }
+        const safePackage = {
+          id: String(selectedPackage.id).slice(0, 120),
+          name: String(selectedPackage.name).slice(0, 200),
+          price: Math.max(0, Number(selectedPackage.price) || 0),
+          description: String(selectedPackage.description || '').slice(0, 2000),
+          features: selectedPackage.features.slice(0, 100).map((item) => String(item || '').slice(0, 300)).filter(Boolean),
+          notIncludes: Array.isArray(selectedPackage.notIncludes) ? selectedPackage.notIncludes.slice(0, 100).map((item) => String(item || '').slice(0, 300)).filter(Boolean) : [],
+        };
+        const result = await forwardBusinessAction('clientPackageAssign', {
+          clientId,
+          category: String(submitted.category || '').slice(0, 100),
+          package: safePackage,
+          discount: Math.max(0, Number(submitted.discount) || 0),
+          promotion: String(submitted.promotion || '').slice(0, 500),
+        });
+        return res.status(200).json({ status: 'success', packageSnapshot: result.packageSnapshot, services: result.services, client: result.client });
+      }
+      if (action === 'adminServiceUpsert') {
+        const service = submitted.service || {};
+        if (!service.clientId || !String(service.concept || '').trim() || Number(service.quantity || 0) <= 0 || !['PAQUETE', 'MANUAL'].includes(String(service.source || 'MANUAL'))) {
+          return res.status(400).json({ status: 'error', message: 'El servicio requiere cliente, concepto, cantidad y origen válidos.' });
+        }
+        if (session.role !== 'SUPER_ADMIN') {
+          const snapshotResult = await forwardBusinessAction('businessSnapshot');
+          const assigned = (snapshotResult.snapshot?.assignments || []).some((item) => String(item.userId) === String(session.userId) && String(item.clientId) === String(service.clientId) && item.status !== 'CANCELADA');
+          if (!assigned) return res.status(403).json({ status: 'error', message: 'No puedes modificar servicios de un cliente no asignado.' });
+        }
+        const result = await forwardBusinessAction('serviceUpsert', { service });
+        return res.status(200).json({ status: 'success', service: result.service });
+      }
+      if (action === 'adminAddonUpsert') {
+        const addon = submitted.addon || {};
+        if (!addon.clientId || !String(addon.concept || '').trim() || Number(addon.quantity || 0) <= 0 || !['Pendiente', 'Confirmado', 'Entregado', 'Anulado'].includes(String(addon.status || 'Confirmado'))) {
+          return res.status(400).json({ status: 'error', message: 'El adicional requiere cliente, concepto, cantidad y estado válidos.' });
+        }
+        if (session.role !== 'SUPER_ADMIN') {
+          const snapshotResult = await forwardBusinessAction('businessSnapshot');
+          const assigned = (snapshotResult.snapshot?.assignments || []).some((item) => String(item.userId) === String(session.userId) && String(item.clientId) === String(addon.clientId) && item.status !== 'CANCELADA');
+          if (!assigned) return res.status(403).json({ status: 'error', message: 'No puedes modificar adicionales de un cliente no asignado.' });
+        }
+        const result = await forwardBusinessAction('addonUpsert', { addon });
+        return res.status(200).json({ status: 'success', addon: result.addon, client: result.client, packageSnapshot: result.packageSnapshot });
+      }
+      if (action === 'adminTeamFunctionUpsert') {
+        const teamFunction = submitted.teamFunction || {};
+        if (!String(teamFunction.name || '').trim() || !['ACTIVA', 'INACTIVA'].includes(String(teamFunction.status || 'ACTIVA'))) return res.status(400).json({ status: 'error', message: 'La función requiere nombre y estado válido.' });
+        const result = await forwardBusinessAction('teamFunctionUpsert', { teamFunction });
+        return res.status(200).json({ status: 'success', teamFunction: result.teamFunction });
+      }
+      if (action === 'adminTeamUserUpsert') {
+        const user = submitted.user || {};
+        const allowedPermissions = new Set(['CRM_READ', 'CRM_WRITE', 'CLIENTS_READ', 'CLIENTS_WRITE', 'CALENDAR', 'EMAIL_SEND', 'GALLERIES']);
+        const permissions = Array.isArray(user.permissions) ? user.permissions.map(String).filter((permission) => allowedPermissions.has(permission)) : [];
+        if (!String(user.name || '').trim() || !/^\S+@\S+\.\S+$/.test(String(user.email || '')) || !['INVITADO', 'ACTIVO', 'INACTIVO'].includes(String(user.status || 'INVITADO'))) return res.status(400).json({ status: 'error', message: 'El usuario requiere nombre, correo y estado válidos.' });
+        const result = await forwardBusinessAction('teamUserUpsert', { user: { ...user, role: 'COLLABORATOR', permissions } });
+        return res.status(200).json({ status: 'success', user: result.user });
+      }
+      if (action === 'adminTeamInviteCreate') {
+        const userId = String(submitted.userId || '').trim();
+        if (!userId) return res.status(400).json({ status: 'error', message: 'Selecciona el colaborador que recibirá la invitación.' });
+        const token = randomBytes(32).toString('base64url');
+        const tokenHash = createHash('sha256').update(token).digest('base64url');
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+        const inviteUrl = `${requestOrigin(req)}/api/proxy?action=teamGoogleStart&invite=${encodeURIComponent(token)}`;
+        const result = await forwardBusinessAction('teamInviteCreate', { userId, tokenHash, expiresAt, inviteUrl });
+        return res.status(200).json({ status: 'success', user: result.user, expiresAt: result.expiresAt });
+      }
+      if (action === 'adminTeamAssignmentUpsert') {
+        const assignment = submitted.assignment || {};
+        if (!assignment.clientId || !assignment.userId || !/^\d{4}-\d{2}-\d{2}/.test(String(assignment.startDate || '')) || !['EVENT', 'SESSION', 'MANUAL'].includes(String(assignment.scheduleSource || 'EVENT'))) return res.status(400).json({ status: 'error', message: 'La asignación requiere cliente, colaborador, fecha y origen de horario válidos.' });
+        const result = await forwardBusinessAction('teamAssignmentUpsert', { assignment: { ...assignment, scheduleSource: String(assignment.scheduleSource || 'EVENT') }, allowOverride: Boolean(submitted.allowOverride) });
+        if (result.conflict && !submitted.allowOverride) return res.status(409).json({ status: 'conflict', message: 'El colaborador ya tiene una actividad que se traslapa.', conflict: result.conflict });
+        return res.status(200).json({ status: 'success', assignment: result.assignment, conflict: result.conflict || null });
+      }
+      if (action === 'adminGmailConfigUpsert') {
+        const input = submitted.gmailConfig || {};
+        if (String(input.replyTo || '') && !/^\S+@\S+\.\S+$/.test(String(input.replyTo))) return res.status(400).json({ status: 'error', message: 'El correo de respuesta no es válido.' });
+        const result = await forwardBusinessAction('gmailConfigUpsert', { gmailConfig: {
+          enabled: Boolean(input.enabled), senderName: String(input.senderName || '').slice(0, 160), replyTo: String(input.replyTo || '').slice(0, 180),
+          signatureHtml: String(input.signatureHtml || '').slice(0, 12000), autoPaymentReceived: Boolean(input.autoPaymentReceived),
+          autoPaymentDue: Boolean(input.autoPaymentDue), autoEventReminders: Boolean(input.autoEventReminders),
+        } });
+        return res.status(200).json({ status: 'success', gmailConfig: result.gmailConfig });
+      }
+      if (action === 'adminGmailTest') {
+        const recipient = String(submitted.recipient || '').trim().toLowerCase();
+        if (!/^\S+@\S+\.\S+$/.test(recipient)) return res.status(400).json({ status: 'error', message: 'Escribe un correo válido para la prueba.' });
+        const result = await forwardBusinessAction('gmailTest', { recipient, userId: session.userId });
+        return res.status(200).json({ status: 'success', emailHistory: result.emailHistory });
+      }
+      if (action === 'adminEmailTemplateUpsert') {
+        const emailTemplate = submitted.emailTemplate || {};
+        if (!String(emailTemplate.name || '').trim() || !String(emailTemplate.subject || '').trim() || !String(emailTemplate.htmlBody || '').trim() || !['ACTIVA', 'INACTIVA'].includes(String(emailTemplate.status || 'ACTIVA'))) {
+          return res.status(400).json({ status: 'error', message: 'La plantilla requiere nombre, asunto, contenido y estado válido.' });
+        }
+        const result = await forwardBusinessAction('emailTemplateUpsert', { emailTemplate: { id: String(emailTemplate.id || '').slice(0, 120), name: String(emailTemplate.name).slice(0, 160), subject: String(emailTemplate.subject).slice(0, 300), htmlBody: String(emailTemplate.htmlBody).slice(0, 30000), status: String(emailTemplate.status || 'ACTIVA') } });
+        return res.status(200).json({ status: 'success', emailTemplate: result.emailTemplate });
+      }
+      if (action === 'adminEmailSend') {
+        const clientId = String(submitted.clientId || '').trim();
+        const templateId = String(submitted.templateId || '').trim();
+        if (!clientId || !templateId) return res.status(400).json({ status: 'error', message: 'Selecciona un cliente/prospecto y una plantilla.' });
+        if (session.role !== 'SUPER_ADMIN') {
+          const snapshotResult = await forwardBusinessAction('businessSnapshot');
+          const related = (snapshotResult.snapshot?.clients || []).find((item) => String(item.id) === clientId);
+          const allowed = (snapshotResult.snapshot?.assignments || []).some((item) => String(item.userId) === String(session.userId) && String(item.clientId) === clientId && item.status !== 'CANCELADA');
+          const prospectAllowed = related?.recordType === 'Prospecto' && (hasPermission(session, 'CRM_READ') || hasPermission(session, 'CRM_WRITE'));
+          if (!allowed && !prospectAllowed) return res.status(403).json({ status: 'error', message: 'No puedes enviar correo a este contacto.' });
+        }
+        const result = await forwardBusinessAction('emailSend', { clientId, templateId, variables: submitted.variables && typeof submitted.variables === 'object' ? submitted.variables : {}, userId: session.userId });
+        return res.status(200).json({ status: 'success', emailHistory: result.emailHistory });
+      }
+      if (action === 'adminEmailLogoUploadInit') {
+        const filename = String(submitted.filename || '').trim().slice(0, 180);
+        const mimeType = String(submitted.mimeType || '').trim().toLowerCase();
+        const size = Number(submitted.size || 0);
+        if (!filename || !['image/png', 'image/jpeg', 'image/webp'].includes(mimeType) || size <= 0 || size > 5_000_000) return res.status(400).json({ status: 'error', message: 'El logo debe ser PNG, JPG o WebP y pesar máximo 5 MB.' });
+        const result = await forwardBusinessAction('gmailLogoUploadInit', { filename, mimeType, size });
+        return res.status(200).json({ status: 'success', uploadUrl: result.uploadUrl });
+      }
+      if (action === 'adminEmailLogoUploadFinalize') {
+        const fileId = String(submitted.fileId || '').trim().slice(0, 200);
+        if (!fileId) return res.status(400).json({ status: 'error', message: 'No se recibió el logo cargado.' });
+        const result = await forwardBusinessAction('gmailLogoUploadFinalize', { fileId });
+        return res.status(200).json({ status: 'success', gmailConfig: result.gmailConfig });
+      }
+      if (action === 'adminNotificationRead') {
+        const notificationId = String(submitted.notificationId || '').trim();
+        if (!notificationId) return res.status(400).json({ status: 'error', message: 'Notificación no identificada.' });
+        if (session.role !== 'SUPER_ADMIN') {
+          const snapshotResult = await forwardBusinessAction('businessSnapshot');
+          const ownsNotification = (snapshotResult.snapshot?.notifications || []).some((item) => String(item.id) === notificationId && String(item.userId) === String(session.userId));
+          if (!ownsNotification) return res.status(403).json({ status: 'error', message: 'No puedes modificar esa notificación.' });
+        }
+        const result = await forwardBusinessAction('notificationRead', { notificationId, status: submitted.status === 'PENDIENTE' ? 'PENDIENTE' : 'LEIDA' });
+        return res.status(200).json({ status: 'success', notification: result.notification });
+      }
+      if (action === 'adminRemindersRun') {
+        const result = await forwardBusinessAction('remindersRun', {});
+        return res.status(200).json(result);
+      }
+      if (action === 'adminRemindersInstall') {
+        const result = await forwardBusinessAction('remindersInstall', {});
+        return res.status(200).json(result);
+      }
+      if (action === 'adminGalleryCreate') {
+        const clientId = String(submitted.clientId || '').trim().slice(0, 120);
+        if (!clientId) return res.status(400).json({ status: 'error', message: 'Selecciona un cliente para crear la galería.' });
+        if (session.role !== 'SUPER_ADMIN') {
+          const snapshotResult = await forwardBusinessAction('businessSnapshot');
+          const allowed = (snapshotResult.snapshot?.assignments || []).some((item) => String(item.userId) === String(session.userId) && String(item.clientId) === clientId && item.status !== 'CANCELADA');
+          if (!allowed) return res.status(403).json({ status: 'error', message: 'No puedes administrar una galería de un cliente que no tienes asignado.' });
+        }
+        const token = randomBytes(32).toString('base64url');
+        const baseSlug = String(submitted.clientName || 'cliente').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'cliente';
+        const slug = `${baseSlug}-${randomBytes(4).toString('hex')}`;
+        const galleryId = `galeria-${randomBytes(12).toString('hex')}`;
+        const galleryUrl = `${requestOrigin(req)}/?galeria=${encodeURIComponent(slug)}&k=${encodeURIComponent(token)}`;
+        const result = await forwardBusinessAction('galleryCreate', { clientId, title: String(submitted.title || '').slice(0, 240), galleryId, slug, accessToken: token, galleryUrl });
+        return res.status(200).json({ status: 'success', gallery: result.gallery, created: Boolean(result.created) });
+      }
+      if (action === 'adminGalleryUploadInit') {
+        const galleryId = String(submitted.galleryId || '').trim().slice(0, 120);
+        const filename = String(submitted.filename || '').trim().slice(0, 180);
+        const mimeType = String(submitted.mimeType || '').trim().toLowerCase();
+        const size = Number(submitted.size || 0);
+        if (!galleryId || !filename || !mimeType.startsWith('image/') || size <= 0 || size > 100_000_000) return res.status(400).json({ status: 'error', message: 'La fotografía debe ser válida y pesar máximo 100 MB.' });
+        const result = await forwardBusinessAction('galleryUploadInit', { galleryId, filename, mimeType, size });
+        return res.status(200).json({ status: 'success', uploadUrl: result.uploadUrl });
+      }
+      if (action === 'adminGalleryUploadFinalize') {
+        const galleryId = String(submitted.galleryId || '').trim().slice(0, 120);
+        const fileId = String(submitted.fileId || '').trim().slice(0, 200);
+        if (!galleryId || !fileId) return res.status(400).json({ status: 'error', message: 'La fotografía o la galería no están identificadas.' });
+        const result = await forwardBusinessAction('galleryUploadFinalize', { galleryId, fileId, title: String(submitted.title || '').slice(0, 180) });
+        return res.status(200).json({ status: 'success', gallery: result.gallery, media: result.media });
+      }
+      if (action === 'adminGalleryStatusUpdate') {
+        const galleryId = String(submitted.galleryId || '').trim();
+        const status = String(submitted.status || '');
+        if (!galleryId || !['BORRADOR', 'ACTIVA', 'LISTA', 'ARCHIVADA'].includes(status)) return res.status(400).json({ status: 'error', message: 'Galería o estado no válido.' });
+        const result = await forwardBusinessAction('galleryStatusUpdate', { galleryId, status });
+        return res.status(200).json({ status: 'success', gallery: result.gallery });
+      }
+      if (action === 'adminInternalEventUpsert') {
+        const internalEvent = submitted.internalEvent || {};
+        if (!String(internalEvent.title || '').trim() || !/^\d{4}-\d{2}-\d{2}/.test(String(internalEvent.startDate || '')) || !['SUPER_ADMIN', 'SELECTED'].includes(String(internalEvent.visibility || 'SUPER_ADMIN')) || !['ACTIVO', 'CANCELADO'].includes(String(internalEvent.status || 'ACTIVO'))) {
+          return res.status(400).json({ status: 'error', message: 'El evento interno requiere título, fecha, visibilidad y estado válidos.' });
+        }
+        const userIds = Array.isArray(internalEvent.userIds) ? internalEvent.userIds.map(String).filter(Boolean).slice(0, 100) : [];
+        if (internalEvent.visibility === 'SELECTED' && !userIds.length) return res.status(400).json({ status: 'error', message: 'Selecciona al menos un usuario para este evento interno.' });
+        const result = await forwardBusinessAction('internalEventUpsert', { internalEvent: { ...internalEvent, title: String(internalEvent.title).slice(0, 240), notes: String(internalEvent.notes || '').slice(0, 4000), location: String(internalEvent.location || '').slice(0, 600), userIds } });
+        return res.status(200).json({ status: 'success', internalEvent: result.internalEvent });
       }
       if (action === 'adminContractUpload') {
         const contract = submitted.contract || {};
@@ -903,6 +1337,23 @@ export default async function handler(req, res) {
           return res.status(400).json({ status: 'error', message: 'El contrato debe ser un archivo PDF.' });
         }
         const result = await forwardBusinessAction('contractUpload', { contract });
+        return res.status(200).json({ status: 'success', contract: result.contract });
+      }
+      if (action === 'adminContractUploadInit') {
+        const filename = String(submitted.filename || '').trim().slice(0, 180);
+        const mimeType = String(submitted.mimeType || '').trim().toLowerCase();
+        const size = Number(submitted.size || 0);
+        if (!filename || mimeType !== 'application/pdf' || size <= 0 || size > 5_000_000) return res.status(400).json({ status: 'error', message: 'El contrato debe ser PDF y pesar máximo 5 MB.' });
+        const result = await forwardBusinessAction('contractUploadInit', { filename, mimeType, size });
+        return res.status(200).json({ status: 'success', uploadUrl: result.uploadUrl });
+      }
+      if (action === 'adminContractUploadFinalize') {
+        const contract = submitted.contract || {};
+        if (!contract.fileId || !contract.clientId || !contract.clientName || !contract.folio) return res.status(400).json({ status: 'error', message: 'Faltan datos del contrato cargado.' });
+        const result = await forwardBusinessAction('contractUploadFinalize', { contract: {
+          fileId: String(contract.fileId).slice(0, 200), clientId: String(contract.clientId).slice(0, 120), clientName: String(contract.clientName).slice(0, 180),
+          folio: String(contract.folio).slice(0, 100), eventType: String(contract.eventType || '').slice(0, 120), eventDate: String(contract.eventDate || '').slice(0, 40),
+        } });
         return res.status(200).json({ status: 'success', contract: result.contract });
       }
       if (action === 'adminContractCreateLink') {
@@ -935,7 +1386,7 @@ export default async function handler(req, res) {
 
     if (req.method === 'GET' && action === 'adminContractPdf') {
       const session = verifySession(req);
-      if (!session) return res.status(401).json({ status: 'error', message: 'La sesión expiró. Inicia sesión nuevamente.' });
+      if (!requirePermission(res, session, 'CONTRACTS')) return;
       const contractId = String(req.query?.contractId || '').trim();
       const requestedVersion = String(req.query?.version || 'latest');
       const version = ['original', 'signed', 'final', 'latest'].includes(requestedVersion) ? requestedVersion : 'latest';
@@ -1002,9 +1453,7 @@ export default async function handler(req, res) {
       const payload = await fetchConfigFromScript();
       const config = normalizeConfig(payload);
       const session = verifySession(req);
-      if (!session) {
-        return res.status(401).json({ status: 'error', authenticated: false, message: 'La sesión expiró. Inicia sesión nuevamente.' });
-      }
+      if (!requirePermission(res, session, 'SUPER_ADMIN')) return;
 
       if (action === 'adminConfig') {
         return res.status(200).json({ status: 'success', config: sanitizeAdminConfig(config) });
