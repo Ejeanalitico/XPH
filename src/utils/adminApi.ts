@@ -335,16 +335,50 @@ export async function sendClientEmail(clientId: string, templateId: string, vari
   return data.emailHistory;
 }
 
+type PrivateDriveUploadKind = 'contract' | 'logo' | 'gallery' | 'media';
+
+async function uploadPrivateDriveFile(uploadUrl: string, file: File, kind: PrivateDriveUploadKind): Promise<string> {
+  const chunkBytes = 1_048_576;
+  let offset = 0;
+
+  while (offset < file.size) {
+    const chunk = file.slice(offset, Math.min(offset + chunkBytes, file.size), file.type || 'application/octet-stream');
+    const response = await fetch('/api/proxy?action=adminDriveUploadBody', {
+      method: 'POST',
+      headers: {
+        'Content-Type': file.type || 'application/octet-stream',
+        'X-XPH-Upload-Url': uploadUrl,
+        'X-XPH-Upload-Kind': kind,
+        'X-XPH-Upload-Size': String(file.size),
+        'X-XPH-Upload-Start': String(offset),
+      },
+      credentials: 'include',
+      cache: 'no-store',
+      body: chunk,
+    });
+    const uploaded = await parseResponse(response);
+    const nextStart = Number(uploaded.nextStart);
+    if (!Number.isInteger(nextStart) || nextStart <= offset || nextStart > file.size) {
+      throw new Error('Google Drive no confirmó correctamente el avance de la carga.');
+    }
+    offset = nextStart;
+    if (uploaded.complete) {
+      const fileId = String(uploaded.fileId || '');
+      if (!fileId) throw new Error('Google Drive no devolvió el identificador del archivo.');
+      return fileId;
+    }
+  }
+
+  throw new Error('Google Drive no confirmó que la carga terminara.');
+}
+
 export async function uploadEmailLogo(file: File): Promise<GmailConfig> {
   const allowed = ['image/png', 'image/jpeg', 'image/webp'];
   if (!allowed.includes(file.type)) throw new Error('El logo debe estar en formato PNG, JPG o WebP.');
   if (file.size <= 0 || file.size > 5_000_000) throw new Error('El logo debe pesar máximo 5 MB.');
   const initialized = await adminBusinessRequest<{ uploadUrl: string }>('adminEmailLogoUploadInit', { filename: file.name, mimeType: file.type, size: file.size });
-  const uploadResponse = await fetch(initialized.uploadUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
-  if (!uploadResponse.ok) throw new Error(`Google Drive no pudo recibir el logo (HTTP ${uploadResponse.status}).`);
-  const uploaded = await uploadResponse.json().catch(() => ({}));
-  if (!uploaded.id) throw new Error('Google Drive no devolvió el identificador del logo.');
-  const finalized = await adminBusinessRequest<{ gmailConfig: GmailConfig }>('adminEmailLogoUploadFinalize', { fileId: uploaded.id });
+  const fileId = await uploadPrivateDriveFile(initialized.uploadUrl, file, 'logo');
+  const finalized = await adminBusinessRequest<{ gmailConfig: GmailConfig }>('adminEmailLogoUploadFinalize', { fileId });
   return finalized.gmailConfig;
 }
 
@@ -369,11 +403,8 @@ export async function uploadClientGalleryPhoto(galleryId: string, file: File): P
   if (!file.type.startsWith('image/')) throw new Error('Selecciona una fotografía válida.');
   if (file.size <= 0 || file.size > 100_000_000) throw new Error('La fotografía debe pesar máximo 100 MB.');
   const initialized = await adminBusinessRequest<{ uploadUrl: string }>('adminGalleryUploadInit', { galleryId, filename: file.name, mimeType: file.type, size: file.size });
-  const uploadResponse = await fetch(initialized.uploadUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
-  if (!uploadResponse.ok) throw new Error(`Google Drive no pudo recibir la fotografía (HTTP ${uploadResponse.status}).`);
-  const uploaded = await uploadResponse.json().catch(() => ({}));
-  if (!uploaded.id) throw new Error('Google Drive no devolvió el identificador de la fotografía.');
-  return await adminBusinessRequest('adminGalleryUploadFinalize', { galleryId, fileId: uploaded.id, title: file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ') });
+  const fileId = await uploadPrivateDriveFile(initialized.uploadUrl, file, 'gallery');
+  return await adminBusinessRequest('adminGalleryUploadFinalize', { galleryId, fileId, title: file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ') });
 }
 
 export async function updateClientGalleryStatus(galleryId: string, status: ClientGalleryRecord['status']): Promise<ClientGalleryRecord> {
@@ -403,12 +434,9 @@ export async function uploadBusinessContract(input: {
   const initialized = await adminBusinessRequest<{ uploadUrl: string }>('adminContractUploadInit', {
     filename: input.file.name, mimeType: input.file.type || 'application/pdf', size: input.file.size,
   });
-  const uploadResponse = await fetch(initialized.uploadUrl, { method: 'PUT', headers: { 'Content-Type': input.file.type || 'application/pdf' }, body: input.file });
-  if (!uploadResponse.ok) throw new Error(`Google Drive no pudo recibir el contrato (HTTP ${uploadResponse.status}).`);
-  const uploaded = await uploadResponse.json().catch(() => ({}));
-  if (!uploaded.id) throw new Error('Google Drive no devolvió el identificador del contrato.');
+  const fileId = await uploadPrivateDriveFile(initialized.uploadUrl, input.file, 'contract');
   const finalized = await adminBusinessRequest<{ contract: BusinessContract }>('adminContractUploadFinalize', { contract: {
-    fileId: uploaded.id, clientId: input.clientId, clientName: input.clientName, folio: input.folio, eventType: input.eventType, eventDate: input.eventDate,
+    fileId, clientId: input.clientId, clientName: input.clientName, folio: input.folio, eventType: input.eventType, eventDate: input.eventDate,
   } });
   return finalized.contract;
 }
@@ -481,15 +509,7 @@ export async function adminUploadMedia(
     }),
   });
   const initialized = await parseResponse(initRes);
-  const uploadRes = await fetch(String(initialized.uploadUrl || ''), {
-    method: 'PUT',
-    headers: { 'Content-Type': file.type || 'application/octet-stream' },
-    body: file,
-  });
-  if (!uploadRes.ok) throw new Error(`Google Drive no pudo recibir la fotografía original (HTTP ${uploadRes.status}).`);
-  const uploaded = await uploadRes.json().catch(() => ({}));
-  const fileId = String(uploaded.id || '');
-  if (!fileId) throw new Error('Google Drive terminó la carga, pero no devolvió el identificador del archivo.');
+  const fileId = await uploadPrivateDriveFile(String(initialized.uploadUrl || ''), file, 'media');
   const finalizeRes = await fetch('/api/proxy?action=adminUploadFinalize', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

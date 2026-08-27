@@ -83,6 +83,38 @@ async function readBody(req) {
   });
 }
 
+async function readBinaryBody(req, maxBytes) {
+  const validateSize = (buffer) => {
+    if (!buffer.length) throw new Error('El archivo está vacío.');
+    if (buffer.length > maxBytes) throw new Error('El archivo excede el tamaño permitido.');
+    return buffer;
+  };
+
+  if (Buffer.isBuffer(req.body)) return validateSize(req.body);
+  if (req.body instanceof Uint8Array) return validateSize(Buffer.from(req.body));
+  if (typeof req.body === 'string') return validateSize(Buffer.from(req.body, 'latin1'));
+  if (req.body && typeof req.body === 'object') throw new Error('El archivo recibido no tiene un formato binario válido.');
+
+  return await new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on('data', (chunk) => {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += buffer.length;
+      if (size > maxBytes) {
+        reject(new Error('El archivo excede el tamaño permitido.'));
+        req.destroy();
+        return;
+      }
+      chunks.push(buffer);
+    });
+    req.on('end', () => {
+      try { resolve(validateSize(Buffer.concat(chunks))); } catch (error) { reject(error); }
+    });
+    req.on('error', reject);
+  });
+}
+
 function normalizeConfig(payload) {
   const raw = payload?.config;
   if (!raw) return {};
@@ -482,6 +514,60 @@ async function forwardBusinessAction(action, payload = {}) {
   try { parsed = JSON.parse(text); } catch (_) { throw new Error('La base privada devolvió una respuesta no válida.'); }
   if (!parsed || parsed.status !== 'success') throw new Error(parsed?.message || 'La operación privada no pudo completarse.');
   return parsed;
+}
+
+async function forwardBusinessActionWithLockRetry(action, payload = {}, attempts = 3) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await forwardBusinessAction(action, payload);
+    } catch (error) {
+      lastError = error;
+      if (!/lock timeout|holding the lock/i.test(String(error?.message || error)) || attempt >= attempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 350 * attempt));
+    }
+  }
+  throw lastError;
+}
+
+function isGoogleDriveResumableUploadUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return url.protocol === 'https:' &&
+      url.hostname === 'www.googleapis.com' &&
+      url.pathname === '/upload/drive/v3/files' &&
+      url.searchParams.get('uploadType') === 'resumable' &&
+      Boolean(url.searchParams.get('upload_id'));
+  } catch (_) {
+    return false;
+  }
+}
+
+async function forwardGoogleDriveUploadChunk(uploadUrl, mimeType, bytes, start, totalSize) {
+  const end = start + bytes.length - 1;
+  const response = await fetch(uploadUrl, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': mimeType,
+      'Content-Length': String(bytes.length),
+      'Content-Range': `bytes ${start}-${end}/${totalSize}`,
+    },
+    body: bytes,
+    redirect: 'manual',
+  });
+  const text = await response.text();
+  let parsed = {};
+  try { parsed = JSON.parse(text); } catch (_) {}
+
+  if (response.status === 308) {
+    const confirmedRange = String(response.headers.get('range') || '');
+    const confirmedEnd = Number(confirmedRange.match(/bytes=0-(\d+)/i)?.[1] || end);
+    return { complete: false, nextStart: Math.max(end + 1, confirmedEnd + 1) };
+  }
+  if (!response.ok || !parsed?.id) {
+    throw new Error(parsed?.error?.message || `Google Drive no pudo recibir el archivo (HTTP ${response.status}).`);
+  }
+  return { complete: true, nextStart: totalSize, file: parsed };
 }
 
 function clientIp(req) {
@@ -931,6 +1017,7 @@ export default async function handler(req, res) {
       'adminInternalEventUpsert',
       'adminContractUpload',
       'adminContractUploadInit',
+      'adminDriveUploadBody',
       'adminContractUploadFinalize',
       'adminContractCreateLink',
       'adminOwnerSignatureSave',
@@ -939,13 +1026,15 @@ export default async function handler(req, res) {
 
     if (req.method === 'POST' && adminBusinessActions.includes(action)) {
       const session = verifySession(req);
+      const uploadKind = String(req.headers?.['x-xph-upload-kind'] || '').trim().toLowerCase();
+      const uploadPermissionByKind = { contract: 'CONTRACTS', logo: 'GMAIL_ADMIN', gallery: 'GALLERIES', media: 'GALLERIES' };
       const permissionByAction = {
         adminBusinessClients: 'CRM_OR_CLIENT_READ', adminBusinessSnapshot: 'CRM_OR_CLIENT_READ',
         adminCrmUpsert: 'CRM_OR_CLIENT_WRITE', adminFollowUpCreate: 'CRM_WRITE', adminProspectConvert: 'CRM_WRITE',
         adminCalendarSync: 'CALENDAR',
         adminExpenseUpsert: 'FINANCE', adminPaymentUpsert: 'FINANCE', adminAdjustmentUpsert: 'FINANCE',
         adminClientPackageAssign: 'CLIENTS_WRITE', adminServiceUpsert: 'CLIENTS_WRITE', adminAddonUpsert: 'CLIENTS_WRITE',
-        adminContractUpload: 'CONTRACTS', adminContractUploadInit: 'CONTRACTS', adminContractUploadFinalize: 'CONTRACTS', adminContractCreateLink: 'CONTRACTS', adminOwnerSignatureSave: 'CONTRACTS', adminContractFinalize: 'CONTRACTS',
+        adminContractUpload: 'CONTRACTS', adminContractUploadInit: 'CONTRACTS', adminDriveUploadBody: uploadPermissionByKind[uploadKind] || 'SUPER_ADMIN', adminContractUploadFinalize: 'CONTRACTS', adminContractCreateLink: 'CONTRACTS', adminOwnerSignatureSave: 'CONTRACTS', adminContractFinalize: 'CONTRACTS',
         adminUploadInit: 'GALLERIES', adminUploadFinalize: 'GALLERIES',
         adminTeamFunctionUpsert: 'USERS_ADMIN', adminTeamUserUpsert: 'USERS_ADMIN', adminTeamInviteCreate: 'USERS_ADMIN',
         adminTeamAssignmentUpsert: 'USERS_ADMIN',
@@ -956,6 +1045,39 @@ export default async function handler(req, res) {
         adminInternalEventUpsert: 'USERS_ADMIN',
       };
       if (!requirePermission(res, session, permissionByAction[action] || 'SUPER_ADMIN')) return;
+
+      if (action === 'adminDriveUploadBody') {
+        const uploadUrl = String(req.headers?.['x-xph-upload-url'] || '');
+        const mimeType = String(req.headers?.['content-type'] || '').split(';')[0].trim().toLowerCase();
+        const totalSize = Number(req.headers?.['x-xph-upload-size'] || 0);
+        const chunkStart = Number(req.headers?.['x-xph-upload-start'] || 0);
+        const maxChunkBytes = 1_048_576;
+        const uploadRules = {
+          contract: { maxBytes: 5_000_000, validMime: mimeType === 'application/pdf' },
+          logo: { maxBytes: 5_000_000, validMime: ['image/png', 'image/jpeg', 'image/webp'].includes(mimeType) },
+          gallery: { maxBytes: 100_000_000, validMime: mimeType.startsWith('image/') },
+          media: { maxBytes: 100_000_000, validMime: mimeType.startsWith('image/') },
+        };
+        const rule = uploadRules[uploadKind];
+        if (!rule) return res.status(400).json({ status: 'error', message: 'El tipo de carga privada no es válido.' });
+        if (!isGoogleDriveResumableUploadUrl(uploadUrl)) return res.status(400).json({ status: 'error', message: 'La sesión privada de carga no es válida.' });
+        if (!rule.validMime) return res.status(400).json({ status: 'error', message: uploadKind === 'contract' ? 'El contrato debe ser un archivo PDF.' : 'Selecciona una imagen válida.' });
+        if (!Number.isInteger(totalSize) || totalSize <= 0 || totalSize > rule.maxBytes) return res.status(400).json({ status: 'error', message: 'El archivo excede el tamaño permitido.' });
+        if (!Number.isInteger(chunkStart) || chunkStart < 0 || chunkStart >= totalSize) return res.status(400).json({ status: 'error', message: 'El fragmento de carga no es válido.' });
+        const expectedChunkBytes = Math.min(maxChunkBytes, totalSize - chunkStart);
+        const bytes = await readBinaryBody(req, expectedChunkBytes);
+        if (bytes.length !== expectedChunkBytes) return res.status(400).json({ status: 'error', message: 'La carga llegó incompleta; vuelve a seleccionar el archivo.' });
+        if (uploadKind === 'contract' && chunkStart === 0 && bytes.subarray(0, 5).toString('ascii') !== '%PDF-') return res.status(400).json({ status: 'error', message: 'El archivo no contiene un PDF válido.' });
+        const uploaded = await forwardGoogleDriveUploadChunk(uploadUrl, mimeType, bytes, chunkStart, totalSize);
+        return res.status(200).json({
+          status: 'success',
+          complete: uploaded.complete,
+          nextStart: uploaded.nextStart,
+          fileId: uploaded.file?.id || '',
+          name: uploaded.file?.name || '',
+        });
+      }
+
       const raw = await readBody(req);
       let submitted = {};
       try { submitted = JSON.parse(raw || '{}'); } catch (_) {}
@@ -1268,7 +1390,7 @@ export default async function handler(req, res) {
           const ownsNotification = (snapshotResult.snapshot?.notifications || []).some((item) => String(item.id) === notificationId && String(item.userId) === String(session.userId));
           if (!ownsNotification) return res.status(403).json({ status: 'error', message: 'No puedes modificar esa notificación.' });
         }
-        const result = await forwardBusinessAction('notificationRead', { notificationId, status: submitted.status === 'PENDIENTE' ? 'PENDIENTE' : 'LEIDA' });
+        const result = await forwardBusinessActionWithLockRetry('notificationRead', { notificationId, status: submitted.status === 'PENDIENTE' ? 'PENDIENTE' : 'LEIDA' });
         return res.status(200).json({ status: 'success', notification: result.notification });
       }
       if (action === 'adminRemindersRun') {
