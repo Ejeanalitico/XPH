@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   BadgeDollarSign,
   BriefcaseBusiness,
+  CalendarDays,
   CheckCircle2,
   ClipboardCopy,
   CreditCard,
@@ -38,11 +39,12 @@ import {
 } from '../types/business';
 import { SignaturePad } from './SignaturePad';
 
-type BusinessTab = 'overview' | 'clients' | 'payments' | 'expenses' | 'contracts';
+type BusinessTab = 'overview' | 'clients' | 'calendar' | 'payments' | 'expenses' | 'contracts';
 
 const emptySnapshot: BusinessSnapshot = { clients: [], expenses: [], payments: [], contracts: [], ownerSignatureConfigured: false };
 const today = () => new Date().toISOString().slice(0, 10);
 const now = () => new Date().toISOString();
+const dateValue = (value?: string) => String(value || '').slice(0, 10);
 const money = (value: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(Number(value) || 0);
 
 const blankClient = (): Partial<CrmClient> => ({
@@ -136,6 +138,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
   const [latestLink, setLatestLink] = useState('');
   const [ownerSignature, setOwnerSignature] = useState('');
   const [query, setQuery] = useState('');
+  const [selectedClientId, setSelectedClientId] = useState('');
   const [expenseSuccess, setExpenseSuccess] = useState('');
 
   useEffect(() => {
@@ -222,6 +225,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
       setSnapshot((prev) => ({ ...prev, clients: [saved, ...prev.clients.filter((item) => item.id !== saved.id)] }));
       setClientDraft(blankClient());
       setShowClientForm(false);
+      setSelectedClientId(saved.id);
       notify('Registro guardado en el CRM.');
     } catch (error: any) { notify(error?.message || 'No se pudo guardar el registro.'); }
     finally { setBusy(false); }
@@ -256,6 +260,10 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
   };
 
   const syncCalendar = async (client: CrmClient) => {
+    if (!dateValue(client.eventDate) || !client.eventTime) {
+      notify('Completa la fecha y el horario del evento antes de actualizar Calendar.');
+      return;
+    }
     setBusy(true);
     try {
       const saved = await syncClientCalendar(client.id);
@@ -264,6 +272,17 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
     } catch (error: any) { notify(error?.message || 'No se pudo sincronizar Google Calendar.'); }
     finally { setBusy(false); }
   };
+
+  const openClientDetails = (client: CrmClient) => {
+    setSelectedClientId(client.id);
+    setShowClientForm(false);
+    setTab('clients');
+  };
+
+  const selectedClient = snapshot.clients.find((client) => client.id === selectedClientId);
+  const calendarClients = [...snapshot.clients]
+    .filter((client) => dateValue(client.eventDate))
+    .sort((a, b) => dateValue(a.eventDate).localeCompare(dateValue(b.eventDate)));
 
   const uploadContract = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -352,6 +371,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
         {[
           { id: 'overview' as const, label: 'Control financiero', icon: TrendingUp },
           { id: 'clients' as const, label: 'Clientes y prospectos', icon: Users },
+          { id: 'calendar' as const, label: 'Calendario', icon: CalendarDays },
           { id: 'payments' as const, label: 'Pagos de clientes', icon: CreditCard },
           { id: 'expenses' as const, label: 'Control de gastos', icon: BadgeDollarSign },
           { id: 'contracts' as const, label: 'Contratos y firmas', icon: FileSignature },
@@ -400,9 +420,18 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
 
       {tab === 'clients' && (
         <div className="space-y-4">
+          {selectedClient ? (
+            <div className="space-y-4">
+              <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-[#161C28] p-5 sm:flex-row sm:items-center sm:justify-between">
+                <div><button onClick={() => { setSelectedClientId(''); setShowClientForm(false); }} className="mb-3 text-xs text-[#D4AF37]">← Volver a clientes</button><h3 className="text-xl font-bold">{selectedClient.name || 'Cliente sin nombre'}</h3><p className="mt-1 text-sm text-gray-400">{selectedClient.eventType || 'Evento por confirmar'} · {dateValue(selectedClient.eventDate) || 'Sin fecha'} · {selectedClient.eventTime || 'Sin horario'}</p></div>
+                <div className="flex flex-wrap gap-2"><button onClick={() => { setClientDraft(selectedClient); setShowClientForm(true); }} className="rounded-xl bg-[#D4AF37] px-4 py-2.5 text-sm font-bold text-black">Editar detalles</button><button onClick={() => syncCalendar(selectedClient)} disabled={busy || !dateValue(selectedClient.eventDate) || !selectedClient.eventTime} className="rounded-xl border border-sky-400/30 px-4 py-2.5 text-sm text-sky-200 disabled:border-white/10 disabled:text-gray-600">Actualizar Calendar</button></div>
+              </div>
+              {showClientForm ? <ClientForm draft={clientDraft} onChange={setClientDraft} onSubmit={saveClient} onCancel={() => setShowClientForm(false)} busy={busy} /> : <ClientDetails client={selectedClient} paid={paidForClient(selectedClient)} />}
+            </div>
+          ) : <>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por nombre, teléfono, evento o estado" className="w-full max-w-xl rounded-xl border border-white/10 bg-[#161C28] px-4 py-3 text-sm" />
-            <button onClick={() => { setClientDraft(blankClient()); setShowClientForm(true); }} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#D4AF37] px-4 py-3 text-sm font-bold text-black"><Plus className="h-4 w-4" />Nuevo registro</button>
+            <button onClick={() => { setSelectedClientId(''); setClientDraft(blankClient()); setShowClientForm(true); }} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#D4AF37] px-4 py-3 text-sm font-bold text-black"><Plus className="h-4 w-4" />Nuevo registro</button>
           </div>
           {showClientForm && <ClientForm draft={clientDraft} onChange={setClientDraft} onSubmit={saveClient} onCancel={() => setShowClientForm(false)} busy={busy} />}
           <div className="overflow-x-auto rounded-2xl border border-white/10 bg-[#161C28]">
@@ -410,16 +439,27 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
               <thead className="bg-black/20 text-xs uppercase tracking-wider text-[#D4AF37]"><tr><th className="p-4">Contacto</th><th className="p-4">Evento</th><th className="p-4">Estado</th><th className="p-4">Importes</th><th className="p-4">Próxima acción</th><th className="p-4"></th></tr></thead>
               <tbody className="divide-y divide-white/5">
                 {filteredClients.map((client) => <tr key={client.id} className="align-top">
-                  <td className="p-4"><div className="font-semibold text-white">{client.name || 'Sin nombre'}</div><div className="text-xs text-gray-400">{client.phone || 'Sin teléfono'} · {client.recordType}</div></td>
-                  <td className="p-4"><div>{client.eventType || 'Por confirmar'}</div><div className="text-xs text-gray-400">{client.eventDate || 'Sin fecha'} · {client.eventLocation || 'Sin lugar'}</div></td>
+                  <td className="p-4"><button onClick={() => openClientDetails(client)} className="text-left font-semibold text-white hover:text-[#D4AF37]">{client.name || 'Sin nombre'}</button><div className="text-xs text-gray-400">{client.phone || 'Sin teléfono'} · {client.recordType}</div></td>
+                  <td className="p-4"><div>{client.eventType || 'Por confirmar'}</div><div className="text-xs text-gray-400">{dateValue(client.eventDate) || 'Sin fecha'} · {client.eventLocation || 'Sin lugar'}</div></td>
                   <td className="p-4"><span className="rounded-full border border-[#D4AF37]/30 bg-[#D4AF37]/10 px-2.5 py-1 text-xs text-[#F5D76E]">{client.status}</span></td>
                   <td className="p-4"><div>{money(client.totalAmount)}</div><div className="text-xs text-emerald-300">Pagado {money(paidForClient(client))}</div><div className="text-xs text-amber-300">Pendiente {money(Math.max(0, client.totalAmount - paidForClient(client)))}</div></td>
                   <td className="p-4"><div>{client.nextAction || 'Sin acción'}</div><div className="text-xs text-gray-400">{client.nextActionAt || 'Sin fecha'}</div></td>
-                  <td className="p-4"><div className="flex flex-col gap-2"><button onClick={() => { setClientDraft(client); setShowClientForm(true); }} className="text-left text-xs text-[#D4AF37]">Editar</button>{client.recordType === 'Cliente' && <button onClick={() => syncCalendar(client)} disabled={busy || !client.eventDate || !client.eventTime} className="text-left text-xs text-sky-300 disabled:text-gray-600">Actualizar calendario</button>}</div></td>
+                  <td className="p-4"><button onClick={() => openClientDetails(client)} className="text-left text-xs text-[#D4AF37]">Ver detalles</button></td>
                 </tr>)}
                 {!filteredClients.length && <tr><td colSpan={6} className="p-10 text-center text-gray-500">Aún no hay registros. Agrega el primer prospecto o cliente.</td></tr>}
               </tbody>
             </table>
+          </div>
+          </>}
+        </div>
+      )}
+
+      {tab === 'calendar' && (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-white/10 bg-[#161C28] p-5"><h3 className="text-xl font-bold">Calendario de clientes</h3><p className="mt-1 text-sm text-gray-400">Selecciona un evento para abrir el expediente, completar datos o editarlo.</p></div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {calendarClients.map((client) => <button key={client.id} onClick={() => openClientDetails(client)} className="rounded-2xl border border-white/10 bg-[#161C28] p-5 text-left transition hover:border-[#D4AF37]/50"><div className="flex items-start justify-between gap-3"><div><div className="text-xs font-semibold uppercase tracking-wider text-[#D4AF37]">{dateValue(client.eventDate)} · {client.eventTime || 'Horario pendiente'}</div><h4 className="mt-2 font-bold text-white">{client.name || 'Cliente sin nombre'}</h4><p className="mt-1 text-sm text-gray-400">{client.eventType || 'Evento'} · {client.eventLocation || 'Lugar pendiente'}</p></div><CalendarDays className="h-5 w-5 shrink-0 text-[#D4AF37]" /></div><div className={`mt-4 text-xs ${client.eventTime ? 'text-emerald-300' : 'text-amber-300'}`}>{client.eventTime ? 'Listo para sincronizar' : 'Falta registrar el horario'}</div></button>)}
+            {!calendarClients.length && <div className="rounded-2xl border border-white/10 bg-[#161C28] p-10 text-center text-gray-500 md:col-span-2 xl:col-span-3">No hay clientes con fecha de evento registrada.</div>}
           </div>
         </div>
       )}
@@ -472,6 +512,17 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
 const Metric = ({ label, value, icon: Icon }: { label: string; value: string; icon: React.ElementType }) => <div className="rounded-2xl border border-white/10 bg-[#161C28] p-4"><div className="flex items-center gap-2 text-xs text-gray-400"><Icon className="h-4 w-4 text-[#D4AF37]" />{label}</div><div className="mt-2 text-xl font-bold">{value}</div></div>;
 const FinancialRow = ({ label, value, detail }: { label: string; value: number; detail?: string }) => <div className="rounded-xl border border-white/5 bg-black/15 p-3"><dt className="text-xs text-gray-400">{label}</dt><dd className="mt-1 text-lg font-semibold">{money(value)}</dd>{detail && <p className="mt-1 text-[11px] leading-4 text-gray-500">{detail}</p>}</div>;
 
+const ClientDetails = ({ client, paid }: { client: CrmClient; paid: number }) => {
+  const rows = [
+    ['Teléfono', client.phone], ['Correo', client.email], ['Festejado(s) / pareja', client.honoreeName], ['Domicilio', client.address],
+    ['Evento', client.eventType], ['Fecha y horario', `${dateValue(client.eventDate) || 'Pendiente'} · ${client.eventTime || 'Pendiente'}`],
+    ['Lugar', client.eventLocation], ['Paquete', client.packageName], ['Cobertura', client.serviceHours ? `${client.serviceHours} horas` : 'Pendiente'],
+    ['Total', money(client.totalAmount)], ['Pagado', money(paid)], ['Por cobrar', money(Math.max(0, Number(client.totalAmount || 0) - paid))],
+    ['Próxima acción', client.nextAction], ['Fecha de seguimiento', client.nextActionAt], ['Fuente', client.source], ['Campaña', client.campaign],
+  ];
+  return <div className="grid gap-4 lg:grid-cols-[1.2fr_.8fr]"><dl className="grid gap-3 rounded-2xl border border-white/10 bg-[#161C28] p-5 sm:grid-cols-2">{rows.map(([label, value]) => <div key={label} className="rounded-xl border border-white/5 bg-black/15 p-3"><dt className="text-xs text-gray-500">{label}</dt><dd className="mt-1 whitespace-pre-wrap text-sm text-gray-100">{String(value || 'Pendiente')}</dd></div>)}</dl><aside className="space-y-3 rounded-2xl border border-white/10 bg-[#161C28] p-5"><div><div className="text-xs text-gray-500">Estado</div><div className="mt-1 text-[#F5D76E]">{client.status}</div></div><div><div className="text-xs text-gray-500">Objeción o situación</div><div className="mt-1 whitespace-pre-wrap text-sm">{client.objection || 'Sin registro'}</div></div><div><div className="text-xs text-gray-500">Notas</div><div className="mt-1 whitespace-pre-wrap text-sm">{client.notes || 'Sin notas'}</div></div><div><div className="text-xs text-gray-500">Sesión previa</div><div className="mt-1 text-sm">{client.preSessionApplies ? `${dateValue(client.preSessionDate) || 'Fecha pendiente'} · ${client.preSessionTime || 'Horario pendiente'} · ${client.preSessionLocation || 'Lugar pendiente'}` : 'No aplica'}</div></div></aside></div>;
+};
+
 const inputClass = 'w-full rounded-xl border border-white/10 bg-[#0B0F17] px-3 py-2.5 text-sm';
 const ClientForm = ({ draft, onChange, onSubmit, onCancel, busy }: { draft: Partial<CrmClient>; onChange: (value: Partial<CrmClient>) => void; onSubmit: (event: React.FormEvent) => void; onCancel: () => void; busy: boolean }) => {
   const patch = (key: keyof CrmClient, value: unknown) => onChange({ ...draft, [key]: value, updatedAt: now() });
@@ -483,7 +534,7 @@ const ClientForm = ({ draft, onChange, onSubmit, onCancel, busy }: { draft: Part
     <input type="email" value={draft.email || ''} onChange={(e) => patch('email', e.target.value)} placeholder="Correo" className={inputClass} />
     <input value={draft.address || ''} onChange={(e) => patch('address', e.target.value)} placeholder="Domicilio del contratante" className={inputClass} />
     <input value={draft.eventType || ''} onChange={(e) => patch('eventType', e.target.value)} placeholder="Tipo de evento" className={inputClass} />
-    <input type="date" value={draft.eventDate || ''} onChange={(e) => patch('eventDate', e.target.value)} className={inputClass} />
+    <input type="date" value={dateValue(draft.eventDate)} onChange={(e) => patch('eventDate', e.target.value)} className={inputClass} />
     <input type="time" value={draft.eventTime || ''} onChange={(e) => patch('eventTime', e.target.value)} className={inputClass} />
     <input type="number" min="0" step="0.5" value={draft.serviceHours || 0} onChange={(e) => patch('serviceHours', Number(e.target.value))} placeholder="Horas de cobertura" className={inputClass} />
     <input value={draft.eventLocation || ''} onChange={(e) => patch('eventLocation', e.target.value)} placeholder="Lugar del evento" className={inputClass} />
