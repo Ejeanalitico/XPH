@@ -136,6 +136,13 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
   const [latestLink, setLatestLink] = useState('');
   const [ownerSignature, setOwnerSignature] = useState('');
   const [query, setQuery] = useState('');
+  const [expenseSuccess, setExpenseSuccess] = useState('');
+
+  useEffect(() => {
+    if (!expenseSuccess) return;
+    const timeout = window.setTimeout(() => setExpenseSuccess(''), 3200);
+    return () => window.clearTimeout(timeout);
+  }, [expenseSuccess]);
 
   const refresh = async () => {
     setBusy(true);
@@ -222,13 +229,14 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
 
   const saveExpense = async (event: React.FormEvent) => {
     event.preventDefault();
+    const isEditing = Boolean(expenseDraft.id);
     setBusy(true);
     try {
       const saved = await saveBusinessExpense(expenseDraft);
       setSnapshot((prev) => ({ ...prev, expenses: [saved, ...prev.expenses.filter((item) => item.id !== saved.id)] }));
       setExpenseDraft(blankExpense());
       setShowExpenseForm(false);
-      notify(expenseDraft.id ? 'Gasto actualizado.' : 'Gasto registrado.');
+      setExpenseSuccess(isEditing ? 'Gasto actualizado correctamente' : 'Gasto registrado correctamente');
     } catch (error: any) { notify(error?.message || 'No se pudo guardar el gasto.'); }
     finally { setBusy(false); }
   };
@@ -314,6 +322,16 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
 
   return (
     <section className="space-y-5">
+      {expenseSuccess && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed right-4 top-4 z-[100] flex max-w-[calc(100vw-2rem)] items-center gap-3 rounded-2xl border border-emerald-300/30 bg-[#101A16] px-5 py-4 text-sm font-semibold text-emerald-100 shadow-2xl shadow-black/40 sm:right-6 sm:top-6"
+        >
+          <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-400" />
+          <span>{expenseSuccess}</span>
+        </div>
+      )}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h2 className="text-2xl font-bold">Clientes, gastos y contratos</h2>
