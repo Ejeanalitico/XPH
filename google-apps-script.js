@@ -127,7 +127,7 @@ function initSpreadsheetSheets(ss) {
       'Paquetes_Precios': ['Categoria', 'ID_Paquete', 'Nombre_Paquete', 'Precio_Base_MXN', 'Precio_Final_Por_Confirmar', 'Insignia_Badge', 'Descripcion', 'Que_Incluye', 'No_Incluye', 'Ultima_Modificacion'],
       'CRM_Clientes': ['id', 'recordType', 'name', 'phone', 'email', 'eventType', 'eventDate', 'eventLocation', 'packageName', 'totalAmount', 'paidAmount', 'status', 'source', 'firstContactAt', 'lastContactAt', 'nextAction', 'nextActionAt', 'notes', 'contractId', 'createdAt', 'updatedAt', 'honoreeName', 'address', 'eventTime', 'serviceHours', 'campaign', 'objection', 'followUpAttempts', 'suggestedMessage', 'lossReason', 'estimatedCost', 'allocatedAdCost'],
       'Gastos': ['id', 'date', 'category', 'subcategory', 'concept', 'supplier', 'paymentMethod', 'paymentStatus', 'amount', 'notes', 'createdAt', 'updatedAt', 'relatedClientId', 'receiptReference', 'account'],
-      'Pagos_Clientes': ['id', 'clientId', 'contractId', 'transactionId', 'date', 'dueDate', 'concept', 'plannedAmount', 'receivedAmount', 'status', 'method', 'reference', 'notes', 'receiptFileId', 'receiptFileName', 'createdAt', 'updatedAt'],
+      'Pagos_Clientes': ['id', 'clientId', 'contractId', 'transactionId', 'date', 'dueDate', 'concept', 'plannedAmount', 'receivedAmount', 'status', 'method', 'reference', 'notes', 'receiptFileId', 'receiptFileName', 'createdAt', 'updatedAt', 'installmentNumber', 'percentage'],
       'Contratos': ['id', 'clientId', 'clientName', 'folio', 'eventType', 'eventDate', 'status', 'originalFileName', 'originalFileId', 'clientSignedFileId', 'finalFileId', 'signatureFileId', 'tokenHash', 'tokenExpiresAt', 'tokenStatus', 'sentAt', 'viewedAt', 'acceptedAt', 'clientSignedAt', 'ownerAuthorizedAt', 'documentHash', 'signedDocumentHash', 'finalDocumentHash', 'signerIp', 'signerUserAgent', 'consentText', 'createdAt', 'updatedAt'],
       'Firma_Administrador': ['id', 'fileId', 'updatedAt']
     };
@@ -463,7 +463,7 @@ function loadActiveConfig() {
 var BUSINESS_HEADERS = {
   clients: ['id', 'recordType', 'name', 'phone', 'email', 'eventType', 'eventDate', 'eventLocation', 'packageName', 'totalAmount', 'paidAmount', 'status', 'source', 'firstContactAt', 'lastContactAt', 'nextAction', 'nextActionAt', 'notes', 'contractId', 'createdAt', 'updatedAt', 'honoreeName', 'address', 'eventTime', 'serviceHours', 'campaign', 'objection', 'followUpAttempts', 'suggestedMessage', 'lossReason', 'estimatedCost', 'allocatedAdCost'],
   expenses: ['id', 'date', 'category', 'subcategory', 'concept', 'supplier', 'paymentMethod', 'paymentStatus', 'amount', 'notes', 'createdAt', 'updatedAt', 'relatedClientId', 'receiptReference', 'account'],
-  payments: ['id', 'clientId', 'contractId', 'transactionId', 'date', 'dueDate', 'concept', 'plannedAmount', 'receivedAmount', 'status', 'method', 'reference', 'notes', 'receiptFileId', 'receiptFileName', 'createdAt', 'updatedAt'],
+  payments: ['id', 'clientId', 'contractId', 'transactionId', 'date', 'dueDate', 'concept', 'plannedAmount', 'receivedAmount', 'status', 'method', 'reference', 'notes', 'receiptFileId', 'receiptFileName', 'createdAt', 'updatedAt', 'installmentNumber', 'percentage'],
   contracts: ['id', 'clientId', 'clientName', 'folio', 'eventType', 'eventDate', 'status', 'originalFileName', 'originalFileId', 'clientSignedFileId', 'finalFileId', 'signatureFileId', 'tokenHash', 'tokenExpiresAt', 'tokenStatus', 'sentAt', 'viewedAt', 'acceptedAt', 'clientSignedAt', 'ownerAuthorizedAt', 'documentHash', 'signedDocumentHash', 'finalDocumentHash', 'signerIp', 'signerUserAgent', 'consentText', 'createdAt', 'updatedAt'],
   ownerSignature: ['id', 'fileId', 'updatedAt']
 };
@@ -657,6 +657,8 @@ function normalizedPayment(input, existing) {
     transactionId: cleanBusinessText(current.transactionId || input.transactionId || businessId('ingreso'), 120),
     date: cleanBusinessText(input.date || current.date || timestamp.substring(0, 10), 40),
     dueDate: cleanBusinessText(input.dueDate !== undefined ? input.dueDate : current.dueDate, 40),
+    installmentNumber: Math.max(0, Math.min(3, Number(input.installmentNumber !== undefined ? input.installmentNumber : current.installmentNumber) || 0)),
+    percentage: Math.max(0, Math.min(100, Number(input.percentage !== undefined ? input.percentage : current.percentage) || 0)),
     concept: cleanBusinessText(input.concept !== undefined ? input.concept : current.concept, 300),
     plannedAmount: Math.max(0, Number(input.plannedAmount !== undefined ? input.plannedAmount : current.plannedAmount) || 0),
     receivedAmount: Math.max(0, Number(input.receivedAmount !== undefined ? input.receivedAmount : current.receivedAmount) || 0),
@@ -747,6 +749,22 @@ function handleBusinessAction(ss, action, payload) {
     var payment = normalizedPayment(paymentInput, existingPayment);
     if (['Pendiente', 'Liquidado', 'Anulado'].indexOf(payment.status) < 0) throw new Error('Estado de pago no válido.');
     if (!payment.concept || payment.plannedAmount <= 0) throw new Error('El pago requiere concepto y monto programado.');
+    if (payment.installmentNumber < 1 || payment.installmentNumber > 3 || payment.percentage <= 0) throw new Error('Selecciona uno de los tres pagos y un porcentaje válido.');
+    var expectedInstallmentAmount = Math.round((Number(clientForPayment.totalAmount) || 0) * payment.percentage) / 100;
+    if (Math.abs(payment.plannedAmount - expectedInstallmentAmount) > 0.011) throw new Error('El monto programado no coincide con el porcentaje del paquete.');
+    var planPayments = existingClientPayments.filter(function(item) {
+      return payment.contractId ? String(item.contractId) === String(payment.contractId) : !item.contractId;
+    });
+    var duplicateInstallment = planPayments.some(function(item) {
+      return String(item.id) !== String(payment.id) && Number(item.installmentNumber) === Number(payment.installmentNumber) && String(item.status) !== 'Anulado';
+    });
+    if (duplicateInstallment) throw new Error('Ese número de pago ya está registrado para el cliente. Edita el movimiento existente.');
+    var otherActivePlanPayments = planPayments.filter(function(item) {
+      return String(item.id) !== String(payment.id) && String(item.status) !== 'Anulado' && Number(item.installmentNumber) > 0;
+    });
+    var activePercentages = otherActivePlanPayments.reduce(function(sum, item) { return sum + Number(item.percentage || 0); }, 0);
+    if (activePercentages + payment.percentage > 100.001) throw new Error('Los porcentajes de los tres pagos no pueden superar el 100%.');
+    if (otherActivePlanPayments.length === 2 && Math.abs(activePercentages + payment.percentage - 100) > 0.001) throw new Error('Al registrar los tres pagos, sus porcentajes deben sumar exactamente 100%.');
     if (payment.status === 'Liquidado' && payment.receivedAmount <= 0) throw new Error('Un pago liquidado requiere monto recibido.');
     if (payment.receivedAmount > payment.plannedAmount) throw new Error('Lo recibido no puede superar el monto programado. Registra otro abono parcial.');
     if (paymentInput.receiptBase64) {
