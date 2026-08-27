@@ -338,7 +338,7 @@ export async function sendClientEmail(clientId: string, templateId: string, vari
 type PrivateDriveUploadKind = 'contract' | 'logo' | 'gallery' | 'media';
 
 async function uploadPrivateDriveFile(uploadUrl: string, file: File, kind: PrivateDriveUploadKind): Promise<string> {
-  const chunkBytes = 1_000_000;
+  const chunkBytes = 1_048_576;
   let offset = 0;
 
   while (offset < file.size) {
