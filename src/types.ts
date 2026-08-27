@@ -41,6 +41,9 @@ export interface GalleryImage {
   galleryClient?: string;
   galleryToken?: string;
   galleryAllowDownloads?: boolean;
+  clientId?: string;
+  eventId?: string;
+  driveFolderId?: string;
   downloadUrl?: string;
   previewUrl?: string;
   createdAt?: string;
@@ -68,6 +71,19 @@ export interface PackageOption {
   notIncludes?: string[];
   popular?: boolean;
   managedByAdmin?: boolean;
+  categoryId?: string;
+}
+
+export interface CatalogCategory {
+  id: string;
+  name: string;
+  slug: string;
+  description: string;
+  imageUrl: string;
+  active: boolean;
+  order: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface AddOnOption {

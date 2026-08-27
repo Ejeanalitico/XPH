@@ -25,6 +25,7 @@ import {
 import { ADDONS_CATALOG, PACKAGES_BY_EVENT } from '../data/packages';
 import {
   AddOnOption,
+  CatalogCategory,
   EventType,
   FooterContact,
   FooterQuickLink,
@@ -68,6 +69,10 @@ const CATEGORY_LABELS: Record<EventType, string> = {
   retratos: 'Retratos & Editorial',
   empresarial: 'Empresarial & Branding',
 };
+
+const DEFAULT_CATEGORIES: CatalogCategory[] = (Object.entries(CATEGORY_LABELS) as [EventType, string][]).map(([id, name], index) => ({
+  id, name, slug: id, description: '', imageUrl: '', active: true, order: index + 1,
+}));
 
 const COVER_LABELS: Record<RoutePath, string> = {
   inicio: 'Inicio',
@@ -127,7 +132,7 @@ const privateGallerySummaries = (items: GalleryImage[]): PrivateGallerySummary[]
     allowDownloads: meta.galleryAllowDownloads !== false,
   }));
 
-const stablePackages = (value: Record<EventType, PackageOption[]>) =>
+const stablePackages = (value: Record<string, PackageOption[]>) =>
   JSON.stringify(value, Object.keys(value).sort());
 
 interface Props {
@@ -145,7 +150,8 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
   const [successModal, setSuccessModal] = useState(false);
   const [tab, setTab] = useState<Tab>(initialTab);
 
-  const [packages, setPackages] = useState<Record<EventType, PackageOption[]>>(PACKAGES_BY_EVENT);
+  const [packages, setPackages] = useState<Record<string, PackageOption[]>>(PACKAGES_BY_EVENT);
+  const [catalogCategories, setCatalogCategories] = useState<CatalogCategory[]>(DEFAULT_CATEGORIES);
   const [addons, setAddons] = useState<AddOnOption[]>(ADDONS_CATALOG);
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([]);
   const [driveImages, setDriveImages] = useState<DriveImageRecord[]>([]);
@@ -154,7 +160,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
   const [footerContact, setFooterContact] = useState<FooterContact>(DEFAULT_FOOTER_CONTACT);
   const [seoSettings, setSeoSettings] = useState<SeoSettings>(() => normalizeSeoSettings({}));
 
-  const [activeCategory, setActiveCategory] = useState<EventType>('bodas');
+  const [activeCategory, setActiveCategory] = useState<string>('bodas');
   const [publicCategory, setPublicCategory] = useState<Exclude<GalleryCategory, 'all'>>('bodas');
   const [publicLocation, setPublicLocation] = useState('CDMX');
   const [publicFiles, setPublicFiles] = useState<File[]>([]);
@@ -179,11 +185,17 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
 
   const notify = (text: string) => {
     setMessage(text);
-    window.setTimeout(() => setMessage(''), 5000);
   };
 
   const applyConfig = (config: Record<string, any>) => {
-    setPackages(hasManagedPackages(config.packages) ? config.packages : PACKAGES_BY_EVENT);
+    const nextPackages = hasManagedPackages(config.packages) ? config.packages : PACKAGES_BY_EVENT;
+    const nextCategories: CatalogCategory[] = Array.isArray(config.catalogCategories) && config.catalogCategories.length
+      ? config.catalogCategories.map((item: any, index: number) => ({ id: String(item.id || `categoria-${index + 1}`), name: String(item.name || 'Categoría'), slug: slugify(String(item.slug || item.name || `categoria-${index + 1}`)), description: String(item.description || ''), imageUrl: String(item.imageUrl || ''), active: item.active !== false, order: Number(item.order) || index + 1, createdAt: item.createdAt || '', updatedAt: item.updatedAt || '' })).sort((a: CatalogCategory, b: CatalogCategory) => a.order - b.order)
+      : DEFAULT_CATEGORIES;
+    const categoriesWithPackages = Object.keys(nextPackages).reduce((list: CatalogCategory[], id) => list.some((item) => item.id === id) ? list : [...list, { id, name: CATEGORY_LABELS[id as EventType] || id, slug: id, description: '', imageUrl: '', active: true, order: list.length + 1 }], nextCategories);
+    setPackages(Object.fromEntries(categoriesWithPackages.map((category) => [category.id, Array.isArray(nextPackages[category.id]) ? nextPackages[category.id] : []])));
+    setCatalogCategories(categoriesWithPackages);
+    if (!categoriesWithPackages.some((item) => item.id === activeCategory)) setActiveCategory(categoriesWithPackages[0]?.id || 'bodas');
     setAddons(hasManagedAddons(config.addons) ? config.addons : ADDONS_CATALOG);
     setGalleryImages(Array.isArray(config.galleryImages) ? config.galleryImages : []);
     setHeroSettings(config.heroCoverSettings && typeof config.heroCoverSettings === 'object' ? config.heroCoverSettings : {});
@@ -194,6 +206,10 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
   const needsDrive = (targetTab: Tab) => targetTab === 'public' || targetTab === 'covers' || targetTab === 'private';
 
   const refresh = async () => {
+    if (session?.role !== 'SUPER_ADMIN') {
+      notify('La información operativa se actualiza dentro de Clientes & negocio.');
+      return;
+    }
     const config = await loadAdminConfig(session);
     applyConfig(config);
     if (needsDrive(tab)) {
@@ -210,11 +226,13 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
         if (!mounted) return;
         setSession(restored);
         setCheckingSession(false);
-        if (restored) {
+        if (restored?.role === 'SUPER_ADMIN') {
           setAnalyticsExcluded(true);
           const config = await loadAdminConfig(restored);
           if (!mounted) return;
           applyConfig(config);
+        } else if (restored) {
+          setTab('business');
         }
       })
       .catch(() => setSession(null))
@@ -259,13 +277,15 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
     setBusy(true);
     try {
       const managedPackages = Object.fromEntries(
-        (Object.entries(packages) as [EventType, PackageOption[]][]).map(([key, list]) => [key, list.map((pkg) => ({ ...pkg, managedByAdmin: true, features: pkg.features.filter((x) => x.trim()) }))])
-      ) as Record<EventType, PackageOption[]>;
+        (Object.entries(packages) as [string, PackageOption[]][]).map(([key, list]) => [key, list.map((pkg) => ({ ...pkg, categoryId: key, managedByAdmin: true, features: pkg.features.filter((x) => x.trim()) }))])
+      ) as Record<string, PackageOption[]>;
       const managedAddons = addons.map((addon) => ({ ...addon, managedByAdmin: true }));
-      const confirmed = await saveAdminConfig(session, { packages: managedPackages, addons: managedAddons }, 'ADMIN_PAQUETES', 'Paquetes y adicionales actualizados desde el administrador web');
+      const normalizedCategories = catalogCategories.map((category, index) => ({ ...category, slug: slugify(category.slug || category.name), order: index + 1, updatedAt: new Date().toISOString(), createdAt: category.createdAt || new Date().toISOString() }));
+      const confirmed = await saveAdminConfig(session, { packages: managedPackages, addons: managedAddons, catalogCategories: normalizedCategories }, 'ADMIN_PAQUETES', 'Categorías, paquetes y adicionales actualizados desde el administrador web');
       if (!hasManagedPackages(confirmed.packages) || !hasManagedAddons(confirmed.addons)) throw new Error('La nube no devolvió el catálogo guardado.');
       if (stablePackages(confirmed.packages) !== stablePackages(managedPackages)) throw new Error('Los paquetes no coinciden después del guardado. Vuelve a intentarlo.');
       setPackages(confirmed.packages);
+      setCatalogCategories(Array.isArray(confirmed.catalogCategories) ? confirmed.catalogCategories : normalizedCategories);
       setAddons(confirmed.addons);
       setSuccessModal(true);
     } catch (error: any) {
@@ -278,7 +298,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
   const updatePackage = (id: string, patch: Partial<PackageOption>) => {
     setPackages((prev) => ({
       ...prev,
-      [activeCategory]: prev[activeCategory].map((pkg) => (pkg.id === id ? { ...pkg, ...patch } : pkg)),
+      [activeCategory]: (prev[activeCategory] || []).map((pkg) => (pkg.id === id ? { ...pkg, ...patch } : pkg)),
     }));
   };
 
@@ -306,7 +326,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
   const addPackage = () => {
     setPackages((prev) => ({
       ...prev,
-      [activeCategory]: [...prev[activeCategory], {
+      [activeCategory]: [...(prev[activeCategory] || []), {
         id: `pkg_${activeCategory}_${Date.now()}`,
         name: 'NUEVO PAQUETE',
         price: 0,
@@ -314,8 +334,38 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
         features: [''],
         notIncludes: [],
         managedByAdmin: true,
+        categoryId: activeCategory,
       }],
     }));
+  };
+
+  const addCategory = () => {
+    const id = `categoria-${Date.now()}`;
+    setCatalogCategories((current) => [...current, { id, name: 'Nueva categoría', slug: `nueva-categoria-${current.length + 1}`, description: '', imageUrl: '', active: true, order: current.length + 1 }]);
+    setPackages((current) => ({ ...current, [id]: [] }));
+    setActiveCategory(id);
+  };
+
+  const updateCategory = (id: string, patch: Partial<CatalogCategory>) => setCatalogCategories((current) => current.map((item) => item.id === id ? { ...item, ...patch } : item));
+
+  const moveCategory = (id: string, direction: -1 | 1) => setCatalogCategories((current) => {
+    const index = current.findIndex((item) => item.id === id);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= current.length) return current;
+    const next = [...current];
+    [next[index], next[target]] = [next[target], next[index]];
+    return next.map((item, order) => ({ ...item, order: order + 1 }));
+  });
+
+  const uploadCategoryImage = async (category: CatalogCategory, file?: File) => {
+    if (!session || !file) return;
+    setBusy(true);
+    try {
+      const uploaded = await adminUploadMedia(session, file, { title: `Categoría ${category.name}`, category: 'private', location: 'Catálogo XPH' });
+      updateCategory(category.id, { imageUrl: uploaded.url });
+      notify('Imagen de categoría cargada. Guarda y publica para confirmar el cambio.');
+    } catch (error: any) { notify(error?.message || 'No se pudo subir la imagen de categoría.'); }
+    finally { setBusy(false); }
   };
 
   const addAddon = () => setAddons((prev) => [...prev, {
@@ -502,8 +552,6 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
           </div>
         </header>
 
-        {message && <div className="rounded-xl border border-[#D4AF37]/30 bg-[#D4AF37]/10 px-4 py-3 text-sm text-[#F5D76E]">{message}</div>}
-
         <nav className="flex overflow-x-auto gap-2 p-1.5 rounded-2xl bg-[#161C28] border border-white/10">
           {[
             { id: 'business' as Tab, label: 'Clientes & negocio', icon: BriefcaseBusiness },
@@ -514,22 +562,26 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
             { id: 'analytics' as Tab, label: 'Tráfico y SEO', icon: BarChart3 },
             { id: 'footer' as Tab, label: 'Pie de página', icon: PanelBottom },
             { id: 'private' as Tab, label: 'Galerías privadas', icon: FolderLock },
-          ].map((item) => { const Icon = item.icon; return <button key={item.id} onClick={() => setTab(item.id)} className={`px-4 py-3 rounded-xl text-sm font-semibold whitespace-nowrap flex items-center gap-2 ${tab === item.id ? 'bg-[#D4AF37] text-black' : 'text-gray-300 hover:bg-white/5'}`}><Icon className="w-4 h-4" />{item.label}</button>; })}
+          ].filter((item) => session.role === 'SUPER_ADMIN' || item.id === 'business').map((item) => { const Icon = item.icon; return <button key={item.id} onClick={() => setTab(item.id)} className={`px-4 py-3 rounded-xl text-sm font-semibold whitespace-nowrap flex items-center gap-2 ${tab === item.id ? 'bg-[#D4AF37] text-black' : 'text-gray-300 hover:bg-white/5'}`}><Icon className="w-4 h-4" />{item.label}</button>; })}
         </nav>
 
-        {tab === 'business' && <BusinessAdminPanel notify={notify} />}
+        {tab === 'business' && <BusinessAdminPanel notify={notify} session={session} />}
 
         {tab === 'packages' && (
           <section className="space-y-7">
+            <div className="rounded-2xl border border-white/10 bg-[#161C28] p-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-xl font-bold">Categorías comerciales</h2><p className="mt-1 text-xs text-gray-400">Crea, edita, ordena, activa o desactiva categorías sin modificar código.</p></div><button onClick={addCategory} className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-4 py-2.5 text-sm"><Plus className="h-4 w-4" />Nueva categoría</button></div>
+              <div className="mt-4 grid gap-3 lg:grid-cols-2">{catalogCategories.map((category, index) => <article key={category.id} className={`rounded-xl border p-4 ${activeCategory === category.id ? 'border-[#D4AF37]/60 bg-[#D4AF37]/5' : 'border-white/10 bg-[#0B0F17]/50'}`}><div className="flex items-start gap-3">{category.imageUrl ? <img src={category.imageUrl} alt={category.name} className="h-16 w-16 shrink-0 rounded-lg object-cover" /> : <div className="grid h-16 w-16 shrink-0 place-items-center rounded-lg border border-dashed border-white/15 text-[10px] text-gray-500">Sin imagen</div>}<div className="min-w-0 flex-1 space-y-2"><input value={category.name} onChange={(event) => updateCategory(category.id, { name: event.target.value })} onFocus={() => setActiveCategory(category.id)} className="w-full rounded-lg border border-white/10 bg-[#0B0F17] px-3 py-2 text-sm font-semibold" /><input value={category.slug} onChange={(event) => updateCategory(category.id, { slug: slugify(event.target.value) })} className="w-full rounded-lg border border-white/10 bg-[#0B0F17] px-3 py-2 font-mono text-xs" placeholder="slug" /></div></div><textarea value={category.description} onChange={(event) => updateCategory(category.id, { description: event.target.value })} placeholder="Descripción de la categoría" className="mt-3 min-h-16 w-full rounded-lg border border-white/10 bg-[#0B0F17] px-3 py-2 text-xs" /><div className="mt-3 flex flex-wrap items-center gap-2"><label className="cursor-pointer rounded-lg border border-white/10 px-3 py-2 text-xs"><Upload className="mr-1 inline h-3.5 w-3.5" />Subir imagen<input type="file" accept="image/*" className="hidden" onChange={(event) => uploadCategoryImage(category, event.target.files?.[0])} /></label><button onClick={() => updateCategory(category.id, { active: !category.active })} className={`rounded-lg px-3 py-2 text-xs ${category.active ? 'bg-emerald-500/15 text-emerald-300' : 'bg-white/5 text-gray-400'}`}>{category.active ? 'Activa' : 'Inactiva'}</button><button onClick={() => moveCategory(category.id, -1)} disabled={index === 0} className="rounded-lg border border-white/10 px-3 py-2 text-xs disabled:opacity-30">↑</button><button onClick={() => moveCategory(category.id, 1)} disabled={index === catalogCategories.length - 1} className="rounded-lg border border-white/10 px-3 py-2 text-xs disabled:opacity-30">↓</button><button onClick={() => setActiveCategory(category.id)} className="ml-auto rounded-lg border border-[#D4AF37]/30 px-3 py-2 text-xs text-[#F5D76E]">Ver paquetes</button></div></article>)}</div>
+            </div>
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-              <div className="flex overflow-x-auto gap-2">{(Object.keys(CATEGORY_LABELS) as EventType[]).map((item) => <button key={item} onClick={() => setActiveCategory(item)} className={`px-4 py-2.5 rounded-xl text-xs font-semibold whitespace-nowrap ${activeCategory === item ? 'bg-white text-black' : 'bg-[#161C28] border border-white/10 text-gray-300'}`}>{CATEGORY_LABELS[item]}</button>)}</div>
+              <div className="flex overflow-x-auto gap-2">{catalogCategories.map((item) => <button key={item.id} onClick={() => setActiveCategory(item.id)} className={`px-4 py-2.5 rounded-xl text-xs font-semibold whitespace-nowrap ${activeCategory === item.id ? 'bg-white text-black' : 'bg-[#161C28] border border-white/10 text-gray-300'}`}>{item.name}{!item.active ? ' · inactiva' : ''}</button>)}</div>
               <div className="flex gap-2"><button onClick={addPackage} className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm flex items-center gap-2"><Plus className="w-4 h-4" />Nuevo paquete</button><button onClick={saveCatalog} disabled={busy} className="px-5 py-2.5 rounded-xl bg-[#D4AF37] text-black font-bold text-sm flex items-center gap-2 disabled:opacity-40">{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}Guardar y publicar</button></div>
             </div>
 
             <div className="grid lg:grid-cols-2 gap-5">
-              {packages[activeCategory].map((pkg) => (
+              {(packages[activeCategory] || []).map((pkg) => (
                 <article key={pkg.id} className="rounded-2xl bg-[#161C28] border border-white/10 p-5 space-y-4">
-                  <div className="flex gap-2"><input value={pkg.name} onChange={(e) => updatePackage(pkg.id, { name: e.target.value })} className="flex-1 px-3 py-2.5 rounded-xl bg-[#0B0F17] border border-white/10 font-semibold" /><button onClick={() => setPackages((prev) => ({ ...prev, [activeCategory]: prev[activeCategory].filter((item) => item.id !== pkg.id) }))} className="p-3 rounded-xl bg-rose-500/10 text-rose-400"><Trash2 className="w-4 h-4" /></button></div>
+                  <div className="flex gap-2"><input value={pkg.name} onChange={(e) => updatePackage(pkg.id, { name: e.target.value })} className="flex-1 px-3 py-2.5 rounded-xl bg-[#0B0F17] border border-white/10 font-semibold" /><button onClick={() => setPackages((prev) => ({ ...prev, [activeCategory]: (prev[activeCategory] || []).filter((item) => item.id !== pkg.id) }))} className="p-3 rounded-xl bg-rose-500/10 text-rose-400"><Trash2 className="w-4 h-4" /></button></div>
                   <div className="grid sm:grid-cols-2 gap-3"><label className="text-[11px] text-gray-500">Precio MXN<input type="number" min="0" value={pkg.price} onChange={(e) => updatePackage(pkg.id, { price: Number(e.target.value) || 0 })} className="w-full mt-1 px-3 py-2.5 rounded-xl bg-[#0B0F17] border border-white/10" /></label><label className="text-[11px] text-gray-500">Insignia<input value={pkg.badge || ''} onChange={(e) => updatePackage(pkg.id, { badge: e.target.value })} className="w-full mt-1 px-3 py-2.5 rounded-xl bg-[#0B0F17] border border-white/10" /></label></div>
                   <label className="text-[11px] text-gray-500 block">Descripción<textarea value={pkg.description} onChange={(e) => updatePackage(pkg.id, { description: e.target.value })} rows={3} className="w-full mt-1 px-3 py-2.5 rounded-xl bg-[#0B0F17] border border-white/10 resize-y" /></label>
 
@@ -645,6 +697,8 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
           </section>
         )}
       </div>
+
+      {message && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="admin-notice-title" onClick={() => setMessage('')}><div className="w-full max-w-sm rounded-2xl border border-[#D4AF37]/35 bg-[#161C28] p-7 text-center shadow-2xl" onClick={(event) => event.stopPropagation()}><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-[#D4AF37]/30 bg-[#D4AF37]/10"><CheckCircle2 className="h-6 w-6 text-[#D4AF37]" /></div><h2 id="admin-notice-title" className="mt-4 text-xl font-bold">Aviso</h2><p className="mt-2 break-words text-sm leading-6 text-gray-300">{message}</p><button autoFocus onClick={() => setMessage('')} className="mt-6 w-full rounded-xl bg-[#D4AF37] py-3 font-bold text-black">Aceptar</button></div></div>}
 
       {successModal && (
         <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setSuccessModal(false)}>

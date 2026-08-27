@@ -1,7 +1,7 @@
 import { ADDONS_CATALOG, PACKAGES_BY_EVENT } from '../data/packages';
 import { AddOnOption, EventType, PackageOption } from '../types';
 
-export const CURRENT_CATALOG_VERSION = 2;
+export const CURRENT_CATALOG_VERSION = 3;
 const EVENT_TYPES: EventType[] = ['bodas', 'xv-anos', 'bautizos', 'retratos', 'empresarial'];
 
 export function resolvePublishedPackages(config: Record<string, any> = {}): Record<EventType, PackageOption[]> {
@@ -10,7 +10,7 @@ export function resolvePublishedPackages(config: Record<string, any> = {}): Reco
   if (!managed) return PACKAGES_BY_EVENT;
   if (Number(config.catalogVersion || 0) >= CURRENT_CATALOG_VERSION) return cloud;
 
-  return Object.fromEntries(EVENT_TYPES.map((type) => {
+  const known = Object.fromEntries(EVENT_TYPES.map((type) => {
     const localList = PACKAGES_BY_EVENT[type] || [];
     const cloudList: PackageOption[] = Array.isArray(cloud[type]) ? cloud[type] : [];
     const cloudById = new Map(cloudList.map((pkg) => [pkg.id, pkg]));
@@ -18,7 +18,9 @@ export function resolvePublishedPackages(config: Record<string, any> = {}): Reco
     const merged = localList.map((pkg) => cloudById.has(pkg.id) ? { ...pkg, ...cloudById.get(pkg.id), managedByAdmin: true } : pkg);
     const extras = cloudList.filter((pkg) => !localIds.has(pkg.id) && pkg.id !== 'personalizado');
     return [type, [...merged, ...extras]];
-  })) as Record<EventType, PackageOption[]>;
+  })) as Record<string, PackageOption[]>;
+  Object.keys(cloud).forEach((key) => { if (!known[key] && Array.isArray(cloud[key])) known[key] = cloud[key]; });
+  return known as Record<EventType, PackageOption[]>;
 }
 
 export function resolvePublishedAddons(config: Record<string, any> = {}): AddOnOption[] {
