@@ -203,6 +203,19 @@ export async function loadBusinessSnapshot(): Promise<BusinessSnapshot> {
   };
 }
 
+let businessClientsCache: CrmClient[] | null = null;
+
+export async function loadBusinessClients(force = false): Promise<CrmClient[]> {
+  if (!force && businessClientsCache) return businessClientsCache;
+  const data = await adminBusinessRequest<{ clients: CrmClient[] }>('adminBusinessClients');
+  businessClientsCache = Array.isArray(data.clients) ? data.clients : [];
+  return businessClientsCache;
+}
+
+export function cacheBusinessClients(clients: CrmClient[]): void {
+  businessClientsCache = clients;
+}
+
 export async function saveCrmClient(client: Partial<CrmClient>): Promise<CrmClient> {
   const data = await adminBusinessRequest<{ client: CrmClient }>('adminCrmUpsert', { client });
   return data.client;
@@ -315,24 +328,34 @@ export async function adminUploadMedia(
   options: { title: string; category: string; location: string }
 ): Promise<{ fileId: string; url: string }> {
   if (!file.type.startsWith('image/')) throw new Error('Selecciona un archivo de imagen válido.');
-  if (file.size > 2_600_000) {
-    throw new Error('Esta imagen supera 2.6 MB. Para conservarla sin reducir calidad, súbela a la carpeta de Drive y selecciónala desde el panel.');
-  }
-  const dataUrl = await fileToDataUrl(file);
-  const res = await fetch('/api/proxy?action=adminUpload', {
+  if (file.size <= 0 || file.size > 100_000_000) throw new Error('La fotografía debe pesar entre 1 byte y 100 MB.');
+  const initRes = await fetch('/api/proxy?action=adminUploadInit', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify({
       filename: file.name,
-      title: options.title,
-      category: options.category,
-      location: options.location,
       mimeType: file.type || 'application/octet-stream',
-      base64: dataUrl,
+      size: file.size,
     }),
   });
-  const saved = await parseResponse(res);
+  const initialized = await parseResponse(initRes);
+  const uploadRes = await fetch(String(initialized.uploadUrl || ''), {
+    method: 'PUT',
+    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+    body: file,
+  });
+  if (!uploadRes.ok) throw new Error(`Google Drive no pudo recibir la fotografía original (HTTP ${uploadRes.status}).`);
+  const uploaded = await uploadRes.json().catch(() => ({}));
+  const fileId = String(uploaded.id || '');
+  if (!fileId) throw new Error('Google Drive terminó la carga, pero no devolvió el identificador del archivo.');
+  const finalizeRes = await fetch('/api/proxy?action=adminUploadFinalize', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ fileId, title: options.title, category: options.category, location: options.location }),
+  });
+  const saved = await parseResponse(finalizeRes);
   return { fileId: saved.fileId, url: saved.url };
 }
 
