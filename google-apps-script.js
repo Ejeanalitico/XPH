@@ -399,6 +399,7 @@ function saveActiveConfig(ss, configJsonString) {
   var props = PropertiesService.getScriptProperties();
   var CHUNK_SIZE = 8000;
   var totalChunks = Math.ceil(configJsonString.length / CHUNK_SIZE);
+  var previousTotalChunks = parseInt(props.getProperty('xph_total_chunks') || '0', 10);
   
   var newProps = {
     'xph_total_chunks': totalChunks.toString(),
@@ -416,7 +417,17 @@ function saveActiveConfig(ss, configJsonString) {
     newProps['chunk_' + i] = configJsonString.substring(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
   }
   
-  props.setProperties(newProps, true);
+  // Conserva las propiedades privadas del proyecto (XPH_API_SECRET,
+  // XPH_SPREADSHEET_ID y XPH_FOLDER_ID). El segundo argumento en `true`
+  // borraba todas las claves que no pertenecían a la configuración activa y
+  // dejaba al proxy de Vercel sin autorización después de cada guardado.
+  props.setProperties(newProps, false);
+
+  // Si la configuración nueva ocupa menos fragmentos, elimina únicamente los
+  // fragmentos sobrantes de la versión anterior.
+  for (var staleChunk = totalChunks; staleChunk < previousTotalChunks; staleChunk++) {
+    props.deleteProperty('chunk_' + staleChunk);
+  }
 }
 
 /**
