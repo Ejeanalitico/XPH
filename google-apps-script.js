@@ -120,6 +120,7 @@ function initSpreadsheetSheets(ss) {
       'Cotizaciones_Citas': ['ID_Cotizacion', 'Fecha_Registro', 'Cliente', 'Email', 'WhatsApp', 'Evento', 'Paquete', 'Total_MXN', 'Pago_Inicial_MXN', 'Saldo_Pendiente_MXN', 'Fecha_Evento', 'Ciudad', 'Estado_Cotizacion', 'Notas'],
       'Paquetes_Precios': ['Categoria', 'ID_Paquete', 'Nombre_Paquete', 'Precio_Base_MXN', 'Precio_Final_Por_Confirmar', 'Insignia_Badge', 'Descripcion', 'Que_Incluye', 'No_Incluye', 'Ultima_Modificacion'],
       'CRM_Clientes': ['id', 'recordType', 'name', 'phone', 'email', 'eventType', 'eventDate', 'eventLocation', 'packageName', 'totalAmount', 'paidAmount', 'status', 'source', 'firstContactAt', 'lastContactAt', 'nextAction', 'nextActionAt', 'notes', 'contractId', 'createdAt', 'updatedAt', 'honoreeName', 'address', 'eventTime', 'serviceHours', 'campaign', 'objection', 'followUpAttempts', 'suggestedMessage', 'lossReason', 'estimatedCost', 'allocatedAdCost', 'preSessionApplies', 'preSessionDate', 'preSessionTime', 'preSessionLocation', 'inviteClientToCalendar', 'calendarEventId', 'preSessionCalendarEventId'],
+      'Seguimientos_CRM': ['id', 'prospectId', 'clientId', 'occurredAt', 'conversation', 'result', 'nextAction', 'nextActionAt', 'createdBy', 'createdAt'],
       'Gastos': ['id', 'date', 'category', 'subcategory', 'concept', 'supplier', 'paymentMethod', 'paymentStatus', 'amount', 'notes', 'createdAt', 'updatedAt', 'relatedClientId', 'receiptReference', 'account'],
       'Pagos_Clientes': ['id', 'clientId', 'contractId', 'transactionId', 'date', 'dueDate', 'concept', 'plannedAmount', 'receivedAmount', 'status', 'method', 'reference', 'notes', 'receiptFileId', 'receiptFileName', 'createdAt', 'updatedAt', 'installmentNumber', 'percentage'],
       'Contratos': ['id', 'clientId', 'clientName', 'folio', 'eventType', 'eventDate', 'status', 'originalFileName', 'originalFileId', 'clientSignedFileId', 'finalFileId', 'signatureFileId', 'tokenHash', 'tokenExpiresAt', 'tokenStatus', 'sentAt', 'viewedAt', 'acceptedAt', 'clientSignedAt', 'ownerAuthorizedAt', 'documentHash', 'signedDocumentHash', 'finalDocumentHash', 'signerIp', 'signerUserAgent', 'consentText', 'createdAt', 'updatedAt'],
@@ -456,6 +457,7 @@ function loadActiveConfig() {
 
 var BUSINESS_HEADERS = {
   clients: ['id', 'recordType', 'name', 'phone', 'email', 'eventType', 'eventDate', 'eventLocation', 'packageName', 'totalAmount', 'paidAmount', 'status', 'source', 'firstContactAt', 'lastContactAt', 'nextAction', 'nextActionAt', 'notes', 'contractId', 'createdAt', 'updatedAt', 'honoreeName', 'address', 'eventTime', 'serviceHours', 'campaign', 'objection', 'followUpAttempts', 'suggestedMessage', 'lossReason', 'estimatedCost', 'allocatedAdCost', 'preSessionApplies', 'preSessionDate', 'preSessionTime', 'preSessionLocation', 'inviteClientToCalendar', 'calendarEventId', 'preSessionCalendarEventId'],
+  followUps: ['id', 'prospectId', 'clientId', 'occurredAt', 'conversation', 'result', 'nextAction', 'nextActionAt', 'createdBy', 'createdAt'],
   expenses: ['id', 'date', 'category', 'subcategory', 'concept', 'supplier', 'paymentMethod', 'paymentStatus', 'amount', 'notes', 'createdAt', 'updatedAt', 'relatedClientId', 'receiptReference', 'account'],
   payments: ['id', 'clientId', 'contractId', 'transactionId', 'date', 'dueDate', 'concept', 'plannedAmount', 'receivedAmount', 'status', 'method', 'reference', 'notes', 'receiptFileId', 'receiptFileName', 'createdAt', 'updatedAt', 'installmentNumber', 'percentage'],
   contracts: ['id', 'clientId', 'clientName', 'folio', 'eventType', 'eventDate', 'status', 'originalFileName', 'originalFileId', 'clientSignedFileId', 'finalFileId', 'signatureFileId', 'tokenHash', 'tokenExpiresAt', 'tokenStatus', 'sentAt', 'viewedAt', 'acceptedAt', 'clientSignedAt', 'ownerAuthorizedAt', 'documentHash', 'signedDocumentHash', 'finalDocumentHash', 'signerIp', 'signerUserAgent', 'consentText', 'createdAt', 'updatedAt'],
@@ -674,6 +676,22 @@ function normalizedPayment(input, existing) {
   };
 }
 
+function normalizedFollowUp(input, client) {
+  var timestamp = businessNow();
+  return {
+    id: cleanBusinessText(input.id || businessId('seguimiento'), 120),
+    prospectId: client.recordType === 'Prospecto' ? cleanBusinessText(client.id, 120) : cleanBusinessText(input.prospectId, 120),
+    clientId: client.recordType === 'Cliente' ? cleanBusinessText(client.id, 120) : cleanBusinessText(input.clientId, 120),
+    occurredAt: cleanBusinessText(input.occurredAt || timestamp, 50),
+    conversation: cleanBusinessText(input.conversation, 6000),
+    result: cleanBusinessText(input.result, 1000),
+    nextAction: cleanBusinessText(input.nextAction, 1000),
+    nextActionAt: cleanBusinessText(input.nextActionAt, 50),
+    createdBy: cleanBusinessText(input.createdBy || 'Admin XPH', 180),
+    createdAt: timestamp
+  };
+}
+
 function publicPaymentRecord(record) {
   var output = {};
   BUSINESS_HEADERS.payments.forEach(function(header) { output[header] = record[header] === undefined ? '' : record[header]; });
@@ -803,6 +821,7 @@ function handleBusinessAction(ss, action, payload) {
       status: 'success',
       snapshot: {
         clients: readBusinessRecords(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients),
+        followUps: readBusinessRecords(ss, 'Seguimientos_CRM', BUSINESS_HEADERS.followUps),
         expenses: readBusinessRecords(ss, 'Gastos', BUSINESS_HEADERS.expenses),
         payments: readBusinessRecords(ss, 'Pagos_Clientes', BUSINESS_HEADERS.payments).map(publicPaymentRecord),
         contracts: readBusinessRecords(ss, 'Contratos', BUSINESS_HEADERS.contracts).map(publicContractRecord),
@@ -816,12 +835,48 @@ function handleBusinessAction(ss, action, payload) {
     var existingClient = clientInput.id ? findBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, clientInput.id) : null;
     var client = normalizedClient(clientInput, existingClient);
     if (!client.name && !client.phone) throw new Error('Registra por lo menos el nombre o el teléfono.');
-    var clientStatuses = ['Nuevo', 'Contactado', 'Cotización enviada', 'Seguimiento', 'Cierre prioritario', 'Contratado', 'No interesado', 'Archivado'];
+    var clientStatuses = ['Nuevo', 'Contactado', 'Cotización enviada', 'Esperando respuesta', 'Seguimiento pendiente', 'Interesado', 'Negociación', 'Por cerrar', 'Seguimiento', 'Cierre prioritario', 'Contratado', 'No interesado', 'Sin interés', 'No responde', 'Archivado'];
     if (clientStatuses.indexOf(client.status) < 0) throw new Error('Estado de cliente no válido.');
     if (client.totalAmount > 0 && client.paidAmount > client.totalAmount) throw new Error('Lo pagado no puede ser mayor al total contratado.');
     upsertBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, client);
     logAudit(ss, 'CRM_CLIENTE_GUARDADO', client.name || client.phone || client.id, client.id, 'Admin XPH');
     return { status: 'success', client: client };
+  }
+
+  if (action === 'followUpCreate') {
+    var followInput = payload.followUp || {};
+    var related = findBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, followInput.recordId);
+    if (!related) throw new Error('Prospecto o cliente no localizado.');
+    var followUp = normalizedFollowUp(followInput, related);
+    if (!followUp.conversation && !followUp.result) throw new Error('Registra la conversación o el resultado del seguimiento.');
+    upsertBusinessRecord(ss, 'Seguimientos_CRM', BUSINESS_HEADERS.followUps, followUp);
+    related.lastContactAt = followUp.occurredAt;
+    related.nextAction = followUp.nextAction;
+    related.nextActionAt = followUp.nextActionAt;
+    related.followUpAttempts = Number(related.followUpAttempts || 0) + 1;
+    related.updatedAt = businessNow();
+    upsertBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, related);
+    logAudit(ss, 'SEGUIMIENTO_CRM_CREADO', followUp.result || followUp.conversation, followUp.id, followUp.createdBy);
+    return { status: 'success', followUp: followUp, client: related };
+  }
+
+  if (action === 'prospectConvert') {
+    var prospect = findBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, payload.prospectId);
+    if (!prospect) throw new Error('Prospecto no localizado.');
+    if (String(prospect.recordType) === 'Cliente') return { status: 'success', client: prospect };
+    prospect.recordType = 'Cliente';
+    prospect.status = 'Contratado';
+    prospect.updatedAt = businessNow();
+    upsertBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, prospect);
+    var followRows = readBusinessRecords(ss, 'Seguimientos_CRM', BUSINESS_HEADERS.followUps);
+    followRows.forEach(function(item) {
+      if (String(item.prospectId) === String(prospect.id)) {
+        item.clientId = prospect.id;
+        upsertBusinessRecord(ss, 'Seguimientos_CRM', BUSINESS_HEADERS.followUps, item);
+      }
+    });
+    logAudit(ss, 'PROSPECTO_CONVERTIDO', prospect.name || prospect.phone, prospect.id, 'Admin XPH');
+    return { status: 'success', client: prospect };
   }
 
   if (action === 'calendarSync') {
@@ -1139,7 +1194,7 @@ function doPost(e) {
     var ss = getDatabaseSpreadsheet();
 
     var businessActions = [
-      'businessClients', 'businessSnapshot', 'uploadInit', 'uploadFinalize', 'crmUpsert', 'calendarSync', 'expenseUpsert', 'paymentUpsert', 'contractUpload', 'contractCreateLink',
+      'businessClients', 'businessSnapshot', 'uploadInit', 'uploadFinalize', 'crmUpsert', 'followUpCreate', 'prospectConvert', 'calendarSync', 'expenseUpsert', 'paymentUpsert', 'contractUpload', 'contractCreateLink',
       'contractInvalidate', 'contractResolve', 'contractCompleteSignature', 'ownerSignatureSave',
       'contractAdminPdfData', 'contractFinalizeData', 'contractFinalize'
     ];
