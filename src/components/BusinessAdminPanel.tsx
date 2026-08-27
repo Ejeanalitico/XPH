@@ -300,6 +300,12 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
   const calendarClients = [...snapshot.clients]
     .filter((client) => dateValue(client.eventDate))
     .sort((a, b) => dateValue(a.eventDate).localeCompare(dateValue(b.eventDate)));
+  const calendarEntries = useMemo(() => snapshot.clients.flatMap((client) => {
+    const entries: Array<{ client: CrmClient; kind: 'event' | 'session'; date: string; time: string }> = [];
+    if (dateValue(client.eventDate)) entries.push({ client, kind: 'event', date: dateValue(client.eventDate), time: timeValue(client.eventTime) });
+    if (client.preSessionApplies && dateValue(client.preSessionDate)) entries.push({ client, kind: 'session', date: dateValue(client.preSessionDate), time: timeValue(client.preSessionTime) });
+    return entries;
+  }).sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`)), [snapshot.clients]);
   const calendarDays = useMemo(() => {
     const first = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth(), 1);
     const start = new Date(first);
@@ -308,9 +314,9 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
       const date = new Date(start);
       date.setDate(start.getDate() + index);
       const key = localDateKey(date);
-      return { date, key, currentMonth: date.getMonth() === calendarCursor.getMonth(), clients: calendarClients.filter((client) => dateValue(client.eventDate) === key) };
+      return { date, key, currentMonth: date.getMonth() === calendarCursor.getMonth(), entries: calendarEntries.filter((entry) => entry.date === key) };
     });
-  }, [calendarClients, calendarCursor]);
+  }, [calendarCursor, calendarEntries]);
 
   const uploadContract = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -449,10 +455,10 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
       {tab === 'clients' && (
         <div className="space-y-4">
           {selectedClient ? (
-            <div className="space-y-4">
-              <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-[#161C28] p-5 sm:flex-row sm:items-center sm:justify-between">
-                <div><button onClick={() => { setSelectedClientId(''); setShowClientForm(false); }} className="mb-3 text-xs text-[#D4AF37]">← Volver a clientes</button><h3 className="text-xl font-bold">{selectedClient.name || 'Cliente sin nombre'}</h3><p className="mt-1 text-sm text-gray-400">{selectedClient.eventType || 'Evento por confirmar'} · {dateValue(selectedClient.eventDate) || 'Sin fecha'} · {timeValue(selectedClient.eventTime) || 'Sin horario'}</p></div>
-                <div className="flex flex-wrap gap-2"><button onClick={() => { setClientDraft(selectedClient); setShowClientForm(true); }} className="rounded-xl bg-[#D4AF37] px-4 py-2.5 text-sm font-bold text-black">Editar detalles</button><button onClick={() => syncCalendar(selectedClient)} disabled={busy || !dateValue(selectedClient.eventDate) || !timeValue(selectedClient.eventTime)} className="rounded-xl border border-sky-400/30 px-4 py-2.5 text-sm text-sky-200 disabled:border-white/10 disabled:text-gray-600">Actualizar Calendar</button></div>
+            <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111722] shadow-2xl shadow-black/20">
+              <div className="flex flex-col gap-3 border-b border-white/10 bg-[#161C28] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-3"><button onClick={() => { setSelectedClientId(''); setShowClientForm(false); }} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-gray-200 hover:bg-white/5">← Clientes</button><span className="inline-flex items-center gap-2 rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-3 py-2 text-xs text-emerald-200"><CheckCircle2 className="h-4 w-4" />{selectedClient.status}</span></div>
+                <div className="flex flex-wrap gap-2"><button onClick={() => { setClientDraft(selectedClient); setShowClientForm(true); }} className="rounded-lg bg-[#D4AF37] px-4 py-2 text-sm font-bold text-black">Editar seguimiento</button><button onClick={() => syncCalendar(selectedClient)} disabled={busy || !dateValue(selectedClient.eventDate) || !timeValue(selectedClient.eventTime)} className="rounded-lg border border-sky-300/30 bg-sky-400/10 px-4 py-2 text-sm text-sky-100 disabled:border-white/10 disabled:bg-transparent disabled:text-gray-600">Actualizar Calendar</button></div>
               </div>
               {showClientForm ? <ClientForm draft={clientDraft} onChange={setClientDraft} onSubmit={saveClient} onCancel={() => setShowClientForm(false)} busy={busy} /> : <ClientDetails client={selectedClient} paid={paidForClient(selectedClient)} />}
             </div>
@@ -483,7 +489,8 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
       )}
 
       {tab === 'calendar' && (
-        <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111722]">
+        <div className="grid overflow-hidden rounded-2xl border border-white/10 bg-[#111722] xl:grid-cols-[minmax(0,1fr)_280px]">
+          <div className="min-w-0 overflow-x-auto">
           <div className="flex flex-wrap items-center gap-3 border-b border-white/10 p-4">
             <button onClick={() => setCalendarCursor(new Date())} className="rounded-full border border-white/15 px-5 py-2 text-sm font-semibold">Hoy</button>
             <button aria-label="Mes anterior" onClick={() => setCalendarCursor((value) => new Date(value.getFullYear(), value.getMonth() - 1, 1))} className="rounded-full border border-white/15 bg-white/10 p-2 text-white hover:bg-white/20"><ChevronLeft className="h-5 w-5 stroke-[2.5]" /></button>
@@ -493,11 +500,16 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
           </div>
           <div className="grid grid-cols-7 border-b border-white/10 bg-black/15 text-center text-[10px] font-semibold uppercase tracking-wider text-gray-400">{['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'].map((day) => <div key={day} className="py-2">{day}</div>)}</div>
           <div className="grid grid-cols-7">
-            {calendarDays.map(({ date, key, currentMonth, clients }) => <div key={key} className={`min-h-28 border-b border-r border-white/10 p-2 sm:min-h-36 ${currentMonth ? 'bg-[#111722]' : 'bg-black/20 text-gray-600'}`}>
+            {calendarDays.map(({ date, key, currentMonth, entries }) => <div key={key} className={`min-h-28 border-b border-r border-white/10 p-2 sm:min-h-36 ${currentMonth ? 'bg-[#111722]' : 'bg-black/20 text-gray-600'}`}>
               <div className={`mb-2 text-center text-xs ${key === localDateKey(new Date()) ? 'mx-auto flex h-6 w-6 items-center justify-center rounded-full bg-[#D4AF37] font-bold text-black' : ''}`}>{date.getDate()}</div>
-              <div className="space-y-1">{clients.map((client) => <button key={client.id} onClick={() => openClientDetails(client)} title={`${client.name} · ${client.eventType || 'Evento'}`} className="block w-full truncate rounded-md border-l-4 border-[#D4AF37] bg-[#D4AF37]/15 px-1.5 py-1 text-left text-[10px] text-[#F5D76E] hover:bg-[#D4AF37]/25 sm:text-xs"><span className="font-semibold">{timeValue(client.eventTime) || '—'}</span> {client.name || 'Cliente'}</button>)}</div>
+              <div className="space-y-1">{entries.map((entry) => <button key={`${entry.client.id}-${entry.kind}`} onClick={() => openClientDetails(entry.client)} title={`${entry.kind === 'session' ? 'Sesión previa' : entry.client.eventType || 'Evento'} · ${entry.client.name}`} className={`block w-full truncate rounded-md border-l-4 px-1.5 py-1 text-left text-[10px] sm:text-xs ${entry.kind === 'session' ? 'border-red-400 bg-red-500/15 text-red-200 hover:bg-red-500/25' : 'border-[#D4AF37] bg-[#D4AF37]/15 text-[#F5D76E] hover:bg-[#D4AF37]/25'}`}><span className="font-semibold">{entry.time || '—'}</span> {entry.kind === 'session' ? 'Sesión · ' : ''}{entry.client.name || 'Cliente'}</button>)}</div>
             </div>)}
           </div>
+          </div>
+          <aside className="border-t border-white/10 bg-[#161C28] xl:border-l xl:border-t-0">
+            <div className="border-b border-white/10 p-4"><h4 className="font-semibold text-white">Clientes</h4><p className="mt-1 text-xs text-gray-400">Eventos y sesiones programadas</p><div className="mt-3 flex gap-3 text-[11px]"><span className="flex items-center gap-1.5 text-[#F5D76E]"><i className="h-2.5 w-2.5 rounded-full bg-[#D4AF37]" />Evento</span><span className="flex items-center gap-1.5 text-red-200"><i className="h-2.5 w-2.5 rounded-full bg-red-400" />Sesión</span></div></div>
+            <div className="max-h-[670px] divide-y divide-white/10 overflow-y-auto">{calendarClients.map((client) => <button key={client.id} onClick={() => openClientDetails(client)} className="block w-full p-4 text-left hover:bg-white/5"><div className="font-semibold text-white">{client.name || 'Cliente sin nombre'}</div><div className="mt-1 text-xs text-gray-400">{dateValue(client.eventDate)} · {timeValue(client.eventTime) || 'Horario pendiente'}</div><div className="mt-1 text-xs text-[#F5D76E]">{client.eventType || 'Evento por confirmar'}</div>{client.preSessionApplies && <div className="mt-2 rounded-md bg-red-500/10 px-2 py-1.5 text-xs text-red-200">Sesión: {dateValue(client.preSessionDate) || 'Fecha pendiente'} · {timeValue(client.preSessionTime) || 'Hora pendiente'}</div>}</button>)}{!calendarClients.length && <p className="p-6 text-center text-sm text-gray-500">No hay clientes con fecha registrada.</p>}</div>
+          </aside>
         </div>
       )}
 
@@ -550,14 +562,23 @@ const Metric = ({ label, value, icon: Icon }: { label: string; value: string; ic
 const FinancialRow = ({ label, value, detail }: { label: string; value: number; detail?: string }) => <div className="rounded-xl border border-white/5 bg-black/15 p-3"><dt className="text-xs text-gray-400">{label}</dt><dd className="mt-1 text-lg font-semibold">{money(value)}</dd>{detail && <p className="mt-1 text-[11px] leading-4 text-gray-500">{detail}</p>}</div>;
 
 const ClientDetails = ({ client, paid }: { client: CrmClient; paid: number }) => {
-  const rows = [
-    ['Teléfono', client.phone], ['Correo', client.email], ['Festejado(s) / pareja', client.honoreeName], ['Domicilio', client.address],
-    ['Evento', client.eventType], ['Fecha y horario', `${dateValue(client.eventDate) || 'Pendiente'} · ${timeValue(client.eventTime) || 'Pendiente'}`],
-    ['Lugar', client.eventLocation], ['Paquete', client.packageName], ['Cobertura', client.serviceHours ? `${client.serviceHours} horas` : 'Pendiente'],
-    ['Total', money(client.totalAmount)], ['Pagado', money(paid)], ['Por cobrar', money(Math.max(0, Number(client.totalAmount || 0) - paid))],
-    ['Próxima acción', client.nextAction], ['Fecha de seguimiento', client.nextActionAt], ['Fuente', client.source], ['Campaña', client.campaign],
+  const fields = [
+    ['Responsable', 'Javier García'], ['Fecha de seguimiento', client.nextActionAt || 'Sin programar'], ['Proyecto', client.status],
+    ['Tipo de servicio', client.eventType || 'Por confirmar'], ['Origen del cliente', client.source || 'Sin registrar'], ['Campaña', client.campaign || 'Sin campaña'],
   ];
-  return <div className="grid gap-4 lg:grid-cols-[1.2fr_.8fr]"><dl className="grid gap-3 rounded-2xl border border-white/10 bg-[#161C28] p-5 sm:grid-cols-2">{rows.map(([label, value]) => <div key={label} className="rounded-xl border border-white/5 bg-black/15 p-3"><dt className="text-xs text-gray-500">{label}</dt><dd className="mt-1 whitespace-pre-wrap text-sm text-gray-100">{String(value || 'Pendiente')}</dd></div>)}</dl><aside className="space-y-3 rounded-2xl border border-white/10 bg-[#161C28] p-5"><div><div className="text-xs text-gray-500">Estado</div><div className="mt-1 text-[#F5D76E]">{client.status}</div></div><div><div className="text-xs text-gray-500">Objeción o situación</div><div className="mt-1 whitespace-pre-wrap text-sm">{client.objection || 'Sin registro'}</div></div><div><div className="text-xs text-gray-500">Notas</div><div className="mt-1 whitespace-pre-wrap text-sm">{client.notes || 'Sin notas'}</div></div><div><div className="text-xs text-gray-500">Sesión previa</div><div className="mt-1 text-sm">{client.preSessionApplies ? `${dateValue(client.preSessionDate) || 'Fecha pendiente'} · ${client.preSessionTime || 'Horario pendiente'} · ${client.preSessionLocation || 'Lugar pendiente'}` : 'No aplica'}</div></div></aside></div>;
+  const pending = [
+    ['Datos de contacto', Boolean(client.phone || client.email)], ['Fecha y horario del evento', Boolean(dateValue(client.eventDate) && timeValue(client.eventTime))],
+    ['Lugar del evento', Boolean(client.eventLocation)], ['Paquete y total', Boolean(client.packageName && client.totalAmount > 0)],
+    ['Sesión previa', !client.preSessionApplies || Boolean(dateValue(client.preSessionDate) && timeValue(client.preSessionTime) && client.preSessionLocation)],
+  ];
+  return <div className="mx-auto max-w-5xl px-5 py-6 sm:px-8">
+    <div className="border-b border-white/10 pb-6"><p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#D4AF37]">Seguimiento de cliente</p><h3 className="mt-3 text-2xl font-bold text-white sm:text-3xl">{client.nextAction || client.name || 'Cliente sin nombre'}</h3><p className="mt-2 text-sm text-gray-400">{client.name || 'Sin nombre'} · {client.recordType} · {client.phone || 'Sin teléfono'}</p></div>
+    <dl className="divide-y divide-white/10 py-3">{fields.map(([label, value], index) => <div key={label} className="grid gap-2 py-3 text-sm sm:grid-cols-[180px_1fr]"><dt className="text-gray-400">{label}</dt><dd><span className={`inline-flex rounded-md px-2.5 py-1 ${index >= 2 ? 'bg-[#D4AF37]/15 text-[#F5D76E]' : 'text-gray-100'}`}>{String(value)}</span></dd></div>)}</dl>
+    <section className="border-t border-white/10 py-6"><h4 className="text-sm font-semibold text-gray-200">Descripción</h4><p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-gray-300">{client.notes || client.objection || 'Sin descripción registrada. Usa “Editar seguimiento” para agregar contexto, acuerdos y observaciones.'}</p></section>
+    <section className="border-t border-white/10 py-6"><div className="flex items-center justify-between"><h4 className="text-sm font-semibold text-gray-200">Pendientes del expediente</h4><span className="text-xs text-gray-500">{pending.filter(([, done]) => done).length} de {pending.length} completos</span></div><div className="mt-4 divide-y divide-white/10 border-y border-white/10">{pending.map(([label, done]) => <div key={String(label)} className="flex items-center gap-3 py-3 text-sm"><span className={`flex h-5 w-5 items-center justify-center rounded-full border ${done ? 'border-emerald-400 bg-emerald-400/15 text-emerald-300' : 'border-gray-500 text-transparent'}`}>✓</span><span className={done ? 'text-gray-400 line-through' : 'text-gray-100'}>{String(label)}</span></div>)}</div></section>
+    <section className="grid gap-5 border-t border-white/10 py-6 lg:grid-cols-2"><div><h4 className="text-sm font-semibold text-gray-200">Información del evento</h4><div className="mt-3 space-y-2 text-sm text-gray-300"><p>{client.eventType || 'Evento por confirmar'} · {dateValue(client.eventDate) || 'Sin fecha'} · {timeValue(client.eventTime) || 'Sin horario'}</p><p>{client.eventLocation || 'Lugar pendiente'}</p><p>{client.packageName || 'Paquete pendiente'} · {client.serviceHours ? `${client.serviceHours} horas` : 'Cobertura pendiente'}</p></div></div><div><h4 className="text-sm font-semibold text-gray-200">Control de cobro</h4><div className="mt-3 grid grid-cols-3 gap-2 text-sm"><div><span className="block text-xs text-gray-500">Total</span>{money(client.totalAmount)}</div><div><span className="block text-xs text-gray-500">Pagado</span><span className="text-emerald-300">{money(paid)}</span></div><div><span className="block text-xs text-gray-500">Pendiente</span><span className="text-amber-300">{money(Math.max(0, Number(client.totalAmount || 0) - paid))}</span></div></div></div></section>
+    <section className="border-t border-white/10 py-6"><h4 className="text-sm font-semibold text-gray-200">Actividad</h4><div className="mt-4 rounded-xl border border-white/10 bg-black/15 p-4 text-sm text-gray-300"><p>Último contacto: {client.lastContactAt || 'Sin registrar'}</p><p className="mt-2">Próxima acción: {client.nextAction || 'Sin definir'} · {client.nextActionAt || 'Sin fecha'}</p><p className="mt-2">Intentos de seguimiento: {client.followUpAttempts || 0}</p></div></section>
+  </div>;
 };
 
 const inputClass = 'w-full rounded-xl border border-white/10 bg-[#0B0F17] px-3 py-2.5 text-sm';
