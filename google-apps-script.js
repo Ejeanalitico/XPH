@@ -699,6 +699,10 @@ function calendarDateTime(dateValue, timeValue) {
   return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), Number(time[0]), Number(time[1]), 0, 0);
 }
 
+function authorizeCalendarIntegration() {
+  return CalendarApp.getDefaultCalendar().getName();
+}
+
 function upsertClientCalendarEvent(calendar, eventId, title, start, durationHours, location, description, guestEmail) {
   var event = eventId ? calendar.getEventById(eventId) : null;
   var end = new Date(start.getTime() + Math.max(0.5, Number(durationHours) || 1) * 60 * 60 * 1000);
