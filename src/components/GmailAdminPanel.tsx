@@ -12,7 +12,7 @@ interface Props {
 
 const blankConfig = (): GmailConfig => ({
   id: 'xph-gmail', enabled: false, connectedEmail: '', senderName: 'XPH Fotografía & Video', replyTo: '',
-  signatureHtml: '<p>XPH Fotografía & Video</p>', logoFileId: '', logoUrl: '', autoPaymentReceived: false,
+  signatureHtml: '<p>Equipo XPH Fotografía & Video</p>', logoFileId: '', logoUrl: '', autoPaymentReceived: false,
   autoPaymentDue: false, autoEventReminders: false, updatedAt: '',
 });
 
@@ -45,8 +45,8 @@ export const GmailAdminPanel: React.FC<Props> = ({ snapshot, onSnapshotChange, o
       const saved = await uploadEmailLogo(file);
       setConfig(saved);
       onSnapshotChange((current) => ({ ...current, gmailConfig: saved }));
-      notify('Logo XPH guardado para los correos HTML.');
-    } catch (error: any) { notify(error?.message || 'No se pudo guardar el logo.'); }
+      notify('Firma gráfica XPH guardada. Se mostrará debajo del mensaje.');
+    } catch (error: any) { notify(error?.message || 'No se pudo guardar la firma gráfica.'); }
     finally { setBusy(''); }
   };
 
@@ -107,7 +107,7 @@ export const GmailAdminPanel: React.FC<Props> = ({ snapshot, onSnapshotChange, o
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
           <label className="text-xs text-gray-400">Nombre del remitente<input value={config.senderName} onChange={(event) => setConfig((current) => ({ ...current, senderName: event.target.value }))} className="mt-1 w-full rounded-xl border border-white/10 bg-[#0B0F17] px-3 py-3 text-sm text-white" /></label>
           <label className="text-xs text-gray-400">Responder a<input type="email" value={config.replyTo} onChange={(event) => setConfig((current) => ({ ...current, replyTo: event.target.value }))} className="mt-1 w-full rounded-xl border border-white/10 bg-[#0B0F17] px-3 py-3 text-sm text-white" placeholder="correo@ejemplo.com" /></label>
-          <label className="text-xs text-gray-400 sm:col-span-2">Firma HTML<textarea value={config.signatureHtml} onChange={(event) => setConfig((current) => ({ ...current, signatureHtml: event.target.value }))} className="mt-1 min-h-28 w-full rounded-xl border border-white/10 bg-[#0B0F17] px-3 py-3 font-mono text-xs text-white" /></label>
+          <label className="text-xs text-gray-400 sm:col-span-2">Texto de cierre (aparece antes de la firma gráfica)<textarea value={config.signatureHtml} onChange={(event) => setConfig((current) => ({ ...current, signatureHtml: event.target.value }))} className="mt-1 min-h-28 w-full rounded-xl border border-white/10 bg-[#0B0F17] px-3 py-3 font-mono text-xs text-white" /></label>
         </div>
         <div className="mt-4 grid gap-2 text-sm sm:grid-cols-3">
           {([['autoPaymentReceived', 'Confirmar pagos recibidos'], ['autoPaymentDue', 'Recordar pagos'], ['autoEventReminders', 'Recordar eventos']] as const).map(([key, label]) => <label key={key} className="flex items-start gap-2 rounded-xl border border-white/10 p-3"><input type="checkbox" checked={config[key]} onChange={(event) => setConfig((current) => ({ ...current, [key]: event.target.checked }))} className="mt-1" /><span>{label}</span></label>)}
@@ -116,9 +116,9 @@ export const GmailAdminPanel: React.FC<Props> = ({ snapshot, onSnapshotChange, o
       </section>
 
       <section className="space-y-4 rounded-2xl border border-white/10 bg-[#161C28] p-5">
-        <div><h3 className="font-semibold">Identidad del correo</h3><p className="mt-1 text-xs text-gray-400">Logo responsivo para Gmail, Outlook, Android, iPhone y computadora.</p></div>
-        {config.logoUrl ? <img src={config.logoUrl} alt="Logo XPH para correo" className="max-h-24 max-w-[220px] rounded-lg bg-white p-2" /> : <div className="rounded-xl border border-dashed border-white/15 p-6 text-center text-sm text-gray-500">Sin logo configurado</div>}
-        <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-[#D4AF37]/40 px-4 py-2.5 text-sm text-[#F5D76E]"><Upload className="h-4 w-4" />{busy === 'logo' ? 'Subiendo…' : 'Subir logo PNG, JPG o WebP'}<input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(event) => uploadLogo(event.target.files?.[0])} /></label>
+        <div><h3 className="font-semibold">Identidad del correo</h3><p className="mt-1 text-xs text-gray-400">La firma gráfica se muestra al final del mensaje en Gmail, Outlook, Android, iPhone y computadora.</p></div>
+        {config.logoUrl ? <img src={config.logoUrl} alt="Firma gráfica XPH para correo" className="w-full max-w-[420px] rounded-xl border border-[#D4AF37]/25 bg-white p-3" /> : <div className="rounded-xl border border-dashed border-white/15 p-6 text-center text-sm text-gray-500">Sin firma gráfica configurada</div>}
+        <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-[#D4AF37]/40 px-4 py-2.5 text-sm text-[#F5D76E]"><Upload className="h-4 w-4" />{busy === 'logo' ? 'Subiendo…' : 'Subir firma gráfica PNG, JPG o WebP'}<input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(event) => uploadLogo(event.target.files?.[0])} /></label>
         <div className="border-t border-white/10 pt-4"><label className="text-xs text-gray-400">Correo para prueba<input type="email" value={testRecipient} onChange={(event) => setTestRecipient(event.target.value)} className="mt-1 w-full rounded-xl border border-white/10 bg-[#0B0F17] px-3 py-3 text-sm text-white" /></label><button onClick={testEmail} disabled={!config.enabled || !testRecipient || busy === 'test'} className="mt-2 inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-black disabled:opacity-40"><Send className="h-4 w-4" />Enviar prueba</button></div>
       </section>
     </div>
