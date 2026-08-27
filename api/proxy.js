@@ -543,12 +543,14 @@ function isGoogleDriveResumableUploadUrl(value) {
   }
 }
 
-async function forwardGoogleDriveUpload(uploadUrl, mimeType, bytes) {
+async function forwardGoogleDriveUploadChunk(uploadUrl, mimeType, bytes, start, totalSize) {
+  const end = start + bytes.length - 1;
   const response = await fetch(uploadUrl, {
     method: 'PUT',
     headers: {
       'Content-Type': mimeType,
       'Content-Length': String(bytes.length),
+      'Content-Range': `bytes ${start}-${end}/${totalSize}`,
     },
     body: bytes,
     redirect: 'manual',
@@ -556,10 +558,16 @@ async function forwardGoogleDriveUpload(uploadUrl, mimeType, bytes) {
   const text = await response.text();
   let parsed = {};
   try { parsed = JSON.parse(text); } catch (_) {}
+
+  if (response.status === 308) {
+    const confirmedRange = String(response.headers.get('range') || '');
+    const confirmedEnd = Number(confirmedRange.match(/bytes=0-(\d+)/i)?.[1] || end);
+    return { complete: false, nextStart: Math.max(end + 1, confirmedEnd + 1) };
+  }
   if (!response.ok || !parsed?.id) {
     throw new Error(parsed?.error?.message || `Google Drive no pudo recibir el archivo (HTTP ${response.status}).`);
   }
-  return parsed;
+  return { complete: true, nextStart: totalSize, file: parsed };
 }
 
 function clientIp(req) {
@@ -1041,7 +1049,9 @@ export default async function handler(req, res) {
       if (action === 'adminDriveUploadBody') {
         const uploadUrl = String(req.headers?.['x-xph-upload-url'] || '');
         const mimeType = String(req.headers?.['content-type'] || '').split(';')[0].trim().toLowerCase();
-        const declaredSize = Number(req.headers?.['x-xph-upload-size'] || 0);
+        const totalSize = Number(req.headers?.['x-xph-upload-size'] || 0);
+        const chunkStart = Number(req.headers?.['x-xph-upload-start'] || 0);
+        const maxChunkBytes = 1_000_000;
         const uploadRules = {
           contract: { maxBytes: 5_000_000, validMime: mimeType === 'application/pdf' },
           logo: { maxBytes: 5_000_000, validMime: ['image/png', 'image/jpeg', 'image/webp'].includes(mimeType) },
@@ -1052,12 +1062,20 @@ export default async function handler(req, res) {
         if (!rule) return res.status(400).json({ status: 'error', message: 'El tipo de carga privada no es válido.' });
         if (!isGoogleDriveResumableUploadUrl(uploadUrl)) return res.status(400).json({ status: 'error', message: 'La sesión privada de carga no es válida.' });
         if (!rule.validMime) return res.status(400).json({ status: 'error', message: uploadKind === 'contract' ? 'El contrato debe ser un archivo PDF.' : 'Selecciona una imagen válida.' });
-        if (!Number.isInteger(declaredSize) || declaredSize <= 0 || declaredSize > rule.maxBytes) return res.status(400).json({ status: 'error', message: 'El archivo excede el tamaño permitido.' });
-        const bytes = await readBinaryBody(req, rule.maxBytes);
-        if (bytes.length !== declaredSize) return res.status(400).json({ status: 'error', message: 'La carga llegó incompleta; vuelve a seleccionar el archivo.' });
-        if (uploadKind === 'contract' && bytes.subarray(0, 5).toString('ascii') !== '%PDF-') return res.status(400).json({ status: 'error', message: 'El archivo no contiene un PDF válido.' });
-        const uploaded = await forwardGoogleDriveUpload(uploadUrl, mimeType, bytes);
-        return res.status(200).json({ status: 'success', fileId: uploaded.id, name: uploaded.name || '' });
+        if (!Number.isInteger(totalSize) || totalSize <= 0 || totalSize > rule.maxBytes) return res.status(400).json({ status: 'error', message: 'El archivo excede el tamaño permitido.' });
+        if (!Number.isInteger(chunkStart) || chunkStart < 0 || chunkStart >= totalSize) return res.status(400).json({ status: 'error', message: 'El fragmento de carga no es válido.' });
+        const expectedChunkBytes = Math.min(maxChunkBytes, totalSize - chunkStart);
+        const bytes = await readBinaryBody(req, expectedChunkBytes);
+        if (bytes.length !== expectedChunkBytes) return res.status(400).json({ status: 'error', message: 'La carga llegó incompleta; vuelve a seleccionar el archivo.' });
+        if (uploadKind === 'contract' && chunkStart === 0 && bytes.subarray(0, 5).toString('ascii') !== '%PDF-') return res.status(400).json({ status: 'error', message: 'El archivo no contiene un PDF válido.' });
+        const uploaded = await forwardGoogleDriveUploadChunk(uploadUrl, mimeType, bytes, chunkStart, totalSize);
+        return res.status(200).json({
+          status: 'success',
+          complete: uploaded.complete,
+          nextStart: uploaded.nextStart,
+          fileId: uploaded.file?.id || '',
+          name: uploaded.file?.name || '',
+        });
       }
 
       const raw = await readBody(req);
