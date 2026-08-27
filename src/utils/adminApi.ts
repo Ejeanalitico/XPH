@@ -309,43 +309,16 @@ async function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
-async function compressImage(dataUrl: string): Promise<string> {
-  if (!dataUrl.startsWith('data:image/')) return dataUrl;
-  return await new Promise<string>((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      let width = img.width;
-      let height = img.height;
-      const maxWidth = 1600;
-      if (width > maxWidth) {
-        height = Math.round((height * maxWidth) / width);
-        width = maxWidth;
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return resolve(dataUrl);
-      ctx.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', 0.84));
-    };
-    img.onerror = () => resolve(dataUrl);
-    img.src = dataUrl;
-  });
-}
-
 export async function adminUploadMedia(
   _session: AdminSession | null | undefined,
   file: File,
   options: { title: string; category: string; location: string }
 ): Promise<{ fileId: string; url: string }> {
-  let dataUrl = await fileToDataUrl(file);
-  let mimeType = file.type || 'application/octet-stream';
-  if (file.type.startsWith('image/')) {
-    dataUrl = await compressImage(dataUrl);
-    mimeType = 'image/jpeg';
+  if (!file.type.startsWith('image/')) throw new Error('Selecciona un archivo de imagen válido.');
+  if (file.size > 2_600_000) {
+    throw new Error('Esta imagen supera 2.6 MB. Para conservarla sin reducir calidad, súbela a la carpeta de Drive y selecciónala desde el panel.');
   }
-
+  const dataUrl = await fileToDataUrl(file);
   const res = await fetch('/api/proxy?action=adminUpload', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -355,12 +328,12 @@ export async function adminUploadMedia(
       title: options.title,
       category: options.category,
       location: options.location,
-      mimeType,
+      mimeType: file.type || 'application/octet-stream',
       base64: dataUrl,
     }),
   });
-  const data = await parseResponse(res);
-  return { fileId: data.fileId, url: data.url };
+  const saved = await parseResponse(res);
+  return { fileId: saved.fileId, url: saved.url };
 }
 
 export async function submitPublicLead(lead: Record<string, any>): Promise<void> {
