@@ -52,7 +52,13 @@ const emptySnapshot: BusinessSnapshot = { clients: [], followUps: [], expenses: 
 const today = () => new Date().toISOString().slice(0, 10);
 const now = () => new Date().toISOString();
 const dateValue = (value?: string) => String(value || '').slice(0, 10);
-const timeValue = (value?: string) => /^\d{2}:\d{2}/.test(String(value || '')) ? String(value).slice(0, 5) : '';
+const timeValue = (value?: string) => {
+  const raw = String(value || '').trim();
+  if (/^\d{2}:\d{2}/.test(raw)) return raw.slice(0, 5);
+  const parsed = new Date(raw.replace(/\.$/, 'Z'));
+  if (Number.isNaN(parsed.getTime())) return '';
+  return `${String(parsed.getHours()).padStart(2, '0')}:${String(parsed.getMinutes()).padStart(2, '0')}`;
+};
 const monthKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 const localDateKey = (date: Date) => `${monthKey(date)}-${String(date.getDate()).padStart(2, '0')}`;
 const monthLabel = (date: Date) => new Intl.DateTimeFormat('es-MX', { month: 'long', year: 'numeric' }).format(date);
