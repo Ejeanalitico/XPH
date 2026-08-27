@@ -516,6 +516,20 @@ async function forwardBusinessAction(action, payload = {}) {
   return parsed;
 }
 
+async function forwardBusinessActionWithLockRetry(action, payload = {}, attempts = 3) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await forwardBusinessAction(action, payload);
+    } catch (error) {
+      lastError = error;
+      if (!/lock timeout|holding the lock/i.test(String(error?.message || error)) || attempt >= attempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 350 * attempt));
+    }
+  }
+  throw lastError;
+}
+
 function isGoogleDriveResumableUploadUrl(value) {
   try {
     const url = new URL(String(value || ''));
@@ -995,7 +1009,7 @@ export default async function handler(req, res) {
       'adminInternalEventUpsert',
       'adminContractUpload',
       'adminContractUploadInit',
-      'adminContractUploadBody',
+      'adminDriveUploadBody',
       'adminContractUploadFinalize',
       'adminContractCreateLink',
       'adminOwnerSignatureSave',
@@ -1004,13 +1018,15 @@ export default async function handler(req, res) {
 
     if (req.method === 'POST' && adminBusinessActions.includes(action)) {
       const session = verifySession(req);
+      const uploadKind = String(req.headers?.['x-xph-upload-kind'] || '').trim().toLowerCase();
+      const uploadPermissionByKind = { contract: 'CONTRACTS', logo: 'GMAIL_ADMIN', gallery: 'GALLERIES', media: 'GALLERIES' };
       const permissionByAction = {
         adminBusinessClients: 'CRM_OR_CLIENT_READ', adminBusinessSnapshot: 'CRM_OR_CLIENT_READ',
         adminCrmUpsert: 'CRM_OR_CLIENT_WRITE', adminFollowUpCreate: 'CRM_WRITE', adminProspectConvert: 'CRM_WRITE',
         adminCalendarSync: 'CALENDAR',
         adminExpenseUpsert: 'FINANCE', adminPaymentUpsert: 'FINANCE', adminAdjustmentUpsert: 'FINANCE',
         adminClientPackageAssign: 'CLIENTS_WRITE', adminServiceUpsert: 'CLIENTS_WRITE', adminAddonUpsert: 'CLIENTS_WRITE',
-        adminContractUpload: 'CONTRACTS', adminContractUploadInit: 'CONTRACTS', adminContractUploadBody: 'CONTRACTS', adminContractUploadFinalize: 'CONTRACTS', adminContractCreateLink: 'CONTRACTS', adminOwnerSignatureSave: 'CONTRACTS', adminContractFinalize: 'CONTRACTS',
+        adminContractUpload: 'CONTRACTS', adminContractUploadInit: 'CONTRACTS', adminDriveUploadBody: uploadPermissionByKind[uploadKind] || 'SUPER_ADMIN', adminContractUploadFinalize: 'CONTRACTS', adminContractCreateLink: 'CONTRACTS', adminOwnerSignatureSave: 'CONTRACTS', adminContractFinalize: 'CONTRACTS',
         adminUploadInit: 'GALLERIES', adminUploadFinalize: 'GALLERIES',
         adminTeamFunctionUpsert: 'USERS_ADMIN', adminTeamUserUpsert: 'USERS_ADMIN', adminTeamInviteCreate: 'USERS_ADMIN',
         adminTeamAssignmentUpsert: 'USERS_ADMIN',
@@ -1022,13 +1038,24 @@ export default async function handler(req, res) {
       };
       if (!requirePermission(res, session, permissionByAction[action] || 'SUPER_ADMIN')) return;
 
-      if (action === 'adminContractUploadBody') {
+      if (action === 'adminDriveUploadBody') {
         const uploadUrl = String(req.headers?.['x-xph-upload-url'] || '');
         const mimeType = String(req.headers?.['content-type'] || '').split(';')[0].trim().toLowerCase();
+        const declaredSize = Number(req.headers?.['x-xph-upload-size'] || 0);
+        const uploadRules = {
+          contract: { maxBytes: 5_000_000, validMime: mimeType === 'application/pdf' },
+          logo: { maxBytes: 5_000_000, validMime: ['image/png', 'image/jpeg', 'image/webp'].includes(mimeType) },
+          gallery: { maxBytes: 100_000_000, validMime: mimeType.startsWith('image/') },
+          media: { maxBytes: 100_000_000, validMime: mimeType.startsWith('image/') },
+        };
+        const rule = uploadRules[uploadKind];
+        if (!rule) return res.status(400).json({ status: 'error', message: 'El tipo de carga privada no es válido.' });
         if (!isGoogleDriveResumableUploadUrl(uploadUrl)) return res.status(400).json({ status: 'error', message: 'La sesión privada de carga no es válida.' });
-        if (mimeType !== 'application/pdf') return res.status(400).json({ status: 'error', message: 'El contrato debe ser un archivo PDF.' });
-        const bytes = await readBinaryBody(req, 5_000_000);
-        if (bytes.subarray(0, 5).toString('ascii') !== '%PDF-') return res.status(400).json({ status: 'error', message: 'El archivo no contiene un PDF válido.' });
+        if (!rule.validMime) return res.status(400).json({ status: 'error', message: uploadKind === 'contract' ? 'El contrato debe ser un archivo PDF.' : 'Selecciona una imagen válida.' });
+        if (!Number.isInteger(declaredSize) || declaredSize <= 0 || declaredSize > rule.maxBytes) return res.status(400).json({ status: 'error', message: 'El archivo excede el tamaño permitido.' });
+        const bytes = await readBinaryBody(req, rule.maxBytes);
+        if (bytes.length !== declaredSize) return res.status(400).json({ status: 'error', message: 'La carga llegó incompleta; vuelve a seleccionar el archivo.' });
+        if (uploadKind === 'contract' && bytes.subarray(0, 5).toString('ascii') !== '%PDF-') return res.status(400).json({ status: 'error', message: 'El archivo no contiene un PDF válido.' });
         const uploaded = await forwardGoogleDriveUpload(uploadUrl, mimeType, bytes);
         return res.status(200).json({ status: 'success', fileId: uploaded.id, name: uploaded.name || '' });
       }
@@ -1345,7 +1372,7 @@ export default async function handler(req, res) {
           const ownsNotification = (snapshotResult.snapshot?.notifications || []).some((item) => String(item.id) === notificationId && String(item.userId) === String(session.userId));
           if (!ownsNotification) return res.status(403).json({ status: 'error', message: 'No puedes modificar esa notificación.' });
         }
-        const result = await forwardBusinessAction('notificationRead', { notificationId, status: submitted.status === 'PENDIENTE' ? 'PENDIENTE' : 'LEIDA' });
+        const result = await forwardBusinessActionWithLockRetry('notificationRead', { notificationId, status: submitted.status === 'PENDIENTE' ? 'PENDIENTE' : 'LEIDA' });
         return res.status(200).json({ status: 'success', notification: result.notification });
       }
       if (action === 'adminRemindersRun') {
