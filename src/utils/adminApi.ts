@@ -1,5 +1,5 @@
 import { GalleryImage } from '../types';
-import { BusinessContract, BusinessExpense, BusinessPayment, BusinessSnapshot, CrmClient } from '../types/business';
+import { BusinessContract, BusinessExpense, BusinessPayment, BusinessSnapshot, CrmClient, CrmFollowUp } from '../types/business';
 import { CURRENT_CATALOG_VERSION, resolvePublishedAddons, resolvePublishedPackages } from './catalogMerge';
 
 export type AdminSession = {
@@ -196,6 +196,7 @@ export async function loadBusinessSnapshot(): Promise<BusinessSnapshot> {
   const data = await adminBusinessRequest<{ snapshot: BusinessSnapshot }>('adminBusinessSnapshot');
   return {
     clients: Array.isArray(data.snapshot?.clients) ? data.snapshot.clients : [],
+    followUps: Array.isArray(data.snapshot?.followUps) ? data.snapshot.followUps : [],
     expenses: Array.isArray(data.snapshot?.expenses) ? data.snapshot.expenses : [],
     payments: Array.isArray(data.snapshot?.payments) ? data.snapshot.payments : [],
     contracts: Array.isArray(data.snapshot?.contracts) ? data.snapshot.contracts : [],
@@ -218,6 +219,15 @@ export function cacheBusinessClients(clients: CrmClient[]): void {
 
 export async function saveCrmClient(client: Partial<CrmClient>): Promise<CrmClient> {
   const data = await adminBusinessRequest<{ client: CrmClient }>('adminCrmUpsert', { client });
+  return data.client;
+}
+
+export async function createCrmFollowUp(followUp: Partial<CrmFollowUp> & { recordId: string }): Promise<{ followUp: CrmFollowUp; client: CrmClient }> {
+  return await adminBusinessRequest('adminFollowUpCreate', { followUp });
+}
+
+export async function convertProspectToClient(prospectId: string): Promise<CrmClient> {
+  const data = await adminBusinessRequest<{ client: CrmClient }>('adminProspectConvert', { prospectId });
   return data.client;
 }
 

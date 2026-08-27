@@ -15,7 +15,7 @@ const SEARCH_CONSOLE_SECRET = process.env.XPH_SEARCH_CONSOLE_SECRET || '';
 const SESSION_COOKIE = 'xph_admin_session';
 const SESSION_DAYS = 30;
 const MAX_BODY_BYTES = 4_000_000;
-const CRM_STATUSES = new Set(['Nuevo', 'Contactado', 'Cotización enviada', 'Seguimiento', 'Cierre prioritario', 'Contratado', 'No interesado', 'Archivado']);
+const CRM_STATUSES = new Set(['Nuevo', 'Contactado', 'Cotización enviada', 'Esperando respuesta', 'Seguimiento pendiente', 'Interesado', 'Negociación', 'Por cerrar', 'Seguimiento', 'Cierre prioritario', 'Contratado', 'No interesado', 'Sin interés', 'No responde', 'Archivado']);
 const EXPENSE_CATEGORIES = new Set(['Equipo y fotografía', 'Maquillaje e insumos', 'Transporte', 'Comida', 'Gastos personales', 'Publicidad', 'Otros del negocio']);
 const EXPENSE_ACCOUNTS = new Set(['Banco', 'Efectivo', 'Bote de reserva', 'Otro']);
 const rateLimitBuckets = globalThis.__xphRateLimitBuckets || new Map();
@@ -774,6 +774,8 @@ export default async function handler(req, res) {
       'adminUploadInit',
       'adminUploadFinalize',
       'adminCrmUpsert',
+      'adminFollowUpCreate',
+      'adminProspectConvert',
       'adminCalendarSync',
       'adminExpenseUpsert',
       'adminPaymentUpsert',
@@ -831,6 +833,20 @@ export default async function handler(req, res) {
           return res.status(400).json({ status: 'error', message: 'Lo pagado no puede ser mayor al total contratado.' });
         }
         const result = await forwardBusinessAction('crmUpsert', { client });
+        return res.status(200).json({ status: 'success', client: result.client });
+      }
+      if (action === 'adminFollowUpCreate') {
+        const followUp = submitted.followUp || {};
+        if (!String(followUp.recordId || '').trim() || (!String(followUp.conversation || '').trim() && !String(followUp.result || '').trim())) {
+          return res.status(400).json({ status: 'error', message: 'Selecciona un registro y captura la conversación o el resultado.' });
+        }
+        const result = await forwardBusinessAction('followUpCreate', { followUp });
+        return res.status(200).json({ status: 'success', followUp: result.followUp, client: result.client });
+      }
+      if (action === 'adminProspectConvert') {
+        const prospectId = String(submitted.prospectId || '').trim();
+        if (!prospectId) return res.status(400).json({ status: 'error', message: 'Prospecto no identificado.' });
+        const result = await forwardBusinessAction('prospectConvert', { prospectId });
         return res.status(200).json({ status: 'success', client: result.client });
       }
       if (action === 'adminCalendarSync') {

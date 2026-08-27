@@ -22,6 +22,8 @@ import {
 import {
   createContractSigningLink,
   cacheBusinessClients,
+  convertProspectToClient,
+  createCrmFollowUp,
   finalizeBusinessContract,
   loadBusinessClients,
   loadBusinessSnapshot,
@@ -39,13 +41,14 @@ import {
   BusinessPayment,
   BusinessSnapshot,
   CrmClient,
+  CrmFollowUp,
   ExpenseCategory,
 } from '../types/business';
 import { SignaturePad } from './SignaturePad';
 
-type BusinessTab = 'overview' | 'clients' | 'calendar' | 'payments' | 'expenses' | 'contracts';
+type BusinessTab = 'overview' | 'prospects' | 'clients' | 'calendar' | 'payments' | 'expenses' | 'contracts';
 
-const emptySnapshot: BusinessSnapshot = { clients: [], expenses: [], payments: [], contracts: [], ownerSignatureConfigured: false };
+const emptySnapshot: BusinessSnapshot = { clients: [], followUps: [], expenses: [], payments: [], contracts: [], ownerSignatureConfigured: false };
 const today = () => new Date().toISOString().slice(0, 10);
 const now = () => new Date().toISOString();
 const dateValue = (value?: string) => String(value || '').slice(0, 10);
@@ -138,6 +141,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
   const [busy, setBusy] = useState(false);
   const [showClientForm, setShowClientForm] = useState(false);
   const [showExpenseForm, setShowExpenseForm] = useState(false);
+  const [showInlinePayment, setShowInlinePayment] = useState(false);
   const [clientDraft, setClientDraft] = useState<Partial<CrmClient>>(blankClient);
   const [expenseDraft, setExpenseDraft] = useState<Partial<BusinessExpense>>(blankExpense);
   const [paymentDraft, setPaymentDraft] = useState<Partial<BusinessPayment>>(blankPayment);
@@ -149,6 +153,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
   const [selectedClientId, setSelectedClientId] = useState('');
   const [expenseSuccess, setExpenseSuccess] = useState('');
   const [calendarCursor, setCalendarCursor] = useState(() => new Date());
+  const [followUpDraft, setFollowUpDraft] = useState<Partial<CrmFollowUp>>({ occurredAt: now(), conversation: '', result: '', nextAction: '', nextActionAt: '' });
 
   useEffect(() => {
     if (!expenseSuccess) return;
@@ -175,10 +180,11 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
 
   const filteredClients = useMemo(() => {
     const term = query.trim().toLowerCase();
-    if (!term) return snapshot.clients;
-    return snapshot.clients.filter((client) => [client.name, client.phone, client.eventType, client.packageName, client.status]
+    const records = snapshot.clients.filter((client) => tab === 'prospects' ? client.recordType === 'Prospecto' : client.recordType === 'Cliente');
+    if (!term) return records;
+    return records.filter((client) => [client.name, client.phone, client.eventType, client.packageName, client.status]
       .some((value) => String(value || '').toLowerCase().includes(term)));
-  }, [query, snapshot.clients]);
+  }, [query, snapshot.clients, tab]);
 
   const totals = useMemo(() => snapshot.clients.reduce((acc, client) => {
     acc.sales += Number(client.totalAmount) || 0;
@@ -270,6 +276,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
       setSnapshot((prev) => ({ ...prev, payments: [saved, ...prev.payments.filter((item) => item.id !== saved.id)] }));
       setPaymentDraft(blankPayment());
       setPaymentReceipt(null);
+      setShowInlinePayment(false);
       notify(paymentDraft.id ? 'Pago actualizado y conciliado.' : 'Pago registrado y conciliado.');
       await refresh();
     } catch (error: any) { notify(error?.message || 'No se pudo guardar el pago.'); }
@@ -290,15 +297,73 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
     finally { setBusy(false); }
   };
 
+  const saveFollowUp = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedClient) return;
+    setBusy(true);
+    try {
+      const result = await createCrmFollowUp({ ...followUpDraft, recordId: selectedClient.id });
+      setSnapshot((previous) => ({
+        ...previous,
+        clients: previous.clients.map((item) => item.id === result.client.id ? result.client : item),
+        followUps: [result.followUp, ...previous.followUps],
+      }));
+      setFollowUpDraft({ occurredAt: now(), conversation: '', result: '', nextAction: '', nextActionAt: '' });
+      notify('Seguimiento agregado al historial.');
+    } catch (error: any) { notify(error?.message || 'No se pudo registrar el seguimiento.'); }
+    finally { setBusy(false); }
+  };
+
+  const saveInlineClient = async (patch: Partial<CrmClient>) => {
+    if (!selectedClient) return;
+    setBusy(true);
+    try {
+      const saved = await saveCrmClient({ ...selectedClient, ...patch });
+      setSnapshot((previous) => {
+        const clients = previous.clients.map((item) => item.id === saved.id ? saved : item);
+        cacheBusinessClients(clients);
+        return { ...previous, clients };
+      });
+      notify('Datos actualizados.');
+    } catch (error: any) { notify(error?.message || 'No se pudieron actualizar los datos.'); throw error; }
+    finally { setBusy(false); }
+  };
+
+  const convertSelectedProspect = async () => {
+    if (!selectedClient || selectedClient.recordType !== 'Prospecto') return;
+    setBusy(true);
+    try {
+      const saved = await convertProspectToClient(selectedClient.id);
+      setSnapshot((previous) => ({ ...previous, clients: previous.clients.map((item) => item.id === saved.id ? saved : item) }));
+      cacheBusinessClients(snapshot.clients.map((item) => item.id === saved.id ? saved : item));
+      setTab('clients');
+      notify('Prospecto convertido en cliente sin duplicar el registro.');
+    } catch (error: any) { notify(error?.message || 'No se pudo convertir el prospecto.'); }
+    finally { setBusy(false); }
+  };
+
+  const prepareNextPayment = (client: CrmClient) => {
+    const existing = snapshot.payments.filter((payment) => payment.clientId === client.id && payment.status !== 'Anulado');
+    const used = new Set(existing.map((payment) => Number(payment.installmentNumber)));
+    const nextNumber = ([1, 2, 3].find((number) => !used.has(number)) || 3) as 1 | 2 | 3;
+    const percentage = nextNumber === 3 ? 40 : 30;
+    const contract = snapshot.contracts.find((item) => item.clientId === client.id);
+    setPaymentDraft({ ...blankPayment(client.id, contract?.id || ''), installmentNumber: nextNumber, percentage, concept: `Pago ${nextNumber} de 3`, plannedAmount: Number(((Number(client.totalAmount || 0) * percentage) / 100).toFixed(2)) });
+    setShowInlinePayment(true);
+  };
+
   const openClientDetails = (client: CrmClient) => {
     setSelectedClientId(client.id);
     setShowClientForm(false);
-    setTab('clients');
+    setTab(client.recordType === 'Prospecto' ? 'prospects' : 'clients');
   };
 
   const selectedClient = snapshot.clients.find((client) => client.id === selectedClientId);
+  const selectedClientPayments = selectedClient ? snapshot.payments.filter((payment) => payment.clientId === selectedClient.id && payment.status !== 'Anulado') : [];
+  const selectedClientContract = selectedClient ? snapshot.contracts.find((contract) => contract.clientId === selectedClient.id) : undefined;
+  const selectedFollowUps = selectedClient ? snapshot.followUps.filter((item) => item.prospectId === selectedClient.id || item.clientId === selectedClient.id).sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt))) : [];
   const calendarClients = [...snapshot.clients]
-    .filter((client) => dateValue(client.eventDate))
+    .filter((client) => client.recordType === 'Cliente' && dateValue(client.eventDate))
     .sort((a, b) => dateValue(a.eventDate).localeCompare(dateValue(b.eventDate)));
   const calendarEntries = useMemo(() => snapshot.clients.flatMap((client) => {
     const entries: Array<{ client: CrmClient; kind: 'event' | 'session'; date: string; time: string }> = [];
@@ -317,6 +382,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
       return { date, key, currentMonth: date.getMonth() === calendarCursor.getMonth(), entries: calendarEntries.filter((entry) => entry.date === key) };
     });
   }, [calendarCursor, calendarEntries]);
+  const mobileMonthEntries = calendarEntries.filter((entry) => entry.date.startsWith(monthKey(calendarCursor)));
 
   const uploadContract = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -404,7 +470,8 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
       <div className="flex overflow-x-auto gap-2 rounded-2xl border border-white/10 bg-[#161C28] p-1.5">
         {[
           { id: 'overview' as const, label: 'Control financiero', icon: TrendingUp },
-          { id: 'clients' as const, label: 'Clientes y prospectos', icon: Users },
+          { id: 'prospects' as const, label: 'Prospectos', icon: Users },
+          { id: 'clients' as const, label: 'Clientes', icon: BriefcaseBusiness },
           { id: 'calendar' as const, label: 'Calendario', icon: CalendarDays },
           { id: 'payments' as const, label: 'Pagos de clientes', icon: CreditCard },
           { id: 'expenses' as const, label: 'Control de gastos', icon: BadgeDollarSign },
@@ -452,20 +519,21 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
         </div>
       )}
 
-      {tab === 'clients' && (
+      {(tab === 'prospects' || tab === 'clients') && (
         <div className="space-y-4">
           {selectedClient ? (
             <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111722] shadow-2xl shadow-black/20">
               <div className="flex flex-col gap-3 border-b border-white/10 bg-[#161C28] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-3"><button onClick={() => { setSelectedClientId(''); setShowClientForm(false); }} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-gray-200 hover:bg-white/5">← Clientes</button><span className="inline-flex items-center gap-2 rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-3 py-2 text-xs text-emerald-200"><CheckCircle2 className="h-4 w-4" />{selectedClient.status}</span></div>
-                <div className="flex flex-wrap gap-2"><button onClick={() => { setClientDraft(selectedClient); setShowClientForm(true); }} className="rounded-lg bg-[#D4AF37] px-4 py-2 text-sm font-bold text-black">Editar seguimiento</button><button onClick={() => syncCalendar(selectedClient)} disabled={busy || !dateValue(selectedClient.eventDate) || !timeValue(selectedClient.eventTime)} className="rounded-lg border border-sky-300/30 bg-sky-400/10 px-4 py-2 text-sm text-sky-100 disabled:border-white/10 disabled:bg-transparent disabled:text-gray-600">Actualizar Calendar</button></div>
+                <div className="flex flex-wrap gap-2">{selectedClient.recordType === 'Prospecto' && <button onClick={convertSelectedProspect} disabled={busy} className="rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100">Convertir en cliente</button>}{selectedClient.recordType === 'Cliente' && selectedClientPayments.length > 0 && <button onClick={() => prepareNextPayment(selectedClient)} className="rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100">Registrar siguiente pago</button>}{selectedClientContract && <a href={adminContractPdfUrl(selectedClientContract.id, 'latest')} target="_blank" rel="noreferrer" className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm text-white">Ver contrato</a>}<button onClick={() => { setClientDraft(selectedClient); setShowClientForm(true); }} className="rounded-lg bg-[#D4AF37] px-4 py-2 text-sm font-bold text-black">Editar seguimiento</button>{selectedClient.recordType === 'Cliente' && <button onClick={() => syncCalendar(selectedClient)} disabled={busy || !dateValue(selectedClient.eventDate) || !timeValue(selectedClient.eventTime)} className="rounded-lg border border-sky-300/30 bg-sky-400/10 px-4 py-2 text-sm text-sky-100 disabled:border-white/10 disabled:bg-transparent disabled:text-gray-600">Actualizar Calendar</button>}</div>
               </div>
-              {showClientForm ? <ClientForm draft={clientDraft} onChange={setClientDraft} onSubmit={saveClient} onCancel={() => setShowClientForm(false)} busy={busy} /> : <ClientDetails client={selectedClient} paid={paidForClient(selectedClient)} />}
+              {showInlinePayment && <div className="border-b border-white/10 p-5"><div className="mb-3 flex items-center justify-between"><h3 className="font-semibold text-white">Registrar siguiente pago de {selectedClient.name}</h3><button onClick={() => setShowInlinePayment(false)} className="text-xs text-gray-400">Cerrar</button></div><PaymentForm draft={paymentDraft} receipt={paymentReceipt} clients={snapshot.clients} contracts={snapshot.contracts} onChange={setPaymentDraft} onReceipt={setPaymentReceipt} onSubmit={savePayment} onCancel={() => { setPaymentDraft(blankPayment()); setPaymentReceipt(null); setShowInlinePayment(false); }} busy={busy} /></div>}
+              {showClientForm ? <ClientForm draft={clientDraft} onChange={setClientDraft} onSubmit={saveClient} onCancel={() => setShowClientForm(false)} busy={busy} /> : <ClientDetails client={selectedClient} paid={paidForClient(selectedClient)} followUps={selectedFollowUps} followUpDraft={followUpDraft} onFollowUpChange={setFollowUpDraft} onFollowUpSubmit={saveFollowUp} onInlineSave={saveInlineClient} busy={busy} />}
             </div>
           ) : <>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por nombre, teléfono, evento o estado" className="w-full max-w-xl rounded-xl border border-white/10 bg-[#161C28] px-4 py-3 text-sm" />
-            <button onClick={() => { setSelectedClientId(''); setClientDraft(blankClient()); setShowClientForm(true); }} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#D4AF37] px-4 py-3 text-sm font-bold text-black"><Plus className="h-4 w-4" />Nuevo registro</button>
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Buscar ${tab === 'prospects' ? 'prospectos' : 'clientes'} por nombre, teléfono, evento o estado`} className="w-full max-w-xl rounded-xl border border-white/10 bg-[#161C28] px-4 py-3 text-sm" />
+            <button onClick={() => { setSelectedClientId(''); setClientDraft({ ...blankClient(), recordType: tab === 'clients' ? 'Cliente' : 'Prospecto' }); setShowClientForm(true); }} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#D4AF37] px-4 py-3 text-sm font-bold text-black"><Plus className="h-4 w-4" />{tab === 'prospects' ? 'Nuevo prospecto' : 'Nuevo cliente'}</button>
           </div>
           {showClientForm && <ClientForm draft={clientDraft} onChange={setClientDraft} onSubmit={saveClient} onCancel={() => setShowClientForm(false)} busy={busy} />}
           <div className="overflow-x-auto rounded-2xl border border-white/10 bg-[#161C28]">
@@ -498,13 +566,14 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
             <h3 className="min-w-[190px] text-xl font-bold capitalize">{monthLabel(calendarCursor)}</h3>
             <span className="ml-auto text-xs text-gray-400">Haz clic en un evento para abrir al cliente</span>
           </div>
-          <div className="grid grid-cols-7 border-b border-white/10 bg-black/15 text-center text-[10px] font-semibold uppercase tracking-wider text-gray-400">{['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'].map((day) => <div key={day} className="py-2">{day}</div>)}</div>
-          <div className="grid grid-cols-7">
+          <div className="hidden grid-cols-7 border-b border-white/10 bg-black/15 text-center text-[10px] font-semibold uppercase tracking-wider text-gray-400 sm:grid">{['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'].map((day) => <div key={day} className="py-2">{day}</div>)}</div>
+          <div className="hidden grid-cols-7 sm:grid">
             {calendarDays.map(({ date, key, currentMonth, entries }) => <div key={key} className={`min-h-28 border-b border-r border-white/10 p-2 sm:min-h-36 ${currentMonth ? 'bg-[#111722]' : 'bg-black/20 text-gray-600'}`}>
               <div className={`mb-2 text-center text-xs ${key === localDateKey(new Date()) ? 'mx-auto flex h-6 w-6 items-center justify-center rounded-full bg-[#D4AF37] font-bold text-black' : ''}`}>{date.getDate()}</div>
               <div className="space-y-1">{entries.map((entry) => <button key={`${entry.client.id}-${entry.kind}`} onClick={() => openClientDetails(entry.client)} title={`${entry.kind === 'session' ? 'Sesión previa' : entry.client.eventType || 'Evento'} · ${entry.client.name}`} className={`block w-full truncate rounded-md border-l-4 px-1.5 py-1 text-left text-[10px] sm:text-xs ${entry.kind === 'session' ? 'border-red-400 bg-red-500/15 text-red-200 hover:bg-red-500/25' : 'border-[#D4AF37] bg-[#D4AF37]/15 text-[#F5D76E] hover:bg-[#D4AF37]/25'}`}><span className="font-semibold">{entry.time || '—'}</span> {entry.kind === 'session' ? 'Sesión · ' : ''}{entry.client.name || 'Cliente'}</button>)}</div>
             </div>)}
           </div>
+          <div className="space-y-3 p-4 sm:hidden">{mobileMonthEntries.map((entry) => <button key={`${entry.client.id}-${entry.kind}-${entry.date}`} onClick={() => openClientDetails(entry.client)} className={`flex w-full items-start gap-3 rounded-xl border p-4 text-left ${entry.kind === 'session' ? 'border-red-400/30 bg-red-500/10' : 'border-[#D4AF37]/30 bg-[#D4AF37]/10'}`}><div className={`min-w-14 rounded-lg px-2 py-2 text-center ${entry.kind === 'session' ? 'bg-red-500/20 text-red-100' : 'bg-[#D4AF37]/20 text-[#F5D76E]'}`}><div className="text-lg font-bold">{entry.date.slice(8, 10)}</div><div className="text-[10px] uppercase">{new Intl.DateTimeFormat('es-MX', { weekday: 'short' }).format(new Date(`${entry.date}T12:00:00`))}</div></div><div className="min-w-0 flex-1"><div className={`text-xs font-semibold uppercase tracking-wide ${entry.kind === 'session' ? 'text-red-200' : 'text-[#F5D76E]'}`}>{entry.kind === 'session' ? 'Sesión previa' : entry.client.eventType || 'Evento'}</div><div className="mt-1 break-words font-semibold text-white">{entry.client.name || 'Cliente sin nombre'}</div><div className="mt-1 text-sm text-gray-300">{entry.time || 'Horario pendiente'}</div><div className="mt-1 break-words text-xs text-gray-400">{entry.kind === 'session' ? entry.client.preSessionLocation || 'Lugar pendiente' : entry.client.eventLocation || 'Lugar pendiente'}</div></div></button>)}{!mobileMonthEntries.length && <div className="rounded-xl border border-dashed border-white/10 p-8 text-center text-sm text-gray-500">No hay eventos ni sesiones programadas este mes.</div>}</div>
           </div>
           <aside className="border-t border-white/10 bg-[#161C28] xl:border-l xl:border-t-0">
             <div className="border-b border-white/10 p-4"><h4 className="font-semibold text-white">Clientes</h4><p className="mt-1 text-xs text-gray-400">Eventos y sesiones programadas</p><div className="mt-3 flex gap-3 text-[11px]"><span className="flex items-center gap-1.5 text-[#F5D76E]"><i className="h-2.5 w-2.5 rounded-full bg-[#D4AF37]" />Evento</span><span className="flex items-center gap-1.5 text-red-200"><i className="h-2.5 w-2.5 rounded-full bg-red-400" />Sesión</span></div></div>
@@ -561,23 +630,34 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
 const Metric = ({ label, value, icon: Icon }: { label: string; value: string; icon: React.ElementType }) => <div className="rounded-2xl border border-white/10 bg-[#161C28] p-4"><div className="flex items-center gap-2 text-xs text-gray-400"><Icon className="h-4 w-4 text-[#D4AF37]" />{label}</div><div className="mt-2 text-xl font-bold">{value}</div></div>;
 const FinancialRow = ({ label, value, detail }: { label: string; value: number; detail?: string }) => <div className="rounded-xl border border-white/5 bg-black/15 p-3"><dt className="text-xs text-gray-400">{label}</dt><dd className="mt-1 text-lg font-semibold">{money(value)}</dd>{detail && <p className="mt-1 text-[11px] leading-4 text-gray-500">{detail}</p>}</div>;
 
-const ClientDetails = ({ client, paid }: { client: CrmClient; paid: number }) => {
+const ClientDetails = ({ client, paid, followUps, followUpDraft, onFollowUpChange, onFollowUpSubmit, onInlineSave, busy }: { client: CrmClient; paid: number; followUps: CrmFollowUp[]; followUpDraft: Partial<CrmFollowUp>; onFollowUpChange: (value: Partial<CrmFollowUp>) => void; onFollowUpSubmit: (event: React.FormEvent) => void; onInlineSave: (patch: Partial<CrmClient>) => Promise<void>; busy: boolean }) => {
+  const [editKey, setEditKey] = useState('');
+  const [inlineDraft, setInlineDraft] = useState<Partial<CrmClient>>(client);
+  useEffect(() => setInlineDraft(client), [client]);
+  const patchInline = (key: keyof CrmClient, value: unknown) => setInlineDraft((current) => ({ ...current, [key]: value }));
+  const commitInline = async (keys: Array<keyof CrmClient>) => {
+    const patch: Partial<CrmClient> = {};
+    keys.forEach((key) => { (patch as Record<string, unknown>)[key] = inlineDraft[key]; });
+    await onInlineSave(patch);
+    setEditKey('');
+  };
   const fields = [
     ['Responsable', 'Javier García'], ['Fecha de seguimiento', client.nextActionAt || 'Sin programar'], ['Proyecto', client.status],
     ['Tipo de servicio', client.eventType || 'Por confirmar'], ['Origen del cliente', client.source || 'Sin registrar'], ['Campaña', client.campaign || 'Sin campaña'],
   ];
-  const pending = [
-    ['Datos de contacto', Boolean(client.phone || client.email)], ['Fecha y horario del evento', Boolean(dateValue(client.eventDate) && timeValue(client.eventTime))],
-    ['Lugar del evento', Boolean(client.eventLocation)], ['Paquete y total', Boolean(client.packageName && client.totalAmount > 0)],
-    ['Sesión previa', !client.preSessionApplies || Boolean(dateValue(client.preSessionDate) && timeValue(client.preSessionTime) && client.preSessionLocation)],
+  const pending: Array<[string, boolean, string, Array<keyof CrmClient>]> = [
+    ['Datos de contacto', Boolean(client.phone || client.email), 'contact', ['phone', 'email']], ['Fecha y horario del evento', Boolean(dateValue(client.eventDate) && timeValue(client.eventTime)), 'eventDate', ['eventDate', 'eventTime']],
+    ['Lugar del evento', Boolean(client.eventLocation), 'location', ['eventLocation']], ['Paquete y total', Boolean(client.packageName && client.totalAmount > 0), 'package', ['packageName', 'totalAmount']],
+    ['Sesión previa', !client.preSessionApplies || Boolean(dateValue(client.preSessionDate) && timeValue(client.preSessionTime) && client.preSessionLocation), 'session', ['preSessionApplies', 'preSessionDate', 'preSessionTime', 'preSessionLocation']],
   ];
   return <div className="mx-auto max-w-5xl px-5 py-6 sm:px-8">
     <div className="border-b border-white/10 pb-6"><p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#D4AF37]">Seguimiento de cliente</p><h3 className="mt-3 text-2xl font-bold text-white sm:text-3xl">{client.nextAction || client.name || 'Cliente sin nombre'}</h3><p className="mt-2 text-sm text-gray-400">{client.name || 'Sin nombre'} · {client.recordType} · {client.phone || 'Sin teléfono'}</p></div>
     <dl className="divide-y divide-white/10 py-3">{fields.map(([label, value], index) => <div key={label} className="grid gap-2 py-3 text-sm sm:grid-cols-[180px_1fr]"><dt className="text-gray-400">{label}</dt><dd><span className={`inline-flex rounded-md px-2.5 py-1 ${index >= 2 ? 'bg-[#D4AF37]/15 text-[#F5D76E]' : 'text-gray-100'}`}>{String(value)}</span></dd></div>)}</dl>
     <section className="border-t border-white/10 py-6"><h4 className="text-sm font-semibold text-gray-200">Descripción</h4><p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-gray-300">{client.notes || client.objection || 'Sin descripción registrada. Usa “Editar seguimiento” para agregar contexto, acuerdos y observaciones.'}</p></section>
-    <section className="border-t border-white/10 py-6"><div className="flex items-center justify-between"><h4 className="text-sm font-semibold text-gray-200">Pendientes del expediente</h4><span className="text-xs text-gray-500">{pending.filter(([, done]) => done).length} de {pending.length} completos</span></div><div className="mt-4 divide-y divide-white/10 border-y border-white/10">{pending.map(([label, done]) => <div key={String(label)} className="flex items-center gap-3 py-3 text-sm"><span className={`flex h-5 w-5 items-center justify-center rounded-full border ${done ? 'border-emerald-400 bg-emerald-400/15 text-emerald-300' : 'border-gray-500 text-transparent'}`}>✓</span><span className={done ? 'text-gray-400 line-through' : 'text-gray-100'}>{String(label)}</span></div>)}</div></section>
+    <section className="border-t border-white/10 py-6"><div className="flex items-center justify-between"><h4 className="text-sm font-semibold text-gray-200">Pendientes del expediente</h4><span className="text-xs text-gray-500">{pending.filter(([, done]) => done).length} de {pending.length} completos</span></div><div className="mt-4 divide-y divide-white/10 border-y border-white/10">{pending.map(([label, done, key, keys]) => <div key={key} className="py-3 text-sm"><button type="button" onClick={() => setEditKey(editKey === key ? '' : key)} className="flex w-full items-center gap-3 text-left"><span className={`flex h-5 w-5 items-center justify-center rounded-full border ${done ? 'border-emerald-400 bg-emerald-400/15 text-emerald-300' : 'border-gray-500 text-transparent'}`}>✓</span><span className={done ? 'text-gray-400 line-through' : 'text-gray-100'}>{label}</span><span className="ml-auto text-xs text-[#D4AF37]">{editKey === key ? 'Cerrar' : '›'}</span></button>{editKey === key && <div className="mt-3 grid gap-2 rounded-xl border border-white/10 bg-black/15 p-3 sm:grid-cols-2">{key === 'contact' && <><input value={inlineDraft.phone || ''} onChange={(event) => patchInline('phone', event.target.value)} placeholder="Teléfono" className={inputClass} /><input type="email" value={inlineDraft.email || ''} onChange={(event) => patchInline('email', event.target.value)} placeholder="Correo" className={inputClass} /></>}{key === 'eventDate' && <><label className="text-xs text-gray-400">Fecha<input type="date" value={dateValue(inlineDraft.eventDate)} onChange={(event) => patchInline('eventDate', event.target.value)} className={`${inputClass} mt-1`} /></label><label className="text-xs text-gray-400">Horario<input type="time" value={timeValue(inlineDraft.eventTime)} onChange={(event) => patchInline('eventTime', event.target.value)} className={`${inputClass} mt-1`} /></label></>}{key === 'location' && <input value={inlineDraft.eventLocation || ''} onChange={(event) => patchInline('eventLocation', event.target.value)} placeholder="Lugar y dirección del evento" className={`${inputClass} sm:col-span-2`} />}{key === 'package' && <><input value={inlineDraft.packageName || ''} onChange={(event) => patchInline('packageName', event.target.value)} placeholder="Paquete contratado" className={inputClass} /><input type="number" min="0" step="0.01" value={inlineDraft.totalAmount || 0} onChange={(event) => patchInline('totalAmount', Number(event.target.value))} placeholder="Total contratado" className={inputClass} /></>}{key === 'session' && <><label className="flex items-center gap-2 rounded-xl border border-white/10 px-3 text-sm"><input type="checkbox" checked={Boolean(inlineDraft.preSessionApplies)} onChange={(event) => patchInline('preSessionApplies', event.target.checked)} />Aplica sesión</label><input type="date" value={dateValue(inlineDraft.preSessionDate)} onChange={(event) => patchInline('preSessionDate', event.target.value)} className={inputClass} disabled={!inlineDraft.preSessionApplies} /><input type="time" value={timeValue(inlineDraft.preSessionTime)} onChange={(event) => patchInline('preSessionTime', event.target.value)} className={inputClass} disabled={!inlineDraft.preSessionApplies} /><input value={inlineDraft.preSessionLocation || ''} onChange={(event) => patchInline('preSessionLocation', event.target.value)} placeholder="Lugar de la sesión" className={inputClass} disabled={!inlineDraft.preSessionApplies} /></>}<button type="button" disabled={busy} onClick={() => commitInline(keys)} className="w-fit rounded-lg bg-emerald-400 px-4 py-2 text-sm font-bold text-black disabled:opacity-40">OK</button></div>}</div>)}</div></section>
     <section className="grid gap-5 border-t border-white/10 py-6 lg:grid-cols-2"><div><h4 className="text-sm font-semibold text-gray-200">Información del evento</h4><div className="mt-3 space-y-2 text-sm text-gray-300"><p>{client.eventType || 'Evento por confirmar'} · {dateValue(client.eventDate) || 'Sin fecha'} · {timeValue(client.eventTime) || 'Sin horario'}</p><p>{client.eventLocation || 'Lugar pendiente'}</p><p>{client.packageName || 'Paquete pendiente'} · {client.serviceHours ? `${client.serviceHours} horas` : 'Cobertura pendiente'}</p></div></div><div><h4 className="text-sm font-semibold text-gray-200">Control de cobro</h4><div className="mt-3 grid grid-cols-3 gap-2 text-sm"><div><span className="block text-xs text-gray-500">Total</span>{money(client.totalAmount)}</div><div><span className="block text-xs text-gray-500">Pagado</span><span className="text-emerald-300">{money(paid)}</span></div><div><span className="block text-xs text-gray-500">Pendiente</span><span className="text-amber-300">{money(Math.max(0, Number(client.totalAmount || 0) - paid))}</span></div></div></div></section>
-    <section className="border-t border-white/10 py-6"><h4 className="text-sm font-semibold text-gray-200">Actividad</h4><div className="mt-4 rounded-xl border border-white/10 bg-black/15 p-4 text-sm text-gray-300"><p>Último contacto: {client.lastContactAt || 'Sin registrar'}</p><p className="mt-2">Próxima acción: {client.nextAction || 'Sin definir'} · {client.nextActionAt || 'Sin fecha'}</p><p className="mt-2">Intentos de seguimiento: {client.followUpAttempts || 0}</p></div></section>
+    <section className="border-t border-white/10 py-6"><h4 className="text-sm font-semibold text-gray-200">Actividad</h4><div className="mt-4 grid gap-3 rounded-xl border border-white/10 bg-black/15 p-4 sm:grid-cols-2"><label className="text-xs text-gray-400">Último contacto<input type="datetime-local" value={String(inlineDraft.lastContactAt || '').slice(0, 16)} onChange={(event) => patchInline('lastContactAt', event.target.value)} className={`${inputClass} mt-1`} /></label><label className="text-xs text-gray-400">Próxima fecha<input type="datetime-local" value={String(inlineDraft.nextActionAt || '').slice(0, 16)} onChange={(event) => patchInline('nextActionAt', event.target.value)} className={`${inputClass} mt-1`} /></label><input value={inlineDraft.nextAction || ''} onChange={(event) => patchInline('nextAction', event.target.value)} placeholder="Próxima acción" className={inputClass} /><input type="number" min="0" step="1" value={inlineDraft.followUpAttempts || 0} onChange={(event) => patchInline('followUpAttempts', Number(event.target.value))} placeholder="Intentos de seguimiento" className={inputClass} /><button type="button" disabled={busy} onClick={() => commitInline(['lastContactAt', 'nextActionAt', 'nextAction', 'followUpAttempts'])} className="w-fit rounded-lg bg-emerald-400 px-4 py-2 text-sm font-bold text-black disabled:opacity-40">OK</button></div><h4 className="mt-6 text-sm font-semibold text-gray-200">Agregar seguimiento al historial</h4><form onSubmit={onFollowUpSubmit} className="mt-4 grid gap-3 rounded-xl border border-white/10 bg-black/15 p-4 sm:grid-cols-2"><label className="text-xs text-gray-400">Fecha y hora<input type="datetime-local" value={String(followUpDraft.occurredAt || '').slice(0, 16)} onChange={(event) => onFollowUpChange({ ...followUpDraft, occurredAt: event.target.value })} className={`${inputClass} mt-1`} /></label><label className="text-xs text-gray-400">Siguiente seguimiento<input type="datetime-local" value={String(followUpDraft.nextActionAt || '').slice(0, 16)} onChange={(event) => onFollowUpChange({ ...followUpDraft, nextActionAt: event.target.value })} className={`${inputClass} mt-1`} /></label><textarea value={followUpDraft.conversation || ''} onChange={(event) => onFollowUpChange({ ...followUpDraft, conversation: event.target.value })} placeholder="Resumen de la conversación" className={`${inputClass} min-h-24`} /><textarea value={followUpDraft.result || ''} onChange={(event) => onFollowUpChange({ ...followUpDraft, result: event.target.value })} placeholder="Resultado" className={`${inputClass} min-h-24`} /><input value={followUpDraft.nextAction || ''} onChange={(event) => onFollowUpChange({ ...followUpDraft, nextAction: event.target.value })} placeholder="Próxima acción" className={`${inputClass} sm:col-span-2`} /><button type="submit" disabled={busy} className="w-fit rounded-lg bg-[#D4AF37] px-4 py-2.5 text-sm font-bold text-black disabled:opacity-40">Guardar en historial</button></form></section>
+    <section className="border-t border-white/10 py-6"><div className="flex items-center justify-between"><h4 className="text-sm font-semibold text-gray-200">Historial de seguimientos</h4><span className="text-xs text-gray-500">{followUps.length} registro(s)</span></div><div className="mt-4 space-y-3">{followUps.map((item) => <article key={item.id} className="rounded-xl border border-white/10 bg-black/15 p-4"><div className="flex flex-wrap items-center justify-between gap-2"><time className="text-xs font-semibold text-[#D4AF37]">{item.occurredAt}</time><span className="text-xs text-gray-500">{item.createdBy}</span></div><p className="mt-3 whitespace-pre-wrap text-sm text-gray-200">{item.conversation || 'Sin conversación capturada'}</p>{item.result && <p className="mt-2 text-sm text-gray-400">Resultado: {item.result}</p>}{item.nextAction && <p className="mt-2 text-xs text-sky-200">Siguiente: {item.nextAction} · {item.nextActionAt || 'sin fecha'}</p>}</article>)}{!followUps.length && <p className="rounded-xl border border-dashed border-white/10 p-6 text-center text-sm text-gray-500">Aún no hay seguimientos históricos. El siguiente registro se conservará sin sobrescribir los anteriores.</p>}</div></section>
   </div>;
 };
 
@@ -609,7 +689,7 @@ const ClientForm = ({ draft, onChange, onSubmit, onCancel, busy }: { draft: Part
       <label className="text-xs text-sky-100">Lugar<input value={draft.preSessionLocation || ''} onChange={(e) => patch('preSessionLocation', e.target.value)} disabled={!draft.preSessionApplies} placeholder="Lugar de la sesión" className={`${inputClass} mt-1 disabled:cursor-not-allowed disabled:opacity-40`} /></label>
     </fieldset>
     <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-[#0B0F17] px-3 py-2.5 text-sm"><input type="checkbox" checked={Boolean(draft.inviteClientToCalendar)} onChange={(e) => patch('inviteClientToCalendar', e.target.checked)} disabled={!draft.email} />Invitar al cliente por correo</label>
-    <select value={draft.status || 'Nuevo'} onChange={(e) => patch('status', e.target.value)} className={inputClass}>{['Nuevo','Contactado','Cotización enviada','Seguimiento','Cierre prioritario','Contratado','No interesado','Archivado'].map((item) => <option key={item}>{item}</option>)}</select>
+    <select value={draft.status || 'Nuevo'} onChange={(e) => patch('status', e.target.value)} className={inputClass}>{['Nuevo','Contactado','Cotización enviada','Esperando respuesta','Seguimiento pendiente','Interesado','Negociación','Por cerrar','Seguimiento','Cierre prioritario','Contratado','No interesado','Sin interés','No responde','Archivado'].map((item) => <option key={item}>{item}</option>)}</select>
     <input value={draft.source || ''} onChange={(e) => patch('source', e.target.value)} placeholder="Fuente / anuncio" className={inputClass} />
     <input value={draft.campaign || ''} onChange={(e) => patch('campaign', e.target.value)} placeholder="Campaña publicitaria" className={inputClass} />
     <input type="date" value={(draft.firstContactAt || '').slice(0,10)} onChange={(e) => patch('firstContactAt', e.target.value)} className={inputClass} />

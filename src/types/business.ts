@@ -4,10 +4,17 @@ export type CrmStatus =
   | 'Nuevo'
   | 'Contactado'
   | 'Cotización enviada'
+  | 'Esperando respuesta'
+  | 'Seguimiento pendiente'
+  | 'Interesado'
+  | 'Negociación'
+  | 'Por cerrar'
   | 'Seguimiento'
   | 'Cierre prioritario'
   | 'Contratado'
   | 'No interesado'
+  | 'Sin interés'
+  | 'No responde'
   | 'Archivado';
 
 export interface CrmClient {
@@ -50,6 +57,19 @@ export interface CrmClient {
   inviteClientToCalendar: boolean;
   calendarEventId: string;
   preSessionCalendarEventId: string;
+}
+
+export interface CrmFollowUp {
+  id: string;
+  prospectId: string;
+  clientId: string;
+  occurredAt: string;
+  conversation: string;
+  result: string;
+  nextAction: string;
+  nextActionAt: string;
+  createdBy: string;
+  createdAt: string;
 }
 
 export type ExpenseCategory =
@@ -136,6 +156,7 @@ export interface BusinessContract {
 
 export interface BusinessSnapshot {
   clients: CrmClient[];
+  followUps: CrmFollowUp[];
   expenses: BusinessExpense[];
   payments: BusinessPayment[];
   contracts: BusinessContract[];
