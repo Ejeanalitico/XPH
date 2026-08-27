@@ -127,6 +127,7 @@ function initSpreadsheetSheets(ss) {
       'Paquetes_Precios': ['Categoria', 'ID_Paquete', 'Nombre_Paquete', 'Precio_Base_MXN', 'Precio_Final_Por_Confirmar', 'Insignia_Badge', 'Descripcion', 'Que_Incluye', 'No_Incluye', 'Ultima_Modificacion'],
       'CRM_Clientes': ['id', 'recordType', 'name', 'phone', 'email', 'eventType', 'eventDate', 'eventLocation', 'packageName', 'totalAmount', 'paidAmount', 'status', 'source', 'firstContactAt', 'lastContactAt', 'nextAction', 'nextActionAt', 'notes', 'contractId', 'createdAt', 'updatedAt', 'honoreeName', 'address', 'eventTime', 'serviceHours', 'campaign', 'objection', 'followUpAttempts', 'suggestedMessage', 'lossReason', 'estimatedCost', 'allocatedAdCost'],
       'Gastos': ['id', 'date', 'category', 'subcategory', 'concept', 'supplier', 'paymentMethod', 'paymentStatus', 'amount', 'notes', 'createdAt', 'updatedAt', 'relatedClientId', 'receiptReference', 'account'],
+      'Pagos_Clientes': ['id', 'clientId', 'contractId', 'transactionId', 'date', 'dueDate', 'concept', 'plannedAmount', 'receivedAmount', 'status', 'method', 'reference', 'notes', 'receiptFileId', 'receiptFileName', 'createdAt', 'updatedAt'],
       'Contratos': ['id', 'clientId', 'clientName', 'folio', 'eventType', 'eventDate', 'status', 'originalFileName', 'originalFileId', 'clientSignedFileId', 'finalFileId', 'signatureFileId', 'tokenHash', 'tokenExpiresAt', 'tokenStatus', 'sentAt', 'viewedAt', 'acceptedAt', 'clientSignedAt', 'ownerAuthorizedAt', 'documentHash', 'signedDocumentHash', 'finalDocumentHash', 'signerIp', 'signerUserAgent', 'consentText', 'createdAt', 'updatedAt'],
       'Firma_Administrador': ['id', 'fileId', 'updatedAt']
     };
@@ -462,6 +463,7 @@ function loadActiveConfig() {
 var BUSINESS_HEADERS = {
   clients: ['id', 'recordType', 'name', 'phone', 'email', 'eventType', 'eventDate', 'eventLocation', 'packageName', 'totalAmount', 'paidAmount', 'status', 'source', 'firstContactAt', 'lastContactAt', 'nextAction', 'nextActionAt', 'notes', 'contractId', 'createdAt', 'updatedAt', 'honoreeName', 'address', 'eventTime', 'serviceHours', 'campaign', 'objection', 'followUpAttempts', 'suggestedMessage', 'lossReason', 'estimatedCost', 'allocatedAdCost'],
   expenses: ['id', 'date', 'category', 'subcategory', 'concept', 'supplier', 'paymentMethod', 'paymentStatus', 'amount', 'notes', 'createdAt', 'updatedAt', 'relatedClientId', 'receiptReference', 'account'],
+  payments: ['id', 'clientId', 'contractId', 'transactionId', 'date', 'dueDate', 'concept', 'plannedAmount', 'receivedAmount', 'status', 'method', 'reference', 'notes', 'receiptFileId', 'receiptFileName', 'createdAt', 'updatedAt'],
   contracts: ['id', 'clientId', 'clientName', 'folio', 'eventType', 'eventDate', 'status', 'originalFileName', 'originalFileId', 'clientSignedFileId', 'finalFileId', 'signatureFileId', 'tokenHash', 'tokenExpiresAt', 'tokenStatus', 'sentAt', 'viewedAt', 'acceptedAt', 'clientSignedAt', 'ownerAuthorizedAt', 'documentHash', 'signedDocumentHash', 'finalDocumentHash', 'signerIp', 'signerUserAgent', 'consentText', 'createdAt', 'updatedAt'],
   ownerSignature: ['id', 'fileId', 'updatedAt']
 };
@@ -522,6 +524,13 @@ function getContractsFolder() {
   try { parent = DriveApp.getFolderById(FOLDER_ID); } catch (_) { parent = DriveApp.getRootFolder(); }
   var folders = parent.getFoldersByName('Contratos_XPH');
   return folders.hasNext() ? folders.next() : parent.createFolder('Contratos_XPH');
+}
+
+function getPaymentReceiptsFolder() {
+  var parent;
+  try { parent = DriveApp.getFolderById(FOLDER_ID); } catch (_) { parent = DriveApp.getRootFolder(); }
+  var folders = parent.getFoldersByName('Comprobantes_Pagos_XPH');
+  return folders.hasNext() ? folders.next() : parent.createFolder('Comprobantes_Pagos_XPH');
 }
 
 function base64Blob(dataUrl, mimeType, filename) {
@@ -638,6 +647,48 @@ function normalizedExpense(input, existing) {
   };
 }
 
+function normalizedPayment(input, existing) {
+  var current = existing || {};
+  var timestamp = businessNow();
+  return {
+    id: cleanBusinessText(input.id || current.id || businessId('pago'), 120),
+    clientId: cleanBusinessText(input.clientId || current.clientId, 120),
+    contractId: cleanBusinessText(input.contractId !== undefined ? input.contractId : current.contractId, 120),
+    transactionId: cleanBusinessText(current.transactionId || input.transactionId || businessId('ingreso'), 120),
+    date: cleanBusinessText(input.date || current.date || timestamp.substring(0, 10), 40),
+    dueDate: cleanBusinessText(input.dueDate !== undefined ? input.dueDate : current.dueDate, 40),
+    concept: cleanBusinessText(input.concept !== undefined ? input.concept : current.concept, 300),
+    plannedAmount: Math.max(0, Number(input.plannedAmount !== undefined ? input.plannedAmount : current.plannedAmount) || 0),
+    receivedAmount: Math.max(0, Number(input.receivedAmount !== undefined ? input.receivedAmount : current.receivedAmount) || 0),
+    status: cleanBusinessText(input.status || current.status || 'Pendiente', 40),
+    method: cleanBusinessText(input.method !== undefined ? input.method : current.method, 100),
+    reference: cleanBusinessText(input.reference !== undefined ? input.reference : current.reference, 200),
+    notes: cleanBusinessText(input.notes !== undefined ? input.notes : current.notes, 3000),
+    receiptFileId: cleanBusinessText(current.receiptFileId || input.receiptFileId, 200),
+    receiptFileName: cleanBusinessText(current.receiptFileName || input.receiptFileName, 240),
+    createdAt: cleanBusinessText(current.createdAt || input.createdAt || timestamp, 40),
+    updatedAt: timestamp
+  };
+}
+
+function publicPaymentRecord(record) {
+  var output = {};
+  BUSINESS_HEADERS.payments.forEach(function(header) { output[header] = record[header] === undefined ? '' : record[header]; });
+  output.receiptUrl = record.receiptFileId ? 'https://drive.google.com/file/d/' + encodeURIComponent(record.receiptFileId) + '/view' : '';
+  return output;
+}
+
+function syncClientPaidAmount(ss, clientId) {
+  var client = findBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, clientId);
+  if (!client) return;
+  var payments = readBusinessRecords(ss, 'Pagos_Clientes', BUSINESS_HEADERS.payments);
+  var total = payments.filter(function(item) { return String(item.clientId) === String(clientId) && String(item.status) === 'Liquidado'; })
+    .reduce(function(sum, item) { return sum + (Number(item.receivedAmount) || 0); }, 0);
+  client.paidAmount = Math.max(0, Math.min(Number(client.totalAmount) || total, total));
+  client.updatedAt = businessNow();
+  upsertBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, client);
+}
+
 function handleBusinessAction(ss, action, payload) {
   payload = payload || {};
   if (action === 'businessSnapshot') {
@@ -647,6 +698,7 @@ function handleBusinessAction(ss, action, payload) {
       snapshot: {
         clients: readBusinessRecords(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients),
         expenses: readBusinessRecords(ss, 'Gastos', BUSINESS_HEADERS.expenses),
+        payments: readBusinessRecords(ss, 'Pagos_Clientes', BUSINESS_HEADERS.payments).map(publicPaymentRecord),
         contracts: readBusinessRecords(ss, 'Contratos', BUSINESS_HEADERS.contracts).map(publicContractRecord),
         ownerSignatureConfigured: Boolean(signatureRows.length && signatureRows[0].fileId)
       }
@@ -678,6 +730,37 @@ function handleBusinessAction(ss, action, payload) {
     upsertBusinessRecord(ss, 'Gastos', BUSINESS_HEADERS.expenses, expense);
     logAudit(ss, 'GASTO_GUARDADO', expense.category + ': ' + expense.concept, expense.id, 'Admin XPH');
     return { status: 'success', expense: expense };
+  }
+
+  if (action === 'paymentUpsert') {
+    var paymentInput = payload.payment || {};
+    var existingPayment = paymentInput.id ? findBusinessRecord(ss, 'Pagos_Clientes', BUSINESS_HEADERS.payments, paymentInput.id) : null;
+    var clientForPayment = findBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, paymentInput.clientId || (existingPayment && existingPayment.clientId));
+    if (!clientForPayment) throw new Error('El pago requiere un cliente válido.');
+
+    var existingClientPayments = readBusinessRecords(ss, 'Pagos_Clientes', BUSINESS_HEADERS.payments).filter(function(item) { return String(item.clientId) === String(clientForPayment.id); });
+    if (!existingPayment && !existingClientPayments.length && Number(clientForPayment.paidAmount) > 0) {
+      var legacyPayment = normalizedPayment({ clientId: clientForPayment.id, contractId: clientForPayment.contractId || '', date: businessNow().substring(0, 10), concept: 'Saldo cobrado anterior al historial', plannedAmount: Number(clientForPayment.paidAmount), receivedAmount: Number(clientForPayment.paidAmount), status: 'Liquidado', notes: 'Migración automática del acumulado existente.' }, null);
+      upsertBusinessRecord(ss, 'Pagos_Clientes', BUSINESS_HEADERS.payments, legacyPayment);
+    }
+
+    var payment = normalizedPayment(paymentInput, existingPayment);
+    if (['Pendiente', 'Liquidado', 'Anulado'].indexOf(payment.status) < 0) throw new Error('Estado de pago no válido.');
+    if (!payment.concept || payment.plannedAmount <= 0) throw new Error('El pago requiere concepto y monto programado.');
+    if (payment.status === 'Liquidado' && payment.receivedAmount <= 0) throw new Error('Un pago liquidado requiere monto recibido.');
+    if (payment.receivedAmount > payment.plannedAmount) throw new Error('Lo recibido no puede superar el monto programado. Registra otro abono parcial.');
+    if (paymentInput.receiptBase64) {
+      var mime = cleanBusinessText(paymentInput.receiptMimeType, 100);
+      if (['image/jpeg', 'image/png', 'application/pdf'].indexOf(mime) < 0) throw new Error('Formato de comprobante no válido.');
+      var filename = cleanBusinessText(paymentInput.receiptFileName || ('Comprobante-' + payment.id), 220);
+      var receipt = getPaymentReceiptsFolder().createFile(base64Blob(paymentInput.receiptBase64, mime, filename));
+      payment.receiptFileId = receipt.getId();
+      payment.receiptFileName = filename;
+    }
+    upsertBusinessRecord(ss, 'Pagos_Clientes', BUSINESS_HEADERS.payments, payment);
+    syncClientPaidAmount(ss, payment.clientId);
+    logAudit(ss, 'PAGO_CLIENTE_GUARDADO', payment.status + ': ' + payment.concept, payment.id, 'Admin XPH');
+    return { status: 'success', payment: publicPaymentRecord(payment) };
   }
 
   if (action === 'contractUpload') {
@@ -911,7 +994,7 @@ function doPost(e) {
     var ss = getDatabaseSpreadsheet();
 
     var businessActions = [
-      'businessSnapshot', 'crmUpsert', 'expenseUpsert', 'contractUpload', 'contractCreateLink',
+      'businessSnapshot', 'crmUpsert', 'expenseUpsert', 'paymentUpsert', 'contractUpload', 'contractCreateLink',
       'contractInvalidate', 'contractResolve', 'contractCompleteSignature', 'ownerSignatureSave',
       'contractAdminPdfData', 'contractFinalizeData', 'contractFinalize'
     ];

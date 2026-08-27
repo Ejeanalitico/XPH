@@ -72,6 +72,29 @@ export interface BusinessExpense {
   account: 'Banco' | 'Efectivo' | 'Bote de reserva' | 'Otro';
 }
 
+export type PaymentStatus = 'Pendiente' | 'Liquidado' | 'Anulado';
+
+export interface BusinessPayment {
+  id: string;
+  clientId: string;
+  contractId: string;
+  transactionId: string;
+  date: string;
+  dueDate: string;
+  concept: string;
+  plannedAmount: number;
+  receivedAmount: number;
+  status: PaymentStatus;
+  method: string;
+  reference: string;
+  notes: string;
+  receiptFileId: string;
+  receiptFileName: string;
+  receiptUrl: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type ContractStatus =
   | 'Borrador'
   | 'Preparado'
@@ -105,6 +128,7 @@ export interface BusinessContract {
 export interface BusinessSnapshot {
   clients: CrmClient[];
   expenses: BusinessExpense[];
+  payments: BusinessPayment[];
   contracts: BusinessContract[];
   ownerSignatureConfigured: boolean;
 }

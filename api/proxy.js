@@ -772,6 +772,7 @@ export default async function handler(req, res) {
       'adminBusinessSnapshot',
       'adminCrmUpsert',
       'adminExpenseUpsert',
+      'adminPaymentUpsert',
       'adminContractUpload',
       'adminContractCreateLink',
       'adminOwnerSignatureSave',
@@ -813,6 +814,20 @@ export default async function handler(req, res) {
         }
         const result = await forwardBusinessAction('expenseUpsert', { expense });
         return res.status(200).json({ status: 'success', expense: result.expense });
+      }
+      if (action === 'adminPaymentUpsert') {
+        const payment = submitted.payment || {};
+        if (!payment.clientId || !['Pendiente', 'Liquidado', 'Anulado'].includes(String(payment.status || ''))) {
+          return res.status(400).json({ status: 'error', message: 'Cliente o estado de pago no válido.' });
+        }
+        if (Number(payment.plannedAmount || 0) <= 0 || (payment.status === 'Liquidado' && Number(payment.receivedAmount || 0) <= 0)) {
+          return res.status(400).json({ status: 'error', message: 'Revisa los montos programado y recibido.' });
+        }
+        if (payment.receiptBase64 && (!['image/jpeg', 'image/png', 'application/pdf'].includes(String(payment.receiptMimeType || '')) || String(payment.receiptBase64).length > 3_600_000)) {
+          return res.status(400).json({ status: 'error', message: 'El comprobante debe ser JPG, PNG o PDF y pesar máximo 2.6 MB.' });
+        }
+        const result = await forwardBusinessAction('paymentUpsert', { payment });
+        return res.status(200).json({ status: 'success', payment: result.payment });
       }
       if (action === 'adminContractUpload') {
         const contract = submitted.contract || {};
