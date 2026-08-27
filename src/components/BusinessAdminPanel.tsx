@@ -90,10 +90,24 @@ const timeDisplay = (value?: string) => {
 };
 const dateTimeDisplay = (value?: string) => {
   const raw = String(value || '').trim();
-  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
-  if (!match) return raw;
-  const [, year, month, day, hour, minute] = match;
-  return `${day}/${month}/${year} · ${timeDisplay(`${hour}:${minute}`)}`;
+  if (!raw) return '';
+  const isoDateTime = raw.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+  if (isoDateTime) {
+    const [, year, month, day, hour, minute] = isoDateTime;
+    return `${day}/${month}/${year} · ${timeDisplay(`${hour}:${minute}`)}`;
+  }
+  const isoDate = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoDate) {
+    const [, year, month, day] = isoDate;
+    return `${day}/${month}/${year}`;
+  }
+  const englishDateTime = raw.match(/^[A-Za-z]{3} ([A-Za-z]{3}) (\d{1,2}) (\d{4}) (\d{2}):(\d{2})/);
+  if (englishDateTime) {
+    const [, monthName, day, year, hour, minute] = englishDateTime;
+    const month = String(['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].indexOf(monthName) + 1).padStart(2, '0');
+    return `${String(Number(day)).padStart(2, '0')}/${month}/${year} · ${timeDisplay(`${hour}:${minute}`)}`;
+  }
+  return raw.replace('T', ' · ');
 };
 const monthKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 const localDateKey = (date: Date) => `${monthKey(date)}-${String(date.getDate()).padStart(2, '0')}`;
