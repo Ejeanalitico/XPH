@@ -1,5 +1,5 @@
 import { GalleryImage } from '../types';
-import { BusinessContract, BusinessExpense, BusinessSnapshot, CrmClient } from '../types/business';
+import { BusinessContract, BusinessExpense, BusinessPayment, BusinessSnapshot, CrmClient } from '../types/business';
 import { CURRENT_CATALOG_VERSION, resolvePublishedAddons, resolvePublishedPackages } from './catalogMerge';
 
 export type AdminSession = {
@@ -197,6 +197,7 @@ export async function loadBusinessSnapshot(): Promise<BusinessSnapshot> {
   return {
     clients: Array.isArray(data.snapshot?.clients) ? data.snapshot.clients : [],
     expenses: Array.isArray(data.snapshot?.expenses) ? data.snapshot.expenses : [],
+    payments: Array.isArray(data.snapshot?.payments) ? data.snapshot.payments : [],
     contracts: Array.isArray(data.snapshot?.contracts) ? data.snapshot.contracts : [],
     ownerSignatureConfigured: Boolean(data.snapshot?.ownerSignatureConfigured),
   };
@@ -210,6 +211,17 @@ export async function saveCrmClient(client: Partial<CrmClient>): Promise<CrmClie
 export async function saveBusinessExpense(expense: Partial<BusinessExpense>): Promise<BusinessExpense> {
   const data = await adminBusinessRequest<{ expense: BusinessExpense }>('adminExpenseUpsert', { expense });
   return data.expense;
+}
+
+export async function saveBusinessPayment(payment: Partial<BusinessPayment>, receipt?: File | null): Promise<BusinessPayment> {
+  let receiptData: Record<string, unknown> = {};
+  if (receipt) {
+    if (!['image/jpeg', 'image/png', 'application/pdf'].includes(receipt.type)) throw new Error('El comprobante debe ser JPG, PNG o PDF.');
+    if (receipt.size > 2_600_000) throw new Error('El comprobante debe pesar máximo 2.6 MB.');
+    receiptData = { receiptBase64: await fileToDataUrl(receipt), receiptFileName: receipt.name, receiptMimeType: receipt.type };
+  }
+  const data = await adminBusinessRequest<{ payment: BusinessPayment }>('adminPaymentUpsert', { payment: { ...payment, ...receiptData } });
+  return data.payment;
 }
 
 export async function uploadBusinessContract(input: {
