@@ -610,13 +610,33 @@ function clientEmailVariables(client, extras) {
 }
 
 function wrapXphEmail(bodyHtml, config, hasInlineLogo) {
-  var logo = hasInlineLogo ? '<img src="cid:xphLogo" alt="XPH Fotografía &amp; Video" width="180" style="display:block;max-width:180px;height:auto;margin:0 auto 22px">' : '';
-  var signature = config.signatureHtml || '<p>XPH Fotografía &amp; Video</p>';
-  return '<!doctype html><html><body style="margin:0;background:#f5f5f5;font-family:Arial,sans-serif;color:#171717">' +
-    '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f5f5f5;padding:24px 12px"><tr><td align="center">' +
-    '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#ffffff;border:1px solid #e8e8e8"><tr><td style="padding:34px">' +
-    logo + '<div style="font-size:16px;line-height:1.65">' + bodyHtml + '</div><div style="border-top:1px solid #ececec;margin-top:28px;padding-top:18px;color:#666;font-size:13px">' + signature + '</div>' +
-    '</td></tr></table></td></tr></table></body></html>';
+  var closing = config.signatureHtml || '<p>Con aprecio,<br><strong>Equipo XPH Fotografía &amp; Video</strong></p>';
+  var signatureImage = hasInlineLogo
+    ? '<table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td align="center" style="padding-top:20px">' +
+      '<img src="cid:xphLogo" alt="Firma de XPH Fotografía &amp; Video" width="420" style="display:block;width:100%;max-width:420px;height:auto;border:0;margin:0 auto">' +
+      '</td></tr></table>'
+    : '';
+
+  return '<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+    '<style>@media only screen and (max-width:620px){.xph-wrap{padding:14px 8px!important}.xph-pad{padding:28px 22px!important}.xph-header{padding:26px 22px!important}.xph-title{font-size:23px!important}.xph-copy{font-size:16px!important}.xph-signature{padding:18px 0 0!important}}.xph-copy p{margin:0 0 18px!important}.xph-closing p{margin:0 0 8px!important}</style></head>' +
+    '<body style="margin:0;padding:0;background:#f2efe8;font-family:Arial,Helvetica,sans-serif;color:#171717">' +
+    '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="#f2efe8"><tr><td class="xph-wrap" align="center" style="padding:30px 12px">' +
+    '<table class="xph-shell" role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="#ffffff" style="width:100%;max-width:640px;background:#ffffff;border:1px solid #ded8ca;border-collapse:separate">' +
+    '<tr><td height="6" bgcolor="#D4AF37" style="height:6px;background:#D4AF37;font-size:0;line-height:0">&nbsp;</td></tr>' +
+    '<tr><td class="xph-header" bgcolor="#0B0F17" style="padding:30px 40px;background:#0B0F17">' +
+    '<div style="font-size:11px;line-height:16px;font-weight:bold;letter-spacing:2.4px;color:#D4AF37;text-transform:uppercase">XPH Fotografía &amp; Video</div>' +
+    '<div class="xph-title" style="margin-top:7px;font-family:Georgia,Times New Roman,serif;font-size:27px;line-height:34px;color:#ffffff">Historias que permanecen</div>' +
+    '<div style="margin-top:10px;font-size:12px;line-height:18px;color:#b8bec9">Fotografía · Video · Producción audiovisual&nbsp;&nbsp;|&nbsp;&nbsp;www.xaviph.com</div>' +
+    '</td></tr>' +
+    '<tr><td class="xph-pad" style="padding:38px 42px 34px">' +
+    '<div class="xph-copy" style="font-size:17px;line-height:1.7;color:#20242c">' + bodyHtml + '</div>' +
+    '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:30px;border-top:2px solid #D4AF37"><tr><td style="padding-top:18px">' +
+    '<div style="font-size:10px;line-height:15px;font-weight:bold;letter-spacing:1.8px;color:#A88416;text-transform:uppercase">Con aprecio</div>' +
+    '<div class="xph-closing" style="margin-top:8px;font-size:13px;line-height:1.6;color:#666b73">' + closing + '</div>' +
+    '</td></tr></table>' +
+    '<div class="xph-signature" style="padding:18px 0 0">' + signatureImage + '</div>' +
+    '</td></tr></table>' +
+    '</td></tr></table></body></html>';
 }
 
 function findEmailTemplate(ss, templateId) {
