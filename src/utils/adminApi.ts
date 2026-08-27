@@ -199,6 +199,7 @@ export async function loadBusinessSnapshot(): Promise<BusinessSnapshot> {
     followUps: Array.isArray(data.snapshot?.followUps) ? data.snapshot.followUps : [],
     expenses: Array.isArray(data.snapshot?.expenses) ? data.snapshot.expenses : [],
     payments: Array.isArray(data.snapshot?.payments) ? data.snapshot.payments : [],
+    transactions: Array.isArray(data.snapshot?.transactions) ? data.snapshot.transactions : [],
     contracts: Array.isArray(data.snapshot?.contracts) ? data.snapshot.contracts : [],
     ownerSignatureConfigured: Boolean(data.snapshot?.ownerSignatureConfigured),
   };

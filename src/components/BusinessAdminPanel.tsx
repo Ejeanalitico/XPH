@@ -48,7 +48,7 @@ import { SignaturePad } from './SignaturePad';
 
 type BusinessTab = 'overview' | 'prospects' | 'clients' | 'calendar' | 'payments' | 'expenses' | 'contracts';
 
-const emptySnapshot: BusinessSnapshot = { clients: [], followUps: [], expenses: [], payments: [], contracts: [], ownerSignatureConfigured: false };
+const emptySnapshot: BusinessSnapshot = { clients: [], followUps: [], expenses: [], payments: [], transactions: [], contracts: [], ownerSignatureConfigured: false };
 const today = () => new Date().toISOString().slice(0, 10);
 const now = () => new Date().toISOString();
 const dateValue = (value?: string) => String(value || '').slice(0, 10);
@@ -151,21 +151,17 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
   const [ownerSignature, setOwnerSignature] = useState('');
   const [query, setQuery] = useState('');
   const [selectedClientId, setSelectedClientId] = useState('');
-  const [expenseSuccess, setExpenseSuccess] = useState('');
   const [calendarCursor, setCalendarCursor] = useState(() => new Date());
+  const [showMiniCalendar, setShowMiniCalendar] = useState(false);
+  const [modalNotice, setModalNotice] = useState('');
   const [followUpDraft, setFollowUpDraft] = useState<Partial<CrmFollowUp>>({ occurredAt: now(), conversation: '', result: '', nextAction: '', nextActionAt: '' });
-
-  useEffect(() => {
-    if (!expenseSuccess) return;
-    const timeout = window.setTimeout(() => setExpenseSuccess(''), 3200);
-    return () => window.clearTimeout(timeout);
-  }, [expenseSuccess]);
 
   const refresh = async () => {
     setBusy(true);
     try {
       const clients = await loadBusinessClients();
       setSnapshot((previous) => ({ ...previous, clients }));
+      setBusy(false);
       const complete = await loadBusinessSnapshot();
       cacheBusinessClients(complete.clients);
       setSnapshot(complete);
@@ -249,8 +245,8 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
       setClientDraft(blankClient());
       setShowClientForm(false);
       setSelectedClientId(saved.id);
-      notify('Registro guardado en el CRM.');
-    } catch (error: any) { notify(error?.message || 'No se pudo guardar el registro.'); }
+      setModalNotice('Registro guardado en el CRM.');
+    } catch (error: any) { setModalNotice(error?.message || 'No se pudo guardar el registro.'); }
     finally { setBusy(false); }
   };
 
@@ -263,8 +259,8 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
       setSnapshot((prev) => ({ ...prev, expenses: [saved, ...prev.expenses.filter((item) => item.id !== saved.id)] }));
       setExpenseDraft(blankExpense());
       setShowExpenseForm(false);
-      setExpenseSuccess(isEditing ? 'Gasto actualizado correctamente' : 'Gasto registrado correctamente');
-    } catch (error: any) { notify(error?.message || 'No se pudo guardar el gasto.'); }
+      setModalNotice(isEditing ? 'Gasto actualizado correctamente' : 'Gasto registrado correctamente');
+    } catch (error: any) { setModalNotice(error?.message || 'No se pudo guardar el gasto.'); }
     finally { setBusy(false); }
   };
 
@@ -277,23 +273,22 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
       setPaymentDraft(blankPayment());
       setPaymentReceipt(null);
       setShowInlinePayment(false);
-      notify(paymentDraft.id ? 'Pago actualizado y conciliado.' : 'Pago registrado y conciliado.');
-      await refresh();
-    } catch (error: any) { notify(error?.message || 'No se pudo guardar el pago.'); }
+      setModalNotice(paymentDraft.id ? 'Pago actualizado y conciliado.' : 'Pago registrado y conciliado.');
+    } catch (error: any) { setModalNotice(error?.message || 'No se pudo guardar el pago.'); }
     finally { setBusy(false); }
   };
 
   const syncCalendar = async (client: CrmClient) => {
     if (!dateValue(client.eventDate) || !timeValue(client.eventTime)) {
-      notify('Completa la fecha y el horario del evento antes de actualizar Calendar.');
+      setModalNotice('Completa la fecha y el horario del evento antes de actualizar Calendar.');
       return;
     }
     setBusy(true);
     try {
       const saved = await syncClientCalendar(client);
       setSnapshot((prev) => ({ ...prev, clients: prev.clients.map((item) => item.id === saved.id ? saved : item) }));
-      notify('Evento y sesión previa sincronizados con Google Calendar.');
-    } catch (error: any) { notify(error?.message || 'No se pudo sincronizar Google Calendar.'); }
+      setModalNotice('Evento y sesión previa sincronizados con Google Calendar.');
+    } catch (error: any) { setModalNotice(error?.message || 'No se pudo sincronizar Google Calendar.'); }
     finally { setBusy(false); }
   };
 
@@ -316,17 +311,29 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
 
   const saveInlineClient = async (patch: Partial<CrmClient>) => {
     if (!selectedClient) return;
-    setBusy(true);
+    const before = selectedClient;
+    const optimistic = { ...selectedClient, ...patch, updatedAt: now() };
+    setSnapshot((previous) => {
+      const clients = previous.clients.map((item) => item.id === optimistic.id ? optimistic : item);
+      cacheBusinessClients(clients);
+      return { ...previous, clients };
+    });
     try {
-      const saved = await saveCrmClient({ ...selectedClient, ...patch });
+      const saved = await saveCrmClient(optimistic);
       setSnapshot((previous) => {
         const clients = previous.clients.map((item) => item.id === saved.id ? saved : item);
         cacheBusinessClients(clients);
         return { ...previous, clients };
       });
-      notify('Datos actualizados.');
-    } catch (error: any) { notify(error?.message || 'No se pudieron actualizar los datos.'); throw error; }
-    finally { setBusy(false); }
+      setModalNotice('Cambios guardados correctamente.');
+    } catch (error: any) {
+      setSnapshot((previous) => {
+        const clients = previous.clients.map((item) => item.id === before.id ? before : item);
+        cacheBusinessClients(clients);
+        return { ...previous, clients };
+      });
+      setModalNotice(error?.message || 'No se pudieron actualizar los datos.');
+    }
   };
 
   const convertSelectedProspect = async () => {
@@ -442,16 +449,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
 
   return (
     <section className="space-y-5">
-      {expenseSuccess && (
-        <div
-          role="status"
-          aria-live="polite"
-          className="fixed right-4 top-4 z-[100] flex max-w-[calc(100vw-2rem)] items-center gap-3 rounded-2xl border border-emerald-300/30 bg-[#101A16] px-5 py-4 text-sm font-semibold text-emerald-100 shadow-2xl shadow-black/40 sm:right-6 sm:top-6"
-        >
-          <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-400" />
-          <span>{expenseSuccess}</span>
-        </div>
-      )}
+      {modalNotice && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="business-notice-title"><div className="w-full max-w-sm rounded-2xl border border-white/15 bg-[#161C28] p-6 text-center shadow-2xl"><CheckCircle2 className="mx-auto h-10 w-10 text-emerald-400" /><h3 id="business-notice-title" className="mt-4 text-lg font-bold text-white">Aviso</h3><p className="mt-2 break-words text-sm leading-6 text-gray-200">{modalNotice}</p><button type="button" autoFocus onClick={() => setModalNotice('')} className="mt-6 w-full rounded-xl bg-[#D4AF37] px-5 py-3 font-bold text-black">OK</button></div></div>}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h2 className="text-2xl font-bold">Clientes, gastos y contratos</h2>
@@ -562,6 +560,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify }) => {
           <div className="min-w-0 overflow-x-auto">
           <div className="flex flex-wrap items-center gap-3 border-b border-white/10 p-4">
             <button onClick={() => setCalendarCursor(new Date())} className="rounded-full border border-white/15 px-5 py-2 text-sm font-semibold">Hoy</button>
+            <div className="relative"><button aria-label="Abrir mini calendario" title="Elegir fecha" onClick={() => setShowMiniCalendar((value) => !value)} className="rounded-full border border-sky-300/30 bg-sky-400/10 p-2 text-sky-100 hover:bg-sky-400/20"><CalendarDays className="h-5 w-5 stroke-[2.5]" /></button>{showMiniCalendar && <div className="absolute left-0 top-12 z-30 w-64 rounded-2xl border border-white/15 bg-[#161C28] p-4 shadow-2xl"><label className="text-xs font-semibold text-gray-300">Ir rápidamente a una fecha<input type="date" autoFocus value={localDateKey(calendarCursor)} onChange={(event) => { if (!event.target.value) return; const selected = new Date(`${event.target.value}T12:00:00`); setCalendarCursor(selected); setShowMiniCalendar(false); }} className="mt-2 w-full rounded-xl border border-white/15 bg-[#0B0F17] px-3 py-3 text-base text-white [color-scheme:dark]" /></label></div>}</div>
             <button aria-label="Mes anterior" onClick={() => setCalendarCursor((value) => new Date(value.getFullYear(), value.getMonth() - 1, 1))} className="rounded-full border border-white/15 bg-white/10 p-2 text-white hover:bg-white/20"><ChevronLeft className="h-5 w-5 stroke-[2.5]" /></button>
             <button aria-label="Mes siguiente" onClick={() => setCalendarCursor((value) => new Date(value.getFullYear(), value.getMonth() + 1, 1))} className="rounded-full border border-white/15 bg-white/10 p-2 text-white hover:bg-white/20"><ChevronRight className="h-5 w-5 stroke-[2.5]" /></button>
             <h3 className="min-w-[190px] text-xl font-bold capitalize">{monthLabel(calendarCursor)}</h3>

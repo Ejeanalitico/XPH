@@ -123,6 +123,7 @@ function initSpreadsheetSheets(ss) {
       'Seguimientos_CRM': ['id', 'prospectId', 'clientId', 'occurredAt', 'conversation', 'result', 'nextAction', 'nextActionAt', 'createdBy', 'createdAt'],
       'Gastos': ['id', 'date', 'category', 'subcategory', 'concept', 'supplier', 'paymentMethod', 'paymentStatus', 'amount', 'notes', 'createdAt', 'updatedAt', 'relatedClientId', 'receiptReference', 'account'],
       'Pagos_Clientes': ['id', 'clientId', 'contractId', 'transactionId', 'date', 'dueDate', 'concept', 'plannedAmount', 'receivedAmount', 'status', 'method', 'reference', 'notes', 'receiptFileId', 'receiptFileName', 'createdAt', 'updatedAt', 'installmentNumber', 'percentage'],
+      'Movimientos_Financieros': ['id', 'paymentId', 'clientId', 'type', 'amount', 'status', 'date', 'concept', 'method', 'reference', 'createdAt', 'updatedAt'],
       'Contratos': ['id', 'clientId', 'clientName', 'folio', 'eventType', 'eventDate', 'status', 'originalFileName', 'originalFileId', 'clientSignedFileId', 'finalFileId', 'signatureFileId', 'tokenHash', 'tokenExpiresAt', 'tokenStatus', 'sentAt', 'viewedAt', 'acceptedAt', 'clientSignedAt', 'ownerAuthorizedAt', 'documentHash', 'signedDocumentHash', 'finalDocumentHash', 'signerIp', 'signerUserAgent', 'consentText', 'createdAt', 'updatedAt'],
       'Firma_Administrador': ['id', 'fileId', 'updatedAt']
     };
@@ -460,6 +461,7 @@ var BUSINESS_HEADERS = {
   followUps: ['id', 'prospectId', 'clientId', 'occurredAt', 'conversation', 'result', 'nextAction', 'nextActionAt', 'createdBy', 'createdAt'],
   expenses: ['id', 'date', 'category', 'subcategory', 'concept', 'supplier', 'paymentMethod', 'paymentStatus', 'amount', 'notes', 'createdAt', 'updatedAt', 'relatedClientId', 'receiptReference', 'account'],
   payments: ['id', 'clientId', 'contractId', 'transactionId', 'date', 'dueDate', 'concept', 'plannedAmount', 'receivedAmount', 'status', 'method', 'reference', 'notes', 'receiptFileId', 'receiptFileName', 'createdAt', 'updatedAt', 'installmentNumber', 'percentage'],
+  transactions: ['id', 'paymentId', 'clientId', 'type', 'amount', 'status', 'date', 'concept', 'method', 'reference', 'createdAt', 'updatedAt'],
   contracts: ['id', 'clientId', 'clientName', 'folio', 'eventType', 'eventDate', 'status', 'originalFileName', 'originalFileId', 'clientSignedFileId', 'finalFileId', 'signatureFileId', 'tokenHash', 'tokenExpiresAt', 'tokenStatus', 'sentAt', 'viewedAt', 'acceptedAt', 'clientSignedAt', 'ownerAuthorizedAt', 'documentHash', 'signedDocumentHash', 'finalDocumentHash', 'signerIp', 'signerUserAgent', 'consentText', 'createdAt', 'updatedAt'],
   ownerSignature: ['id', 'fileId', 'updatedAt']
 };
@@ -710,6 +712,30 @@ function syncClientPaidAmount(ss, clientId) {
   upsertBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, client);
 }
 
+function syncPaymentTransaction(ss, payment, existingPayment) {
+  var transactionId = cleanBusinessText(payment.transactionId || (existingPayment && existingPayment.transactionId) || businessId('ingreso'), 120);
+  payment.transactionId = transactionId;
+  var existingTransaction = findBusinessRecord(ss, 'Movimientos_Financieros', BUSINESS_HEADERS.transactions, transactionId);
+  var timestamp = businessNow();
+  var active = String(payment.status) === 'Liquidado' && Number(payment.receivedAmount) > 0;
+  var transaction = {
+    id: transactionId,
+    paymentId: payment.id,
+    clientId: payment.clientId,
+    type: 'Ingreso de cliente',
+    amount: Math.max(0, Number(payment.receivedAmount) || 0),
+    status: active ? 'ACTIVO' : 'ANULADO',
+    date: payment.date || timestamp.substring(0, 10),
+    concept: payment.concept,
+    method: payment.method,
+    reference: payment.reference,
+    createdAt: existingTransaction && existingTransaction.createdAt ? existingTransaction.createdAt : timestamp,
+    updatedAt: timestamp
+  };
+  upsertBusinessRecord(ss, 'Movimientos_Financieros', BUSINESS_HEADERS.transactions, transaction);
+  return transaction;
+}
+
 function calendarDateTime(dateValue, timeValue) {
   var parts = String(dateValue || '').split('-');
   var time = String(timeValue || '').split(':');
@@ -824,6 +850,7 @@ function handleBusinessAction(ss, action, payload) {
         followUps: readBusinessRecords(ss, 'Seguimientos_CRM', BUSINESS_HEADERS.followUps),
         expenses: readBusinessRecords(ss, 'Gastos', BUSINESS_HEADERS.expenses),
         payments: readBusinessRecords(ss, 'Pagos_Clientes', BUSINESS_HEADERS.payments).map(publicPaymentRecord),
+        transactions: readBusinessRecords(ss, 'Movimientos_Financieros', BUSINESS_HEADERS.transactions),
         contracts: readBusinessRecords(ss, 'Contratos', BUSINESS_HEADERS.contracts).map(publicContractRecord),
         ownerSignatureConfigured: Boolean(signatureRows.length && signatureRows[0].fileId)
       }
@@ -957,10 +984,12 @@ function handleBusinessAction(ss, action, payload) {
       payment.receiptFileId = receipt.getId();
       payment.receiptFileName = filename;
     }
+    var previousState = existingPayment ? JSON.stringify({ status: existingPayment.status, plannedAmount: existingPayment.plannedAmount, receivedAmount: existingPayment.receivedAmount, date: existingPayment.date }) : '{}';
+    var transaction = syncPaymentTransaction(ss, payment, existingPayment);
     upsertBusinessRecord(ss, 'Pagos_Clientes', BUSINESS_HEADERS.payments, payment);
     syncClientPaidAmount(ss, payment.clientId);
-    logAudit(ss, 'PAGO_CLIENTE_GUARDADO', payment.status + ': ' + payment.concept, payment.id, 'Admin XPH');
-    return { status: 'success', payment: publicPaymentRecord(payment) };
+    logAudit(ss, 'PAGO_CLIENTE_GUARDADO', JSON.stringify({ before: previousState, after: { status: payment.status, plannedAmount: payment.plannedAmount, receivedAmount: payment.receivedAmount, date: payment.date }, transactionId: transaction.id, transactionStatus: transaction.status }), payment.id, 'Admin XPH');
+    return { status: 'success', payment: publicPaymentRecord(payment), transaction: transaction };
   }
 
   if (action === 'contractUpload') {
