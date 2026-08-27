@@ -83,6 +83,38 @@ async function readBody(req) {
   });
 }
 
+async function readBinaryBody(req, maxBytes) {
+  const validateSize = (buffer) => {
+    if (!buffer.length) throw new Error('El archivo está vacío.');
+    if (buffer.length > maxBytes) throw new Error('El archivo excede el tamaño permitido.');
+    return buffer;
+  };
+
+  if (Buffer.isBuffer(req.body)) return validateSize(req.body);
+  if (req.body instanceof Uint8Array) return validateSize(Buffer.from(req.body));
+  if (typeof req.body === 'string') return validateSize(Buffer.from(req.body, 'latin1'));
+  if (req.body && typeof req.body === 'object') throw new Error('El archivo recibido no tiene un formato binario válido.');
+
+  return await new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on('data', (chunk) => {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += buffer.length;
+      if (size > maxBytes) {
+        reject(new Error('El archivo excede el tamaño permitido.'));
+        req.destroy();
+        return;
+      }
+      chunks.push(buffer);
+    });
+    req.on('end', () => {
+      try { resolve(validateSize(Buffer.concat(chunks))); } catch (error) { reject(error); }
+    });
+    req.on('error', reject);
+  });
+}
+
 function normalizeConfig(payload) {
   const raw = payload?.config;
   if (!raw) return {};
@@ -481,6 +513,38 @@ async function forwardBusinessAction(action, payload = {}) {
   let parsed;
   try { parsed = JSON.parse(text); } catch (_) { throw new Error('La base privada devolvió una respuesta no válida.'); }
   if (!parsed || parsed.status !== 'success') throw new Error(parsed?.message || 'La operación privada no pudo completarse.');
+  return parsed;
+}
+
+function isGoogleDriveResumableUploadUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return url.protocol === 'https:' &&
+      url.hostname === 'www.googleapis.com' &&
+      url.pathname === '/upload/drive/v3/files' &&
+      url.searchParams.get('uploadType') === 'resumable' &&
+      Boolean(url.searchParams.get('upload_id'));
+  } catch (_) {
+    return false;
+  }
+}
+
+async function forwardGoogleDriveUpload(uploadUrl, mimeType, bytes) {
+  const response = await fetch(uploadUrl, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': mimeType,
+      'Content-Length': String(bytes.length),
+    },
+    body: bytes,
+    redirect: 'manual',
+  });
+  const text = await response.text();
+  let parsed = {};
+  try { parsed = JSON.parse(text); } catch (_) {}
+  if (!response.ok || !parsed?.id) {
+    throw new Error(parsed?.error?.message || `Google Drive no pudo recibir el archivo (HTTP ${response.status}).`);
+  }
   return parsed;
 }
 
@@ -931,6 +995,7 @@ export default async function handler(req, res) {
       'adminInternalEventUpsert',
       'adminContractUpload',
       'adminContractUploadInit',
+      'adminContractUploadBody',
       'adminContractUploadFinalize',
       'adminContractCreateLink',
       'adminOwnerSignatureSave',
@@ -945,7 +1010,7 @@ export default async function handler(req, res) {
         adminCalendarSync: 'CALENDAR',
         adminExpenseUpsert: 'FINANCE', adminPaymentUpsert: 'FINANCE', adminAdjustmentUpsert: 'FINANCE',
         adminClientPackageAssign: 'CLIENTS_WRITE', adminServiceUpsert: 'CLIENTS_WRITE', adminAddonUpsert: 'CLIENTS_WRITE',
-        adminContractUpload: 'CONTRACTS', adminContractUploadInit: 'CONTRACTS', adminContractUploadFinalize: 'CONTRACTS', adminContractCreateLink: 'CONTRACTS', adminOwnerSignatureSave: 'CONTRACTS', adminContractFinalize: 'CONTRACTS',
+        adminContractUpload: 'CONTRACTS', adminContractUploadInit: 'CONTRACTS', adminContractUploadBody: 'CONTRACTS', adminContractUploadFinalize: 'CONTRACTS', adminContractCreateLink: 'CONTRACTS', adminOwnerSignatureSave: 'CONTRACTS', adminContractFinalize: 'CONTRACTS',
         adminUploadInit: 'GALLERIES', adminUploadFinalize: 'GALLERIES',
         adminTeamFunctionUpsert: 'USERS_ADMIN', adminTeamUserUpsert: 'USERS_ADMIN', adminTeamInviteCreate: 'USERS_ADMIN',
         adminTeamAssignmentUpsert: 'USERS_ADMIN',
@@ -956,6 +1021,18 @@ export default async function handler(req, res) {
         adminInternalEventUpsert: 'USERS_ADMIN',
       };
       if (!requirePermission(res, session, permissionByAction[action] || 'SUPER_ADMIN')) return;
+
+      if (action === 'adminContractUploadBody') {
+        const uploadUrl = String(req.headers?.['x-xph-upload-url'] || '');
+        const mimeType = String(req.headers?.['content-type'] || '').split(';')[0].trim().toLowerCase();
+        if (!isGoogleDriveResumableUploadUrl(uploadUrl)) return res.status(400).json({ status: 'error', message: 'La sesión privada de carga no es válida.' });
+        if (mimeType !== 'application/pdf') return res.status(400).json({ status: 'error', message: 'El contrato debe ser un archivo PDF.' });
+        const bytes = await readBinaryBody(req, 5_000_000);
+        if (bytes.subarray(0, 5).toString('ascii') !== '%PDF-') return res.status(400).json({ status: 'error', message: 'El archivo no contiene un PDF válido.' });
+        const uploaded = await forwardGoogleDriveUpload(uploadUrl, mimeType, bytes);
+        return res.status(200).json({ status: 'success', fileId: uploaded.id, name: uploaded.name || '' });
+      }
+
       const raw = await readBody(req);
       let submitted = {};
       try { submitted = JSON.parse(raw || '{}'); } catch (_) {}
