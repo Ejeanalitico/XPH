@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 const appsScript = readFileSync(new URL('../google-apps-script.js', import.meta.url), 'utf8');
 const proxy = readFileSync(new URL('../api/proxy.js', import.meta.url), 'utf8');
 const businessPanel = readFileSync(new URL('../src/components/BusinessAdminPanel.tsx', import.meta.url), 'utf8');
+const adminApi = readFileSync(new URL('../src/utils/adminApi.ts', import.meta.url), 'utf8');
 
 // Conversión compatible: conserva el mismo ID y enlaza el historial existente.
 const prospect = { id: 'prospecto-1', recordType: 'Prospecto', nextActionAt: '2026-09-01T11:00' };
@@ -40,6 +41,11 @@ assert.match(appsScript, /reminder1DaySent/);
 assert.match(proxy, /adminTeamUserUpsert: 'USERS_ADMIN'/);
 assert.match(proxy, /result\.snapshot\.auditLog = \[\]/);
 assert.match(proxy, /operationalClientRecord/);
+assert.match(proxy, /Cache-Control', 'private, no-store, no-cache, must-revalidate, max-age=0'/);
+assert.match(proxy, /Vercel-CDN-Cache-Control', 'no-store'/);
+assert.match(adminApi, /if \(revision\) params\.set\('v', revision\)/);
+assert.match(businessPanel, /adminContractPdfUrl\(contract\.id, 'latest', contractPdfRevision\(contract\)\)/);
+assert.match(businessPanel, /Ver contrato final con firmas/);
 assert.match(businessPanel, /border-yellow-300 bg-yellow-300\/15/);
 assert.match(businessPanel, /border-emerald-400 bg-emerald-500\/15/);
 assert.match(businessPanel, /border-red-400 bg-red-500\/15/);

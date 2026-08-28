@@ -590,6 +590,18 @@ function signingAudit(req) {
   };
 }
 
+function setPrivatePdfHeaders(res, filename) {
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+  res.setHeader('Cache-Control', 'private, no-store, no-cache, must-revalidate, max-age=0');
+  res.setHeader('CDN-Cache-Control', 'no-store');
+  res.setHeader('Vercel-CDN-Cache-Control', 'no-store');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Vary', 'Cookie');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+}
+
 function cleanBase64(value) {
   const source = String(value || '');
   return source.includes(',') ? source.split(',').pop() : source;
@@ -1516,8 +1528,7 @@ export default async function handler(req, res) {
       const result = await forwardBusinessAction('contractAdminPdfData', { contractId, version });
       const pdf = Buffer.from(cleanBase64(result.pdfBase64), 'base64');
       if (pdf.subarray(0, 5).toString('ascii') !== '%PDF-') throw new Error('El contrato privado no contiene un PDF válido.');
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `inline; filename="contrato-${String(result.folio || 'xph').replace(/[^a-z0-9-]/gi, '_')}.pdf"`);
+      setPrivatePdfHeaders(res, `contrato-${String(result.folio || 'xph').replace(/[^a-z0-9-]/gi, '_')}.pdf`);
       return res.status(200).send(pdf);
     }
 
@@ -1531,8 +1542,7 @@ export default async function handler(req, res) {
       const result = await forwardBusinessAction('contractResolve', { token, includePdf: action === 'contractPdf', markViewed: true });
       if (action === 'contractPdf') {
         const pdf = Buffer.from(cleanBase64(result.pdfBase64), 'base64');
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `inline; filename="contrato-${String(result.contract?.folio || 'xaviph').replace(/[^a-z0-9-]/gi, '_')}.pdf"`);
+        setPrivatePdfHeaders(res, `contrato-${String(result.contract?.folio || 'xaviph').replace(/[^a-z0-9-]/gi, '_')}.pdf`);
         return res.status(200).send(pdf);
       }
       return res.status(200).json({ status: 'success', contract: result.contract });

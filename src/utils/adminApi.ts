@@ -445,8 +445,13 @@ export async function createContractSigningLink(contractId: string): Promise<{ u
   return await adminBusinessRequest<{ url: string; expiresAt: string }>('adminContractCreateLink', { contractId });
 }
 
-export function adminContractPdfUrl(contractId: string, version: 'original' | 'signed' | 'final' | 'latest' = 'latest'): string {
+export function adminContractPdfUrl(
+  contractId: string,
+  version: 'original' | 'signed' | 'final' | 'latest' = 'latest',
+  revision = '',
+): string {
   const params = new URLSearchParams({ action: 'adminContractPdf', contractId, version });
+  if (revision) params.set('v', revision);
   return `/api/proxy?${params.toString()}`;
 }
 
