@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, ClipboardCheck, ClipboardCopy, FolderOpen, Images, PackagePlus, Plus, Save, Sparkles, Upload } from 'lucide-react';
+import { BellRing, CheckCircle2, ClipboardCheck, ClipboardCopy, FolderOpen, Images, PackagePlus, Plus, Save, Sparkles, Upload, UserPlus } from 'lucide-react';
 import { AddOnOption, PackageOption } from '../types';
-import { BusinessSnapshot, ClientAddon, ContractedService, CrmClient } from '../types/business';
-import { assignClientPackage, createClientGallery, loadAdminConfig, saveClientAddon, saveContractedService, updateClientGalleryStatus, uploadClientGalleryPhoto } from '../utils/adminApi';
+import { BusinessSnapshot, ClientAddon, ContractedService, CrmClient, CrmNotification, TeamAssignment } from '../types/business';
+import { assignClientPackage, createClientGallery, loadAdminConfig, markNotification, saveClientAddon, saveContractedService, saveTeamAssignment, updateClientGalleryStatus, uploadClientGalleryPhoto } from '../utils/adminApi';
 
 const money = (value: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(Number(value) || 0);
 const today = () => new Date().toISOString().slice(0, 10);
@@ -41,9 +41,11 @@ interface Props {
   onSnapshotChange: React.Dispatch<React.SetStateAction<BusinessSnapshot>>;
   onClientPatch: (patch: Partial<CrmClient>) => Promise<void>;
   notify: (message: string) => void;
+  focusedNotificationId?: string;
+  canAssignTeam?: boolean;
 }
 
-export const ClientOperationsPanel: React.FC<Props> = ({ client, snapshot, onSnapshotChange, onClientPatch, notify }) => {
+export const ClientOperationsPanel: React.FC<Props> = ({ client, snapshot, onSnapshotChange, onClientPatch, notify, focusedNotificationId = '', canAssignTeam = false }) => {
   const [catalog, setCatalog] = useState<Record<string, PackageOption[]>>({});
   const [addonCatalog, setAddonCatalog] = useState<AddOnOption[]>([]);
   const [packageKey, setPackageKey] = useState('');
@@ -55,6 +57,9 @@ export const ClientOperationsPanel: React.FC<Props> = ({ client, snapshot, onSna
   const [busy, setBusy] = useState(false);
   const [galleryTitle, setGalleryTitle] = useState('');
   const [galleryFiles, setGalleryFiles] = useState<File[]>([]);
+  const [assignmentUserId, setAssignmentUserId] = useState('');
+  const [assignmentSource, setAssignmentSource] = useState<TeamAssignment['scheduleSource']>('EVENT');
+  const [notificationBusyId, setNotificationBusyId] = useState('');
 
   useEffect(() => {
     loadAdminConfig().then((config) => {
@@ -69,6 +74,11 @@ export const ClientOperationsPanel: React.FC<Props> = ({ client, snapshot, onSna
     setSessionDraft(client);
   }, [client.id, client.updatedAt]);
 
+  useEffect(() => {
+    if (!focusedNotificationId) return;
+    window.requestAnimationFrame(() => document.getElementById(`client-notification-${focusedNotificationId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+  }, [focusedNotificationId, client.id]);
+
   const packageOptions = useMemo(() => (Object.entries(catalog) as [string, PackageOption[]][]).flatMap(([category, packages]) =>
     (packages || []).map((item) => ({ category, item, key: `${category}::${item.id}` }))), [catalog]);
   const selectedPackage = packageOptions.find((option) => option.key === packageKey);
@@ -80,6 +90,9 @@ export const ClientOperationsPanel: React.FC<Props> = ({ client, snapshot, onSna
   const activeAddons = clientAddons.filter((item) => item.status !== 'Anulado');
   const addonTotal = activeAddons.reduce((sum, item) => sum + Number(item.total || 0), 0);
   const clientPayments = snapshot.payments.filter((item) => item.clientId === client.id && item.status !== 'Anulado');
+  const clientPaymentIds = new Set(clientPayments.map((item) => item.id));
+  const clientNotifications = snapshot.notifications.filter((item) => item.status !== 'ANULADA' && (item.relatedId === client.id || clientPaymentIds.has(item.relatedId)));
+  const clientAssignments = snapshot.assignments.filter((item) => item.clientId === client.id && item.status !== 'CANCELADA');
   const clientContract = snapshot.contracts.find((item) => item.clientId === client.id);
   const clientGallery = snapshot.galleries.find((item) => item.clientId === client.id && item.status !== 'ARCHIVADA');
 
@@ -197,6 +210,54 @@ export const ClientOperationsPanel: React.FC<Props> = ({ client, snapshot, onSna
     finally { setBusy(false); }
   };
 
+  const toggleNotificationResolved = async (notification: CrmNotification) => {
+    if (notificationBusyId) return;
+    setNotificationBusyId(notification.id);
+    try {
+      const saved = await markNotification(notification.id, notification.status === 'RESUELTA' ? 'PENDIENTE' : 'RESUELTA');
+      onSnapshotChange((previous) => ({ ...previous, notifications: previous.notifications.map((item) => item.id === saved.id ? saved : item) }));
+      notify(saved.status === 'RESUELTA' ? 'Actividad marcada como realizada.' : 'Actividad reabierta como pendiente.');
+    } catch (error: any) { notify(error?.message || 'No se pudo actualizar la actividad.'); }
+    finally { setNotificationBusyId(''); }
+  };
+
+  const persistClientAssignment = async (allowOverride = false) => {
+    const user = snapshot.users.find((item) => item.id === assignmentUserId);
+    const startDate = assignmentSource === 'SESSION' ? client.preSessionDate : client.eventDate;
+    const startTime = assignmentSource === 'SESSION' ? client.preSessionTime : client.eventTime;
+    const endTime = assignmentSource === 'SESSION' ? client.preSessionEndTime : '';
+    if (!user) return notify('Selecciona a la persona que atenderá al cliente.');
+    if (!startDate) return notify(assignmentSource === 'SESSION' ? 'Primero agenda la sesión previa.' : 'Primero registra la fecha del evento.');
+    setBusy(true);
+    try {
+      const result = await saveTeamAssignment({
+        clientId: client.id,
+        eventId: client.eventId,
+        userId: user.id,
+        functionName: user.functionName,
+        activityType: assignmentSource === 'SESSION' ? client.preSessionType || 'Sesión previa' : client.eventType || 'Evento',
+        scheduleSource: assignmentSource,
+        startDate,
+        startTime,
+        endDate: startDate,
+        endTime,
+        notes: client.providerNotes || '',
+        status: 'ACTIVA',
+        syncStatus: 'Pendiente',
+      }, allowOverride);
+      onSnapshotChange((previous) => ({ ...previous, assignments: [result.assignment, ...previous.assignments.filter((item) => item.id !== result.assignment.id)] }));
+      setAssignmentUserId('');
+      notify(result.assignment.syncStatus === 'Sincronizado' ? 'Responsable asignado y Calendar actualizado.' : `Responsable asignado. Calendar: ${result.assignment.syncStatus}.`);
+    } catch (error: any) {
+      if (error?.conflict && !allowOverride && window.confirm('La persona ya tiene una actividad que se cruza con este horario. ¿Deseas asignarla de todos modos?')) {
+        setBusy(false);
+        await persistClientAssignment(true);
+        return;
+      }
+      notify(error?.message || 'No se pudo asignar al responsable.');
+    } finally { setBusy(false); }
+  };
+
   const checklist = [
     { label: 'Contrato firmado', applies: Boolean(clientContract), done: clientContract?.status === 'Firmado por cliente' || clientContract?.status === 'Finalizado' },
     ...clientPayments.map((payment) => ({ label: `${payment.concept || `Pago ${payment.installmentNumber}`} ${payment.status === 'Liquidado' ? 'liquidado' : 'pendiente'}`, applies: true, done: payment.status === 'Liquidado' })),
@@ -208,6 +269,10 @@ export const ClientOperationsPanel: React.FC<Props> = ({ client, snapshot, onSna
   ].filter((item) => item.applies);
 
   return <div className="space-y-5 border-t border-white/10 p-5 sm:p-8">
+    {clientNotifications.length > 0 && <section className="rounded-2xl border border-sky-400/25 bg-sky-400/5 p-5" aria-labelledby="client-alert-checklist-title"><div className="flex items-center gap-2"><BellRing className="h-5 w-5 text-sky-300" /><h3 id="client-alert-checklist-title" className="font-semibold text-sky-100">Actividades de las notificaciones</h3></div><p className="mt-1 text-xs text-sky-100/60">Marca la casilla cuando hayas terminado la actividad. El cambio queda guardado en el CRM.</p><div className="mt-4 space-y-2">{clientNotifications.map((notification) => { const resolved = notification.status === 'RESUELTA'; return <label id={`client-notification-${notification.id}`} key={notification.id} className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors ${focusedNotificationId === notification.id ? 'border-sky-300 bg-sky-300/10 ring-2 ring-sky-300/20' : 'border-white/10 bg-[#111722]'} ${resolved ? 'opacity-70' : ''}`}><input type="checkbox" checked={resolved} disabled={Boolean(notificationBusyId)} onChange={() => toggleNotificationResolved(notification)} className="mt-1 h-4 w-4 accent-emerald-500" /><span className="min-w-0 flex-1"><span className={`block text-sm font-semibold ${resolved ? 'text-gray-400 line-through' : 'text-white'}`}>{notification.title}</span><span className="mt-1 block text-xs leading-5 text-gray-400">{notification.message}</span><span className={`mt-2 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${resolved ? 'bg-emerald-400/10 text-emerald-300' : 'bg-amber-400/10 text-amber-200'}`}>{resolved ? 'Actividad realizada' : notificationBusyId === notification.id ? 'Guardando…' : 'Pendiente por realizar'}</span></span></label>; })}</div></section>}
+
+    {canAssignTeam && <section className="rounded-2xl border border-white/10 bg-[#161C28] p-5"><div className="flex items-center gap-2"><UserPlus className="h-5 w-5 text-[#D4AF37]" /><h3 className="font-semibold">Persona responsable</h3></div><p className="mt-1 text-xs text-gray-400">Asigna desde este expediente quién atenderá el evento o la sesión. Se respetan los conflictos de horario y la sincronización de Calendar.</p><div className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_auto]"><select value={assignmentUserId} onChange={(event) => setAssignmentUserId(event.target.value)} className={inputClass} aria-label="Persona responsable"><option value="">Selecciona una persona</option>{snapshot.users.filter((item) => item.status !== 'INACTIVO').map((item) => <option key={item.id} value={item.id}>{item.displayName || `${item.name} ${item.lastName}`.trim()} · {item.functionName}</option>)}</select><select value={assignmentSource} onChange={(event) => setAssignmentSource(event.target.value as TeamAssignment['scheduleSource'])} className={inputClass} aria-label="Actividad asignada"><option value="EVENT">Evento principal</option>{client.preSessionApplies && <option value="SESSION">Sesión previa</option>}</select><button type="button" disabled={busy || !assignmentUserId} onClick={() => persistClientAssignment()} className="rounded-xl bg-[#D4AF37] px-5 py-3 text-sm font-bold text-black disabled:opacity-40">Asignar</button></div><div className="mt-4 grid gap-2 sm:grid-cols-2">{clientAssignments.map((assignment) => { const user = snapshot.users.find((item) => item.id === assignment.userId); return <div key={assignment.id} className="rounded-xl border border-white/10 p-3"><div className="text-sm font-semibold text-white">{user?.displayName || user?.name || assignment.functionName}</div><div className="mt-1 text-xs text-gray-400">{assignment.activityType} · {assignment.startDate} · {assignment.startTime || 'Sin hora'}</div><div className="mt-1 text-[11px] text-emerald-300">Calendar: {assignment.syncStatus}</div></div>; })}{!clientAssignments.length && <p className="rounded-xl border border-dashed border-white/10 p-4 text-sm text-gray-500 sm:col-span-2">Todavía no hay personal asignado.</p>}</div></section>}
+
     <section className="rounded-2xl border border-white/10 bg-[#161C28] p-5"><h3 className="font-semibold">Notas del expediente</h3><p className="mt-1 text-xs text-gray-400">Las notas internas son administrativas; los proveedores solo reciben la información operativa.</p><form onSubmit={saveNotes} className="mt-4 grid gap-3 md:grid-cols-2"><label className="text-xs text-gray-300">Notas internas<textarea value={sessionDraft.internalNotes || ''} onChange={(event) => setSessionDraft({ ...sessionDraft, internalNotes: event.target.value })} className={`${inputClass} mt-1 min-h-28`} placeholder="Acuerdos, márgenes, decisiones internas…" /></label><label className="text-xs text-gray-300">Notas para proveedores<textarea value={sessionDraft.providerNotes || ''} onChange={(event) => setSessionDraft({ ...sessionDraft, providerNotes: event.target.value })} className={`${inputClass} mt-1 min-h-28`} placeholder="Accesos, vestimenta, contacto operativo…" /></label><button disabled={busy} className="rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-black md:col-span-2">Guardar notas separadas</button></form></section>
 
     <section className="rounded-2xl border border-white/10 bg-[#161C28] p-5">

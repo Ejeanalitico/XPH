@@ -1408,7 +1408,8 @@ export default async function handler(req, res) {
           const ownsNotification = (snapshotResult.snapshot?.notifications || []).some((item) => String(item.id) === notificationId && String(item.userId) === String(session.userId));
           if (!ownsNotification) return res.status(403).json({ status: 'error', message: 'No puedes modificar esa notificación.' });
         }
-        const result = await forwardBusinessActionWithLockRetry('notificationRead', { notificationId, status: submitted.status === 'PENDIENTE' ? 'PENDIENTE' : 'LEIDA' });
+        const notificationStatus = ['PENDIENTE', 'LEIDA', 'RESUELTA'].includes(String(submitted.status)) ? String(submitted.status) : 'LEIDA';
+        const result = await forwardBusinessActionWithLockRetry('notificationRead', { notificationId, status: notificationStatus });
         return res.status(200).json({ status: 'success', notification: result.notification });
       }
       if (action === 'adminRemindersRun') {

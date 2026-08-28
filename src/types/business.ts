@@ -317,7 +317,7 @@ export interface CrmNotification {
   message: string;
   relatedId: string;
   userId: string;
-  status: 'PENDIENTE' | 'LEIDA' | 'ANULADA';
+  status: 'PENDIENTE' | 'LEIDA' | 'RESUELTA' | 'ANULADA';
   dueAt: string;
   dedupeKey: string;
   createdAt: string;

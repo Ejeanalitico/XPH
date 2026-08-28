@@ -744,7 +744,7 @@ function upsertCrmNotification(ss, input) {
     id: existing && existing.id || businessId('notificacion'),
     type: cleanBusinessText(input.type, 80), title: cleanBusinessText(input.title, 240), message: cleanBusinessText(input.message, 1000),
     relatedId: cleanBusinessText(input.relatedId, 120), userId: cleanBusinessText(input.userId || 'xph-super-admin', 120),
-    status: existing && existing.status === 'LEIDA' ? 'LEIDA' : cleanBusinessText(input.status || 'PENDIENTE', 30),
+    status: existing && ['LEIDA', 'RESUELTA'].indexOf(String(existing.status)) >= 0 ? existing.status : cleanBusinessText(input.status || 'PENDIENTE', 30),
     dueAt: cleanBusinessText(input.dueAt, 50), dedupeKey: dedupeKey,
     createdAt: existing && existing.createdAt || timestamp, updatedAt: timestamp
   };
@@ -2119,7 +2119,7 @@ function handleBusinessAction(ss, action, payload) {
   if (action === 'notificationRead') {
     var notification = findBusinessRecord(ss, 'Notificaciones_CRM', BUSINESS_HEADERS.notifications, payload.notificationId);
     if (!notification) throw new Error('Notificación no localizada.');
-    notification.status = payload.status === 'PENDIENTE' ? 'PENDIENTE' : 'LEIDA';
+    notification.status = ['PENDIENTE', 'LEIDA', 'RESUELTA'].indexOf(String(payload.status)) >= 0 ? String(payload.status) : 'LEIDA';
     notification.updatedAt = businessNow();
     upsertBusinessRecord(ss, 'Notificaciones_CRM', BUSINESS_HEADERS.notifications, notification);
     return { status: 'success', notification: notification };

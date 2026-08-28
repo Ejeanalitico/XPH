@@ -433,7 +433,7 @@ export async function uploadEmailLogo(file: File): Promise<GmailConfig> {
   return finalized.gmailConfig;
 }
 
-export async function markNotification(notificationId: string, status: 'PENDIENTE' | 'LEIDA' = 'LEIDA'): Promise<CrmNotification> {
+export async function markNotification(notificationId: string, status: 'PENDIENTE' | 'LEIDA' | 'RESUELTA' = 'LEIDA'): Promise<CrmNotification> {
   const data = await adminBusinessRequest<{ notification: CrmNotification }>('adminNotificationRead', { notificationId, status });
   return data.notification;
 }

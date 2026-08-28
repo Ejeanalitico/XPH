@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   BadgeDollarSign,
   AlertTriangle,
+  Bell,
   BriefcaseBusiness,
   CalendarDays,
   CheckCircle2,
@@ -218,6 +219,8 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
   const [syncingAllCalendars, setSyncingAllCalendars] = useState(false);
   const [syncingClientId, setSyncingClientId] = useState('');
   const [businessMenuOpen, setBusinessMenuOpen] = useState(false);
+  const [notificationMenuOpen, setNotificationMenuOpen] = useState(false);
+  const [focusedNotificationId, setFocusedNotificationId] = useState('');
   const [showClientForm, setShowClientForm] = useState(false);
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [showInlinePayment, setShowInlinePayment] = useState(false);
@@ -399,11 +402,11 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
     finally { setBusy(false); }
   };
 
-  const readNotification = async (notificationId: string) => {
+  const updateNotificationStatus = async (notificationId: string, status: 'PENDIENTE' | 'LEIDA' | 'RESUELTA' = 'LEIDA') => {
     if (notificationPendingId) return;
     setNotificationPendingId(notificationId);
     try {
-      const saved = await markNotification(notificationId, 'LEIDA');
+      const saved = await markNotification(notificationId, status);
       setSnapshot((current) => ({ ...current, notifications: current.notifications.map((item) => item.id === saved.id ? saved : item) }));
     } catch (error: any) {
       setModalNotice(error?.message || 'No se pudo actualizar la notificación.');
@@ -541,11 +544,25 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
     setTab(client.recordType === 'Prospecto' ? 'prospects' : 'clients');
   };
 
+  const openNotificationAction = async (notificationId: string) => {
+    const notification = snapshot.notifications.find((item) => item.id === notificationId);
+    if (!notification) return;
+    const relatedPayment = snapshot.payments.find((item) => item.id === notification.relatedId);
+    const client = snapshot.clients.find((item) => item.id === notification.relatedId || item.id === relatedPayment?.clientId);
+    setNotificationMenuOpen(false);
+    setFocusedNotificationId(notification.id);
+    if (client) openClientDetails(client);
+    else setTab(notification.type.startsWith('PAGO_') ? 'payments' : 'overview');
+    if (notification.status === 'PENDIENTE') await updateNotificationStatus(notification.id, 'LEIDA');
+  };
+
   const selectedClient = snapshot.clients.find((client) => client.id === selectedClientId);
   const currentTeamUser = snapshot.users.find((user) => user.id === session.userId);
   const canEditSelected = Boolean(selectedClient && (session.role === 'SUPER_ADMIN' || (selectedClient.recordType === 'Prospecto' ? session.permissions.includes('CRM_WRITE') : session.permissions.includes('CLIENTS_WRITE'))));
   const canCreateCurrentType = session.role === 'SUPER_ADMIN' || (tab === 'prospects' ? session.permissions.includes('CRM_WRITE') : session.permissions.includes('CLIENTS_WRITE'));
   const canManageFinance = session.role === 'SUPER_ADMIN';
+  const pendingNotificationCount = snapshot.notifications.filter((item) => item.status === 'PENDIENTE').length;
+  const visibleNotifications = snapshot.notifications.filter((item) => item.status !== 'ANULADA').slice(0, 20);
   const businessNavItems = [
     { id: 'overview' as const, label: 'Control financiero', icon: TrendingUp },
     { id: 'prospects' as const, label: 'Prospectos', icon: Users },
@@ -703,9 +720,16 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
           <h2 className="text-2xl font-bold">{session.role === 'SUPER_ADMIN' ? 'Clientes, gastos y contratos' : 'Operación asignada'}</h2>
           <p className="mt-1 text-sm text-gray-400">{session.role === 'SUPER_ADMIN' ? 'Información privada del negocio. Los registros nuevos comienzan vacíos.' : 'Solo aparecen tus clientes, actividades y datos operativos autorizados.'}</p>
         </div>
-        <button onClick={() => refresh(true)} disabled={refreshing} className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/15 px-4 py-2.5 text-sm disabled:opacity-40">
-          {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} {refreshing ? 'Actualizando…' : 'Actualizar datos'}
-        </button>
+        <div className="relative flex items-center justify-end gap-2">
+          <button type="button" onClick={() => setNotificationMenuOpen((open) => !open)} className="relative inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-[#161C28] text-white hover:bg-white/10" aria-label={`Notificaciones${pendingNotificationCount ? `, ${pendingNotificationCount} pendientes` : ''}`} aria-expanded={notificationMenuOpen} aria-haspopup="menu">
+            <Bell className="h-5 w-5" />
+            {pendingNotificationCount > 0 && <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-red-500 px-1.5 py-0.5 text-center text-[10px] font-bold leading-4 text-white ring-2 ring-[#0B0F17]">{pendingNotificationCount > 99 ? '99+' : pendingNotificationCount}</span>}
+          </button>
+          <button onClick={() => refresh(true)} disabled={refreshing} className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/15 px-4 py-2.5 text-sm disabled:opacity-40">
+            {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} {refreshing ? 'Actualizando…' : 'Actualizar datos'}
+          </button>
+          {notificationMenuOpen && <div role="menu" aria-label="Notificaciones" className="absolute right-0 top-14 z-[90] w-[min(92vw,390px)] overflow-hidden rounded-2xl border border-white/15 bg-[#161C28] text-left shadow-2xl shadow-black/60"><div className="flex items-center justify-between border-b border-white/10 px-4 py-3"><div><h3 className="font-bold text-white">Notificaciones</h3><p className="text-xs text-gray-400">Selecciona un aviso para atenderlo</p></div>{pendingNotificationCount > 0 && <span className="rounded-full bg-red-500/15 px-2.5 py-1 text-xs font-semibold text-red-300">{pendingNotificationCount} nuevas</span>}</div><div className="max-h-[min(65vh,520px)] overflow-y-auto">{visibleNotifications.map((item) => <button key={item.id} type="button" role="menuitem" disabled={notificationPendingId === item.id} onClick={() => openNotificationAction(item.id)} className={`block w-full border-b border-white/5 px-4 py-3 text-left hover:bg-white/5 disabled:opacity-60 ${item.status === 'PENDIENTE' ? 'bg-sky-400/5' : ''}`}><div className="flex items-start gap-3"><span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${item.status === 'PENDIENTE' ? 'bg-sky-400' : item.status === 'RESUELTA' ? 'bg-emerald-400' : 'bg-gray-600'}`} /><span className="min-w-0 flex-1"><span className="flex items-start justify-between gap-3"><strong className="text-sm text-white">{item.title}</strong><span className="shrink-0 text-[10px] text-gray-500">{item.status === 'RESUELTA' ? 'Resuelta' : item.status === 'LEIDA' ? 'Vista' : 'Nueva'}</span></span><span className="mt-1 block text-xs leading-5 text-gray-300">{item.message}</span>{item.dueAt && <span className="mt-1 block text-[11px] text-amber-200">{dateTimeDisplay(item.dueAt)}</span>}</span></div></button>)}{!visibleNotifications.length && <div className="px-5 py-10 text-center"><CheckCircle2 className="mx-auto h-8 w-8 text-emerald-400" /><p className="mt-3 text-sm text-gray-300">No hay notificaciones.</p></div>}</div></div>}
+        </div>
       </div>
 
       {session.role === 'SUPER_ADMIN' ? <div className="grid gap-3 sm:grid-cols-3"><Metric label="Prospectos y clientes" value={String(snapshot.clients.length)} icon={Users} /><Metric label="Contratos" value={String(snapshot.contracts.length)} icon={FileSignature} /><Metric label="Cobrado / contratado" value={`${money(financials.collected)} / ${money(financials.contracted)}`} icon={BadgeDollarSign} /></div> : <div className="grid gap-3 sm:grid-cols-3"><Metric label="Clientes asignados" value={String(snapshot.clients.filter((item) => item.recordType === 'Cliente').length)} icon={Users} /><Metric label="Actividades asignadas" value={String(snapshot.assignments.length)} icon={CalendarDays} /><Metric label="Próximos 7 días" value={String(snapshot.assignments.filter((item) => { const diff = dayDifference(item.startDate); return diff >= 0 && diff <= 7; }).length)} icon={BriefcaseBusiness} /></div>}
@@ -723,7 +747,6 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
 
       {tab === 'overview' && (
         <div className="space-y-5">
-          {snapshot.notifications.some((item) => item.status === 'PENDIENTE') && <section className="rounded-2xl border border-amber-400/25 bg-amber-400/5 p-5"><div className="flex items-center justify-between gap-3"><div><h3 className="font-semibold text-amber-100">Notificaciones pendientes</h3><p className="mt-1 text-xs text-amber-100/60">Seguimientos, pagos, eventos, sesiones, personal y sincronización.</p></div><span className="rounded-full bg-amber-300 px-3 py-1 text-xs font-bold text-black">{snapshot.notifications.filter((item) => item.status === 'PENDIENTE').length}</span></div><div className="mt-4 grid gap-2 lg:grid-cols-2">{snapshot.notifications.filter((item) => item.status === 'PENDIENTE').slice(0, 8).map((item) => <button key={item.id} type="button" disabled={Boolean(notificationPendingId)} onClick={() => readNotification(item.id)} className="rounded-xl border border-white/10 bg-[#161C28] p-3 text-left hover:bg-white/5 disabled:cursor-wait disabled:opacity-60"><div className="flex items-start justify-between gap-3"><span className="font-semibold text-white">{item.title}</span><span className="text-[10px] uppercase text-gray-500">{notificationPendingId === item.id ? 'Guardando…' : 'Marcar leída'}</span></div><p className="mt-1 text-xs text-gray-300">{item.message}</p>{item.dueAt && <p className="mt-1 text-[11px] text-amber-200">{dateTimeDisplay(item.dueAt)}</p>}</button>)}</div></section>}
           <div className="grid gap-4 xl:grid-cols-4"><DashboardGroup title="Comercial" rows={[['Prospectos activos', dashboardStats.prospectsActive], ['Seguimientos de hoy', dashboardStats.followUpsToday], ['Seguimientos vencidos', dashboardStats.followUpsOverdue], ['Por cerrar', dashboardStats.prospectsClosing]]} /><DashboardGroup title="Clientes" rows={[['Clientes activos', dashboardStats.clientsActive], ['Próximos eventos', dashboardStats.upcomingEvents], ['Sesiones pendientes', dashboardStats.sessionsPending], ['Servicios pendientes', dashboardStats.servicesPending]]} /><DashboardGroup title="Pagos" rows={[['Cobrado', money(financials.collected)], ['Por cobrar', money(financials.receivable)], ['Pagos vencidos', money(financials.overdueAmount)], ['Próximos pagos', snapshot.payments.filter((item) => { const diff = dayDifference(item.dueDate); return pendingPaymentAmount(item) > 0 && diff >= 0 && diff <= 7; }).length]]} /><DashboardGroup title="Calendario" rows={[['Eventos de hoy', dashboardStats.eventsToday], ['Esta semana', dashboardStats.eventsWeek], ['Próximos eventos', dashboardStats.upcomingEvents], ['Conflictos', dashboardStats.conflicts]]} /></div>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <Metric label="Bote acumulado cobrado" value={money(financials.collected)} icon={BadgeDollarSign} />
@@ -787,7 +810,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
                 <div className="flex flex-wrap gap-2">{canEditSelected && selectedClient.recordType === 'Prospecto' && <button onClick={convertSelectedProspect} disabled={busy} className="rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100">Convertir en cliente</button>}{canManageFinance && selectedClient.recordType === 'Cliente' && <button onClick={() => prepareNextPayment(selectedClient)} className="rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100">Agregar pago al plan</button>}{canManageFinance && selectedClientContract && <a href={adminContractPdfUrl(selectedClientContract.id, 'latest', contractPdfRevision(selectedClientContract))} target="_blank" rel="noreferrer" className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm text-white">{contractViewLabel(selectedClientContract)}</a>}{canEditSelected && <button onClick={() => { setClientDraft(selectedClient); setShowClientForm(true); }} className="rounded-lg bg-[#D4AF37] px-4 py-2 text-sm font-bold text-black">Editar seguimiento</button>}{canEditSelected && selectedClient.recordType === 'Cliente' && <button onClick={() => syncCalendar(selectedClient)} disabled={Boolean(syncingClientId)} className="inline-flex items-center gap-2 rounded-lg border border-sky-300/30 bg-sky-400/10 px-4 py-2 text-sm text-sky-100 disabled:border-white/10 disabled:bg-transparent disabled:text-gray-600">{syncingClientId === selectedClient.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}{syncingClientId === selectedClient.id ? 'Rectificando…' : 'Actualizar Calendar'}</button>}</div>
               </div>
               {showInlinePayment && <div className="border-b border-white/10 p-5"><div className="mb-3 flex items-center justify-between"><h3 className="font-semibold text-white">Registrar siguiente pago de {selectedClient.name}</h3><button onClick={() => setShowInlinePayment(false)} className="text-xs text-gray-400">Cerrar</button></div><PaymentForm draft={paymentDraft} receipt={paymentReceipt} clients={snapshot.clients} contracts={snapshot.contracts} onChange={setPaymentDraft} onReceipt={setPaymentReceipt} onSubmit={savePayment} onCancel={() => { setPaymentDraft(blankPayment()); setPaymentReceipt(null); setShowInlinePayment(false); }} busy={busy} /></div>}
-              {session.role !== 'SUPER_ADMIN' && selectedClient.recordType === 'Cliente' ? <ProviderClientView client={selectedClient} snapshot={snapshot} /> : showClientForm && canEditSelected ? <ClientForm draft={clientDraft} onChange={setClientDraft} onSubmit={saveClient} onCancel={() => setShowClientForm(false)} busy={busy} /> : canEditSelected ? <><ClientDetails client={selectedClient} paid={paidForClient(selectedClient)} followUps={selectedFollowUps} followUpDraft={followUpDraft} onFollowUpChange={setFollowUpDraft} onFollowUpSubmit={saveFollowUp} onInlineSave={saveInlineClient} busy={busy} />{selectedClient.recordType === 'Cliente' && <ClientOperationsPanel client={selectedClient} snapshot={snapshot} onSnapshotChange={setSnapshot} onClientPatch={saveInlineClient} notify={notify} />}</> : <ProviderClientView client={selectedClient} snapshot={snapshot} />}
+              {session.role !== 'SUPER_ADMIN' && selectedClient.recordType === 'Cliente' ? <ProviderClientView client={selectedClient} snapshot={snapshot} /> : showClientForm && canEditSelected ? <ClientForm draft={clientDraft} onChange={setClientDraft} onSubmit={saveClient} onCancel={() => setShowClientForm(false)} busy={busy} /> : canEditSelected ? <><ClientDetails client={selectedClient} paid={paidForClient(selectedClient)} followUps={selectedFollowUps} followUpDraft={followUpDraft} onFollowUpChange={setFollowUpDraft} onFollowUpSubmit={saveFollowUp} onInlineSave={saveInlineClient} busy={busy} />{selectedClient.recordType === 'Cliente' && <ClientOperationsPanel client={selectedClient} snapshot={snapshot} onSnapshotChange={setSnapshot} onClientPatch={saveInlineClient} notify={notify} focusedNotificationId={focusedNotificationId} canAssignTeam={session.role === 'SUPER_ADMIN'} />}</> : <ProviderClientView client={selectedClient} snapshot={snapshot} />}
             </div>
           ) : <>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
