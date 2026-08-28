@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { CatalogCategory, GalleryImage, GalleryCategory, RoutePath } from '../types';
 import { Maximize2, X, ChevronLeft, ChevronRight, Camera } from 'lucide-react';
 import { SafeImage } from './SafeImage';
-import { isBuiltInCategoryRoute } from '../utils/catalogCategories';
 
 interface GallerySectionProps {
   currentRoute: RoutePath;
@@ -51,7 +50,7 @@ export const GallerySection: React.FC<GallerySectionProps> = ({
     setActiveCategory(cat);
     setVisibleCount(INITIAL_VISIBLE_PHOTOS);
     setSelectedImageIndex(null);
-    if (cat !== 'all' && cat !== 'previa' && isBuiltInCategoryRoute(cat) && onNavigateRoute) {
+    if (cat !== 'all' && cat !== 'previa' && onNavigateRoute) {
       onNavigateRoute(cat);
     }
   };

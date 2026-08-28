@@ -1,8 +1,24 @@
-import { RoutePath, SeoPageSetting, SeoSettings } from '../types';
+import {
+  BuiltInRoutePath,
+  CatalogCategory,
+  RoutePath,
+  SeoPageSetting,
+  SeoSettings,
+} from '../types';
+import { slugifyCatalogValue } from './catalogCategories';
 
 const SITE_URL = 'https://www.xaviph.com';
 
-const SEO_METADATA: Record<RoutePath, { path: string; title: string; description: string; service: string }> = {
+type RouteMetadata = {
+  path: string;
+  title: string;
+  description: string;
+  service: string;
+  indexed: boolean;
+  imageUrl?: string;
+};
+
+const SEO_METADATA: Record<BuiltInRoutePath, Omit<RouteMetadata, 'indexed' | 'imageUrl'>> = {
   inicio: {
     path: '/',
     title: 'Fotografía y Video en CDMX | XPH',
@@ -41,25 +57,71 @@ const SEO_METADATA: Record<RoutePath, { path: string; title: string; description
   },
 };
 
-export const DEFAULT_SEO_SETTINGS: Record<RoutePath, SeoPageSetting> = Object.fromEntries(
+const isBuiltInRoute = (route: string): route is BuiltInRoutePath => route in SEO_METADATA;
+
+const categoryDescription = (category: CatalogCategory) => {
+  const configured = String(category.description || '').trim();
+  if (configured) return configured;
+  return `Conoce los paquetes de ${category.name} de XPH en CDMX, Estado de México y zona centro. Compara opciones y solicita disponibilidad.`;
+};
+
+const categoryMetadata = (category: CatalogCategory): RouteMetadata => ({
+  path: `/${slugifyCatalogValue(category.slug || category.name || category.id)}`,
+  title: `${category.name} en CDMX | XPH Fotografía & Video`.slice(0, 120),
+  description: categoryDescription(category).slice(0, 320),
+  service: category.name,
+  indexed: true,
+  imageUrl: category.imageUrl || undefined,
+});
+
+const fallbackMetadata = (route: string): RouteMetadata => {
+  const label = route.replace(/[-_]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+  return {
+    path: `/${slugifyCatalogValue(route)}`,
+    title: `${label} | XPH Fotografía & Video`.slice(0, 120),
+    description: `Conoce los servicios y paquetes de ${label} disponibles con XPH Fotografía & Video.`.slice(0, 320),
+    service: label,
+    indexed: false,
+  };
+};
+
+export const DEFAULT_SEO_SETTINGS: Record<BuiltInRoutePath, SeoPageSetting> = Object.fromEntries(
   Object.entries(SEO_METADATA).map(([route, metadata]) => [route, {
     title: metadata.title,
     description: metadata.description,
     indexed: true,
   }]),
-) as Record<RoutePath, SeoPageSetting>;
+) as Record<BuiltInRoutePath, SeoPageSetting>;
 
-export const normalizeSeoSettings = (value?: SeoSettings | null): Record<RoutePath, SeoPageSetting> =>
-  (Object.keys(SEO_METADATA) as RoutePath[]).reduce((acc, route) => {
-    const candidate = value?.[route];
-    const fallback = DEFAULT_SEO_SETTINGS[route];
-    acc[route] = {
-      title: String(candidate?.title || fallback.title).trim().slice(0, 120) || fallback.title,
-      description: String(candidate?.description || fallback.description).trim().slice(0, 320) || fallback.description,
-      indexed: candidate?.indexed !== false,
-    };
-    return acc;
-  }, {} as Record<RoutePath, SeoPageSetting>);
+const normalizeSetting = (candidate: SeoPageSetting | undefined, fallback: SeoPageSetting): SeoPageSetting => ({
+  title: String(candidate?.title || fallback.title).trim().slice(0, 120) || fallback.title,
+  description: String(candidate?.description || fallback.description).trim().slice(0, 320) || fallback.description,
+  indexed: candidate?.indexed !== false,
+});
+
+export const normalizeSeoSettings = (
+  value?: SeoSettings | null,
+  categories: CatalogCategory[] = [],
+): Record<string, SeoPageSetting> => {
+  const normalized: Record<string, SeoPageSetting> = {};
+
+  Object.entries(value || {}).forEach(([route, candidate]) => {
+    if (!candidate || typeof candidate !== 'object') return;
+    const fallback = fallbackMetadata(route);
+    normalized[route] = normalizeSetting(candidate, fallback);
+  });
+
+  (Object.keys(SEO_METADATA) as BuiltInRoutePath[]).forEach((route) => {
+    normalized[route] = normalizeSetting(value?.[route], DEFAULT_SEO_SETTINGS[route]);
+  });
+
+  categories.forEach((category) => {
+    const fallback = categoryMetadata(category);
+    normalized[category.id] = normalizeSetting(value?.[category.id] || value?.[category.slug], fallback);
+  });
+
+  return normalized;
+};
 
 const setMeta = (selector: string, attribute: 'name' | 'property', key: string, content: string) => {
   let element = document.head.querySelector<HTMLMetaElement>(selector);
@@ -71,12 +133,39 @@ const setMeta = (selector: string, attribute: 'name' | 'property', key: string, 
   element.setAttribute('content', content);
 };
 
-export const routePath = (route: RoutePath) => SEO_METADATA[route].path;
+export const routePath = (route: RoutePath, categories: CatalogCategory[] = []) => {
+  if (route === 'inicio') return '/';
+  const category = categories.find((item) => item.id === route || item.slug === route);
+  if (category) return `/${slugifyCatalogValue(category.slug || category.name || category.id)}`;
+  if (isBuiltInRoute(route)) return SEO_METADATA[route].path;
+  return `/${slugifyCatalogValue(route)}`;
+};
 
-export const updateRouteMetadata = (route: RoutePath, settings?: SeoSettings | null) => {
-  const defaults = SEO_METADATA[route];
-  const configured = normalizeSeoSettings(settings)[route];
-  const metadata = { ...defaults, ...configured };
+export const getRouteMetadata = (
+  route: RoutePath,
+  settings?: SeoSettings | null,
+  category?: CatalogCategory,
+): RouteMetadata => {
+  const defaults: RouteMetadata = isBuiltInRoute(route)
+    ? { ...SEO_METADATA[route], indexed: true }
+    : category
+      ? categoryMetadata(category)
+      : fallbackMetadata(route);
+  const configured = settings?.[route] || (category ? settings?.[category.slug] : undefined);
+  return {
+    ...defaults,
+    title: String(configured?.title || defaults.title).trim().slice(0, 120) || defaults.title,
+    description: String(configured?.description || defaults.description).trim().slice(0, 320) || defaults.description,
+    indexed: configured?.indexed !== false && defaults.indexed,
+  };
+};
+
+export const updateRouteMetadata = (
+  route: RoutePath,
+  settings?: SeoSettings | null,
+  category?: CatalogCategory,
+) => {
+  const metadata = getRouteMetadata(route, settings, category);
   const canonicalUrl = `${SITE_URL}${metadata.path}`;
   document.title = metadata.title;
   document.documentElement.lang = 'es-MX';
@@ -93,8 +182,13 @@ export const updateRouteMetadata = (route: RoutePath, settings?: SeoSettings | n
   setMeta('meta[property="og:title"]', 'property', 'og:title', metadata.title);
   setMeta('meta[property="og:description"]', 'property', 'og:description', metadata.description);
   setMeta('meta[property="og:url"]', 'property', 'og:url', canonicalUrl);
+  setMeta('meta[property="og:type"]', 'property', 'og:type', 'website');
   setMeta('meta[name="twitter:title"]', 'name', 'twitter:title', metadata.title);
   setMeta('meta[name="twitter:description"]', 'name', 'twitter:description', metadata.description);
+  if (metadata.imageUrl) {
+    setMeta('meta[property="og:image"]', 'property', 'og:image', metadata.imageUrl);
+    setMeta('meta[name="twitter:image"]', 'name', 'twitter:image', metadata.imageUrl);
+  }
 
   let canonical = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]');
   if (!canonical) {
@@ -117,6 +211,7 @@ export const updateRouteMetadata = (route: RoutePath, settings?: SeoSettings | n
     name: metadata.service,
     description: metadata.description,
     url: canonicalUrl,
+    image: metadata.imageUrl || undefined,
     areaServed: ['Ciudad de México', 'Estado de México', 'Morelos', 'Puebla', 'Querétaro', 'Tlaxcala', 'Pachuca'],
     provider: {
       '@type': 'ProfessionalService',

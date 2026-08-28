@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { Menu, X, Sparkles, ChevronDown, MapPin, CalendarCheck, Shield } from 'lucide-react';
-import { RoutePath } from '../types';
+import { BuiltInRoutePath, CatalogCategory, RoutePath } from '../types';
+import { DEFAULT_CATALOG_CATEGORIES } from '../utils/catalogCategories';
 import { routePath } from '../utils/seo';
 
 interface NavbarProps {
   currentRoute: RoutePath;
+  categories?: CatalogCategory[];
   onNavigateRoute: (route: RoutePath) => void;
   onOpenClientPortal?: () => void;
   onOpenAdminPortal?: () => void;
@@ -14,12 +16,13 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({
   currentRoute,
+  categories = DEFAULT_CATALOG_CATEGORIES,
   onNavigateRoute,
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [routeDropdownOpen, setRouteDropdownOpen] = useState(false);
 
-  const routeLabels: Record<RoutePath, { title: string; subtitle: string; icon: string }> = {
+  const builtInLabels: Record<BuiltInRoutePath, { title: string; subtitle: string; icon: string }> = {
     inicio: { title: 'Inicio', subtitle: 'Servicios y referencias visuales', icon: '✨' },
     bodas: { title: 'Bodas', subtitle: 'Fotografía y video para tu historia', icon: '💍' },
     'xv-anos': { title: 'XV Años', subtitle: 'Cobertura y sesión previa', icon: '👑' },
@@ -28,8 +31,13 @@ export const Navbar: React.FC<NavbarProps> = ({
     empresarial: { title: 'Empresarial & Branding', subtitle: 'Imagen para marcas y equipos', icon: '💼' },
   };
 
-  const selectableRoutes = (Object.keys(routeLabels) as RoutePath[]).filter((route) => route !== 'inicio');
-  const activeRouteLabel = routeLabels[currentRoute] || routeLabels.bodas;
+  const selectableCategories = categories.filter((category) => category.active);
+  const activeCategory = selectableCategories.find((category) => category.id === currentRoute);
+  const activeRouteLabel = builtInLabels[currentRoute as BuiltInRoutePath] || {
+    title: activeCategory?.name || 'Especialidad',
+    subtitle: activeCategory?.description || 'Paquetes y servicios XPH',
+    icon: '✦',
+  };
 
   const scrollToSection = (id: string) => {
     setMobileMenuOpen(false);
@@ -82,20 +90,24 @@ export const Navbar: React.FC<NavbarProps> = ({
             {routeDropdownOpen && (
               <div className="absolute top-full left-0 mt-2 w-72 rounded-2xl bg-[#161C28] border border-[#D4AF37]/30 shadow-2xl p-2 z-50 backdrop-blur-xl">
                 <div className="px-3 py-1.5 text-[11px] font-bold tracking-wider uppercase text-gray-400 font-mono">Especialidades</div>
-                {selectableRoutes.map((route) => (
+                {selectableCategories.map((category) => {
+                  const route = category.id;
+                  const label = builtInLabels[route as BuiltInRoutePath] || { title: category.name, subtitle: category.description || 'Paquetes y servicios XPH', icon: '✦' };
+                  return (
                   <a
                     key={route}
-                    href={routePath(route)}
+                    href={routePath(route, categories)}
                     onClick={(event) => { event.preventDefault(); handleSelectRoute(route); }}
                     className={`w-full text-left p-2.5 rounded-xl transition-all flex items-start gap-3 cursor-pointer ${currentRoute === route ? 'bg-[#D4AF37]/15 border border-[#D4AF37]/30 text-[#D4AF37]' : 'hover:bg-white/5 text-gray-200 hover:text-white'}`}
                   >
-                    <span className="text-xl mt-0.5">{routeLabels[route].icon}</span>
+                    <span className="text-xl mt-0.5">{label.icon}</span>
                     <div>
-                      <div className="font-semibold text-sm">{routeLabels[route].title}</div>
-                      <div className="text-xs text-gray-400">{routeLabels[route].subtitle}</div>
+                      <div className="font-semibold text-sm">{label.title}</div>
+                      <div className="text-xs text-gray-400 line-clamp-2">{label.subtitle}</div>
                     </div>
                   </a>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -118,12 +130,14 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="md:hidden bg-[#0B0F17] border-b border-white/10 px-4 pt-3 pb-6 space-y-4">
           <div className="text-[10px] font-bold tracking-wider uppercase text-gray-400 font-mono">Especialidades</div>
           <div className="grid grid-cols-1 gap-2">
-            {selectableRoutes.map((route) => (
-              <a key={route} href={routePath(route)} onClick={(event) => { event.preventDefault(); handleSelectRoute(route); }} className={`p-2.5 rounded-xl text-left flex items-center gap-3 cursor-pointer ${currentRoute === route ? 'bg-[#D4AF37]/20 border border-[#D4AF37]/40 text-[#D4AF37] font-bold' : 'bg-white/5 text-gray-300'}`}>
-                <span>{routeLabels[route].icon}</span>
-                <span className="text-sm">{routeLabels[route].title}</span>
-              </a>
-            ))}
+            {selectableCategories.map((category) => {
+              const route = category.id;
+              const label = builtInLabels[route as BuiltInRoutePath] || { title: category.name, subtitle: category.description || 'Paquetes y servicios XPH', icon: '✦' };
+              return <a key={route} href={routePath(route, categories)} onClick={(event) => { event.preventDefault(); handleSelectRoute(route); }} className={`p-2.5 rounded-xl text-left flex items-center gap-3 cursor-pointer ${currentRoute === route ? 'bg-[#D4AF37]/20 border border-[#D4AF37]/40 text-[#D4AF37] font-bold' : 'bg-white/5 text-gray-300'}`}>
+                <span>{label.icon}</span>
+                <span className="text-sm">{label.title}</span>
+              </a>;
+            })}
           </div>
           <div className="pt-2 border-t border-white/10 flex flex-col gap-2 font-medium text-gray-300">
             <button onClick={() => scrollToSection('galerias')} className="text-left py-2 border-b border-white/5 hover:text-[#D4AF37]">Galería</button>

@@ -1,4 +1,4 @@
-import { FooterContact, FooterQuickLink, FooterServiceLink, FooterSocialLink, RoutePath } from './types';
+import { FooterContact, FooterQuickLink, FooterServiceLink, FooterSocialLink } from './types';
 
 export type NormalizedFooterContact = FooterContact & {
   brandTitle: string;
@@ -45,7 +45,7 @@ export const DEFAULT_FOOTER_CONTACT: NormalizedFooterContact = {
   ],
 };
 
-const ROUTES: RoutePath[] = ['inicio', 'bodas', 'xv-anos', 'bautizos', 'retratos', 'empresarial'];
+const isValidPublicRoute = (value: unknown) => typeof value === 'string' && /^[a-z0-9][a-z0-9_-]*$/.test(value);
 
 const textValue = (value: unknown, fallback: string) => typeof value === 'string' ? value : fallback;
 
@@ -53,7 +53,7 @@ export const normalizeFooterContact = (value?: Partial<FooterContact> | null): N
   const input = value || {};
   const services = Array.isArray(input.services)
     ? input.services
-      .filter((item): item is FooterServiceLink => Boolean(item?.label && ROUTES.includes(item.route)))
+      .filter((item): item is FooterServiceLink => Boolean(item?.label && isValidPublicRoute(item.route)))
       .map((item, index) => ({ ...item, id: item.id || `service-${index}` }))
     : DEFAULT_FOOTER_CONTACT.services;
   const quickLinks = Array.isArray(input.quickLinks)

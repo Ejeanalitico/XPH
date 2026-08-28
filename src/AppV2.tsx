@@ -19,7 +19,12 @@ import {
 } from './types';
 import { PACKAGES_BY_EVENT, ADDONS_CATALOG } from './data/packages';
 import { resolvePublishedAddons, resolvePublishedPackages } from './utils/catalogMerge';
-import { DEFAULT_CATALOG_CATEGORIES, resolvePublishedCategories } from './utils/catalogCategories';
+import {
+  categoryForRoute,
+  categoryRouteFromSlug,
+  DEFAULT_CATALOG_CATEGORIES,
+  resolvePublishedCategories,
+} from './utils/catalogCategories';
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { GallerySection } from './components/GallerySection';
@@ -44,13 +49,17 @@ import { DEFAULT_FOOTER_CONTACT, normalizeFooterContact } from './footerConfig';
 import { normalizeSeoSettings, routePath, updateRouteMetadata } from './utils/seo';
 
 const DEFAULT_WHATSAPP = '5615567863';
-const VALID_ROUTES: RoutePath[] = ['inicio', 'bodas', 'xv-anos', 'bautizos', 'retratos', 'empresarial'];
+const BUILT_IN_ROUTES: RoutePath[] = ['inicio', 'bodas', 'xv-anos', 'bautizos', 'retratos', 'empresarial'];
 
-const routeFromLocation = (): RoutePath => {
+const routeFromLocation = (categories: CatalogCategory[] = DEFAULT_CATALOG_CATEGORIES): RoutePath => {
   const hash = window.location.hash.replace('#/', '').replace('#', '');
-  if (VALID_ROUTES.includes(hash as RoutePath)) return hash as RoutePath;
+  const hashCategory = categoryRouteFromSlug(hash, categories);
+  if (hashCategory) return hashCategory;
+  if (BUILT_IN_ROUTES.includes(hash as RoutePath)) return hash as RoutePath;
   const pathname = window.location.pathname.replace(/^\/+|\/+$/g, '');
-  return VALID_ROUTES.includes(pathname as RoutePath) ? pathname as RoutePath : 'inicio';
+  const categoryRoute = categoryRouteFromSlug(pathname, categories);
+  if (categoryRoute) return categoryRoute;
+  return BUILT_IN_ROUTES.includes(pathname as RoutePath) ? pathname as RoutePath : 'inicio';
 };
 
 const defaultContact: FooterContact = DEFAULT_FOOTER_CONTACT;
@@ -81,7 +90,7 @@ const sanitizePublicContact = (cloudContact?: Partial<FooterContact>): FooterCon
 
 export default function AppV2() {
   const [initialMedia] = useState(readPublicMediaCache);
-  const [currentRoute, setCurrentRoute] = useState<RoutePath>(routeFromLocation);
+  const [currentRoute, setCurrentRoute] = useState<RoutePath>(() => routeFromLocation());
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>(() => initialMedia?.galleryImages || []);
   const [heroCovers, setHeroCovers] = useState<Partial<Record<RoutePath, string>>>(() => initialMedia?.heroCovers || {});
   const [heroCoverSettings, setHeroCoverSettings] = useState<Partial<Record<RoutePath, HeroCoverSetting>>>(() => initialMedia?.heroCoverSettings || {});
@@ -114,8 +123,8 @@ export default function AppV2() {
   }, []);
 
   useEffect(() => {
-    updateRouteMetadata(currentRoute, seoSettings);
-  }, [currentRoute, seoSettings]);
+    updateRouteMetadata(currentRoute, seoSettings, categoryForRoute(currentRoute, catalogCategories));
+  }, [currentRoute, seoSettings, catalogCategories]);
 
   useEffect(() => {
     let cancelled = false;
@@ -147,11 +156,24 @@ export default function AppV2() {
       else setPromotionPopup(null);
 
       const publishedPackages = resolvePublishedPackages(data);
+      const publishedCategories = resolvePublishedCategories(data, publishedPackages);
+      const requestedRoute = routeFromLocation(publishedCategories);
       setPackagesState(publishedPackages);
-      setCatalogCategories(resolvePublishedCategories(data, publishedPackages));
+      setCatalogCategories(publishedCategories);
+      setCurrentRoute(requestedRoute);
+      if (requestedRoute !== 'inicio') {
+        setBookingState((prev) => ({
+          ...prev,
+          eventType: requestedRoute,
+          selectedPackageId: '',
+          selectedAddons: [],
+          extraHours: 0,
+          total: 0,
+        }));
+      }
       setAddonsState(resolvePublishedAddons(data));
       if (data.footerContact) setFooterContact(sanitizePublicContact(data.footerContact));
-      setSeoSettings(normalizeSeoSettings(data.seoSettings));
+      setSeoSettings(normalizeSeoSettings(data.seoSettings, publishedCategories));
     });
 
     return () => {
@@ -161,9 +183,9 @@ export default function AppV2() {
 
   useEffect(() => {
     const handleLocationChange = () => {
-      const route = routeFromLocation();
+      const route = routeFromLocation(catalogCategories);
       setCurrentRoute(route);
-      if (window.location.hash) window.history.replaceState({}, '', routePath(route));
+      if (window.location.hash) window.history.replaceState({}, '', routePath(route, catalogCategories));
       if (route !== 'inicio') {
         setBookingState((prev) => ({
           ...prev,
@@ -182,7 +204,7 @@ export default function AppV2() {
       window.removeEventListener('hashchange', handleLocationChange);
       window.removeEventListener('popstate', handleLocationChange);
     };
-  }, []);
+  }, [catalogCategories]);
 
   const showToast = (title: string, description?: string, type: 'success' | 'info' | 'warning' = 'info') => {
     const toast: ToastMessage = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, title, description, type };
@@ -193,7 +215,7 @@ export default function AppV2() {
   const handleNavigateRoute = (route: RoutePath, preserveScroll = false) => {
     const previousScrollY = window.scrollY;
     setCurrentRoute(route);
-    window.history.pushState({}, '', routePath(route));
+    window.history.pushState({}, '', routePath(route, catalogCategories));
 
     if (route !== 'inicio') {
       setBookingState((prev) => ({
@@ -221,10 +243,10 @@ export default function AppV2() {
       <ToastContainer toasts={toasts} onDismiss={(id) => setToasts((prev) => prev.filter((toast) => toast.id !== id))} />
       <PromotionPopup config={promotionPopup} />
 
-      <Navbar currentRoute={currentRoute} onNavigateRoute={(route) => handleNavigateRoute(route, false)} />
-      <Hero currentRoute={currentRoute} onQuoteClick={() => handleScrollTo('cotizador')} onGalleryClick={() => handleScrollTo('galerias')} onCitaClick={() => handleScrollTo('solicitud')} heroCovers={heroCovers} heroCoverSettings={heroCoverSettings} mediaReady={mediaReady} />
+      <Navbar currentRoute={currentRoute} categories={catalogCategories} onNavigateRoute={(route) => handleNavigateRoute(route, false)} />
+      <Hero currentRoute={currentRoute} categories={catalogCategories} onQuoteClick={() => handleScrollTo('cotizador')} onGalleryClick={() => handleScrollTo('galerias')} onCitaClick={() => handleScrollTo('solicitud')} heroCovers={heroCovers} heroCoverSettings={heroCoverSettings} mediaReady={mediaReady} />
       <GallerySection currentRoute={currentRoute} onNavigateRoute={(route) => handleNavigateRoute(route, true)} images={galleryImages} categories={catalogCategories} onShowToast={showToast} loading={!mediaReady} />
-      <ServiceSeoSection currentRoute={currentRoute} onNavigateRoute={(route) => handleNavigateRoute(route, false)} onQuoteClick={() => handleScrollTo('cotizador')} />
+      <ServiceSeoSection currentRoute={currentRoute} categories={catalogCategories} packages={packagesState[currentRoute] || []} onNavigateRoute={(route) => handleNavigateRoute(route, false)} onQuoteClick={() => handleScrollTo('cotizador')} />
 
       <PricingQuoteEngineV2
         currentRoute={currentRoute}
@@ -239,7 +261,7 @@ export default function AppV2() {
 
       <InPersonConsultation bookingState={bookingState} onNavigateToQuote={() => handleScrollTo('cotizador')} onShowToast={showToast} />
       <BookingWizardV2 bookingState={bookingState} onUpdateBookingState={setBookingState} onShowToast={showToast} packages={packagesState} addons={addonsState} categories={catalogCategories} />
-      <Footer onNavigateRoute={(route) => handleNavigateRoute(route, false)} footerContact={footerContact} />
+      <Footer onNavigateRoute={(route) => handleNavigateRoute(route, false)} footerContact={footerContact} categories={catalogCategories} />
 
       <WhatsAppFloatingButtonV2 bookingState={bookingState} phoneNumber={`52${whatsappNumber}`} packages={packagesState} addons={addonsState} />
       <StickyQuoteBar bookingState={bookingState} packages={packagesState} addons={addonsState} onProceed={() => handleScrollTo('solicitud')} />
