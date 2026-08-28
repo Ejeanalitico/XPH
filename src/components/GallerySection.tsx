@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { GalleryImage, GalleryCategory, RoutePath } from '../types';
+import { CatalogCategory, GalleryImage, GalleryCategory, RoutePath } from '../types';
 import { Maximize2, X, ChevronLeft, ChevronRight, Camera } from 'lucide-react';
 import { SafeImage } from './SafeImage';
+import { isBuiltInCategoryRoute } from '../utils/catalogCategories';
 
 interface GallerySectionProps {
   currentRoute: RoutePath;
   onNavigateRoute?: (route: RoutePath) => void;
   images: GalleryImage[];
+  categories?: CatalogCategory[];
   favorites?: string[];
   onToggleFavorite?: (imageId: string) => void;
   onShowToast: (title: string, description?: string) => void;
@@ -28,6 +30,7 @@ export const GallerySection: React.FC<GallerySectionProps> = ({
   currentRoute,
   onNavigateRoute,
   images,
+  categories = [],
   loading = false,
 }) => {
   const [activeCategory, setActiveCategory] = useState<GalleryCategory>('all');
@@ -48,8 +51,8 @@ export const GallerySection: React.FC<GallerySectionProps> = ({
     setActiveCategory(cat);
     setVisibleCount(INITIAL_VISIBLE_PHOTOS);
     setSelectedImageIndex(null);
-    if (cat !== 'all' && cat !== 'previa' && onNavigateRoute) {
-      onNavigateRoute(cat as RoutePath);
+    if (cat !== 'all' && cat !== 'previa' && isBuiltInCategoryRoute(cat) && onNavigateRoute) {
+      onNavigateRoute(cat);
     }
   };
 
@@ -99,13 +102,9 @@ export const GallerySection: React.FC<GallerySectionProps> = ({
           <div className="flex overflow-x-auto no-scrollbar max-w-full gap-1.5 sm:gap-2.5 p-1 rounded-2xl bg-[#161C28]/80 border border-white/10 shadow-lg">
             {[
               { id: 'all', label: 'Todas las Fotos' },
-              { id: 'bodas', label: 'Bodas Editorial' },
-              { id: 'xv-anos', label: 'XV Años' },
-              { id: 'bautizos', label: 'Bautizos & Familia' },
-              { id: 'retratos', label: 'Retratos & Moda' },
-              { id: 'empresarial', label: 'Empresarial & Branding' },
-              { id: 'previa', label: 'Sesiones Previas' },
-            ].map((tab) => {
+              ...categories.filter((category) => category.active).map((category) => ({ id: category.id, label: category.name })),
+              ...(images.some((image) => image.category === 'previa') ? [{ id: 'previa', label: 'Sesiones Previas' }] : []),
+            ].filter((tab, index, tabs) => tabs.findIndex((item) => item.id === tab.id) === index).map((tab) => {
               const isActive = activeCategory === tab.id;
               return (
                 <button

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { AlertCircle, ArrowLeft, ArrowRight, Calendar as CalendarIcon, CheckCircle2, FileText, Loader2, MessageCircle } from 'lucide-react';
-import { BookingState, PackageOption, AddOnOption, EventType } from '../types';
+import { BookingState, PackageOption, AddOnOption, CatalogCategory, EventType } from '../types';
 import { PACKAGES_BY_EVENT, ADDONS_CATALOG } from '../data/packages';
+import { categoryLabel, DEFAULT_CATALOG_CATEGORIES } from '../utils/catalogCategories';
 import { loadSiteDataFromCloud } from '../utils/googleDrive';
 import { submitPublicLead } from '../utils/adminApi';
 
@@ -11,15 +12,8 @@ interface Props {
   onShowToast: (title: string, description?: string, type?: 'info' | 'success' | 'warning') => void;
   packages?: Record<EventType, PackageOption[]>;
   addons?: AddOnOption[];
+  categories?: CatalogCategory[];
 }
-
-const EVENT_LABELS: Record<EventType, string> = {
-  bodas: 'BODAS',
-  'xv-anos': 'XV AÑOS',
-  bautizos: 'BAUTIZOS & FAMILIA',
-  retratos: 'RETRATOS & EDITORIAL',
-  empresarial: 'EMPRESARIAL & BRANDING',
-};
 
 export const BookingWizardV2: React.FC<Props> = ({
   bookingState,
@@ -27,6 +21,7 @@ export const BookingWizardV2: React.FC<Props> = ({
   onShowToast,
   packages = PACKAGES_BY_EVENT,
   addons = ADDONS_CATALOG,
+  categories = DEFAULT_CATALOG_CATEGORIES,
 }) => {
   const [currentStep, setCurrentStep] = useState<1 | 2>(1);
   const [sending, setSending] = useState(false);
@@ -104,7 +99,7 @@ export const BookingWizardV2: React.FC<Props> = ({
         ? activeAddonNames.map((addon) => `• ${addon}`).join('\n')
         : '• Ninguno';
 
-      const message = `Hola XPH Fotografía & Video. Quisiera solicitar disponibilidad y cotización.\n\n📸 EVENTO\n${EVENT_LABELS[bookingState.eventType]}\n\n📦 PAQUETE\n${selectedPackage.name}\nPrecio base: $${selectedPackage.price.toLocaleString('es-MX')} MXN\n\n✅ INCLUYE\n${included}\n\n✨ COMPLEMENTOS\n${addonsText}\n\n💰 RESUMEN\nTotal estimado: $${total.toLocaleString('es-MX')} MXN\n\n🗓️ Fecha tentativa: ${bookingState.date}\n📍 Lugar: ${bookingState.eventCity || 'Por definir'}\n👤 Nombre: ${bookingState.clientName}\n📱 WhatsApp: ${bookingState.clientPhone}\n✉️ Correo: ${bookingState.clientEmail}${bookingState.notes ? `\n📝 Notas: ${bookingState.notes}` : ''}\n\nQuedo pendiente de confirmación de disponibilidad y precio final.`;
+      const message = `Hola XPH Fotografía & Video. Quisiera solicitar disponibilidad y cotización.\n\n📸 EVENTO / SERVICIO\n${categoryLabel(bookingState.eventType, categories).toUpperCase()}\n\n📦 PAQUETE\n${selectedPackage.name}\nPrecio base: $${selectedPackage.price.toLocaleString('es-MX')} MXN\n\n✅ INCLUYE\n${included}\n\n✨ COMPLEMENTOS\n${addonsText}\n\n💰 RESUMEN\nTotal estimado: $${total.toLocaleString('es-MX')} MXN\n\n🗓️ Fecha tentativa: ${bookingState.date}\n📍 Lugar: ${bookingState.eventCity || 'Por definir'}\n👤 Nombre: ${bookingState.clientName}\n📱 WhatsApp: ${bookingState.clientPhone}\n✉️ Correo: ${bookingState.clientEmail}${bookingState.notes ? `\n📝 Notas: ${bookingState.notes}` : ''}\n\nQuedo pendiente de confirmación de disponibilidad y precio final.`;
 
       const url = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
       if (whatsappWindow) whatsappWindow.location.href = url;

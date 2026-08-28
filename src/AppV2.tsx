@@ -7,6 +7,7 @@ import React, { useEffect, useState } from 'react';
 import {
   AddOnOption,
   BookingState,
+  CatalogCategory,
   EventType,
   FooterContact,
   GalleryImage,
@@ -18,6 +19,7 @@ import {
 } from './types';
 import { PACKAGES_BY_EVENT, ADDONS_CATALOG } from './data/packages';
 import { resolvePublishedAddons, resolvePublishedPackages } from './utils/catalogMerge';
+import { DEFAULT_CATALOG_CATEGORIES, resolvePublishedCategories } from './utils/catalogCategories';
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { GallerySection } from './components/GallerySection';
@@ -86,6 +88,7 @@ export default function AppV2() {
   const [mediaReady, setMediaReady] = useState(Boolean(initialMedia));
   const [footerContact, setFooterContact] = useState<FooterContact>(defaultContact);
   const [packagesState, setPackagesState] = useState<Record<EventType, PackageOption[]>>(PACKAGES_BY_EVENT);
+  const [catalogCategories, setCatalogCategories] = useState<CatalogCategory[]>(DEFAULT_CATALOG_CATEGORIES);
   const [addonsState, setAddonsState] = useState<AddOnOption[]>(ADDONS_CATALOG);
   const [promotionPopup, setPromotionPopup] = useState<PromotionPopupConfig | null>(null);
   const [seoSettings, setSeoSettings] = useState<SeoSettings>({});
@@ -143,7 +146,9 @@ export default function AppV2() {
       if (data.promotionPopup && typeof data.promotionPopup === 'object') setPromotionPopup(data.promotionPopup as PromotionPopupConfig);
       else setPromotionPopup(null);
 
-      setPackagesState(resolvePublishedPackages(data));
+      const publishedPackages = resolvePublishedPackages(data);
+      setPackagesState(publishedPackages);
+      setCatalogCategories(resolvePublishedCategories(data, publishedPackages));
       setAddonsState(resolvePublishedAddons(data));
       if (data.footerContact) setFooterContact(sanitizePublicContact(data.footerContact));
       setSeoSettings(normalizeSeoSettings(data.seoSettings));
@@ -218,7 +223,7 @@ export default function AppV2() {
 
       <Navbar currentRoute={currentRoute} onNavigateRoute={(route) => handleNavigateRoute(route, false)} />
       <Hero currentRoute={currentRoute} onQuoteClick={() => handleScrollTo('cotizador')} onGalleryClick={() => handleScrollTo('galerias')} onCitaClick={() => handleScrollTo('solicitud')} heroCovers={heroCovers} heroCoverSettings={heroCoverSettings} mediaReady={mediaReady} />
-      <GallerySection currentRoute={currentRoute} onNavigateRoute={(route) => handleNavigateRoute(route, true)} images={galleryImages} onShowToast={showToast} loading={!mediaReady} />
+      <GallerySection currentRoute={currentRoute} onNavigateRoute={(route) => handleNavigateRoute(route, true)} images={galleryImages} categories={catalogCategories} onShowToast={showToast} loading={!mediaReady} />
       <ServiceSeoSection currentRoute={currentRoute} onNavigateRoute={(route) => handleNavigateRoute(route, false)} onQuoteClick={() => handleScrollTo('cotizador')} />
 
       <PricingQuoteEngineV2
@@ -229,10 +234,11 @@ export default function AppV2() {
         onProceedToBooking={() => handleScrollTo('solicitud')}
         packages={packagesState}
         addons={addonsState}
+        categories={catalogCategories}
       />
 
       <InPersonConsultation bookingState={bookingState} onNavigateToQuote={() => handleScrollTo('cotizador')} onShowToast={showToast} />
-      <BookingWizardV2 bookingState={bookingState} onUpdateBookingState={setBookingState} onShowToast={showToast} packages={packagesState} addons={addonsState} />
+      <BookingWizardV2 bookingState={bookingState} onUpdateBookingState={setBookingState} onShowToast={showToast} packages={packagesState} addons={addonsState} categories={catalogCategories} />
       <Footer onNavigateRoute={(route) => handleNavigateRoute(route, false)} footerContact={footerContact} />
 
       <WhatsAppFloatingButtonV2 bookingState={bookingState} phoneNumber={`52${whatsappNumber}`} packages={packagesState} addons={addonsState} />

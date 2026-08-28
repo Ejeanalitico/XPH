@@ -1,6 +1,7 @@
 export type RoutePath = 'inicio' | 'bodas' | 'xv-anos' | 'bautizos' | 'retratos' | 'empresarial';
 
-export type EventType = 'bodas' | 'xv-anos' | 'bautizos' | 'retratos' | 'empresarial';
+export type BuiltInEventType = 'bodas' | 'xv-anos' | 'bautizos' | 'retratos' | 'empresarial';
+export type EventType = BuiltInEventType | (string & {});
 
 export interface SeoPageSetting {
   title: string;
@@ -10,7 +11,7 @@ export interface SeoPageSetting {
 
 export type SeoSettings = Partial<Record<RoutePath, SeoPageSetting>>;
 
-export type GalleryCategory = 'all' | 'bodas' | 'xv-anos' | 'bautizos' | 'retratos' | 'empresarial' | 'previa';
+export type GalleryCategory = 'all' | EventType | 'previa';
 
 export type GalleryVisibility = 'public' | 'private' | 'cover';
 export type GalleryMediaType = 'image' | 'video' | 'gallery-meta' | 'cover-meta';
@@ -27,7 +28,7 @@ export interface HeroCoverSetting {
 export interface GalleryImage {
   id: string;
   title: string;
-  category: 'bodas' | 'xv-anos' | 'bautizos' | 'retratos' | 'empresarial' | 'previa' | 'private';
+  category: Exclude<GalleryCategory, 'all'> | 'private';
   url: string;
   location: string;
   camera?: string;
