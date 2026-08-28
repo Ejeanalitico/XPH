@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { escapeHtml, loadPublicConfig, safeJson, slugify } from './_public-config.js';
 
 const SITE_URL = 'https://www.xaviph.com';
@@ -24,6 +25,19 @@ function requestOrigin(req) {
     return `${forwardedProto}://${forwardedHost}`;
   }
   return SITE_URL;
+}
+
+async function loadShell(req) {
+  try {
+    return await readFile(new URL('../dist/index.html', import.meta.url), 'utf8');
+  } catch (_) {
+    const shellResponse = await fetch(`${requestOrigin(req)}/`, {
+      headers: { Accept: 'text/html', 'User-Agent': 'XPH-Category-Renderer/1.0' },
+      redirect: 'follow',
+    });
+    if (!shellResponse.ok) throw new Error(`No se pudo cargar la plantilla pública (HTTP ${shellResponse.status}).`);
+    return shellResponse.text();
+  }
 }
 
 function notFound(res, slug) {
@@ -70,12 +84,7 @@ export default async function handler(req, res) {
     const imageUrl = String(heroSetting.url || category.imageUrl || `${SITE_URL}/xph-logo.png`).trim();
     const packages = Array.isArray(config.packages?.[categoryId]) ? config.packages[categoryId] : [];
 
-    const shellResponse = await fetch(`${requestOrigin(req)}/`, {
-      headers: { Accept: 'text/html', 'User-Agent': 'XPH-Category-Renderer/1.0' },
-      redirect: 'follow',
-    });
-    if (!shellResponse.ok) throw new Error(`No se pudo cargar la plantilla pública (HTTP ${shellResponse.status}).`);
-    let html = await shellResponse.text();
+    let html = await loadShell(req);
 
     html = replaceTag(html, /<title>[^<]*<\/title>/i, `<title>${escapeHtml(title)}</title>`);
     html = replaceTag(html, /<meta\s+name=["']description["'][^>]*>/i, `<meta name="description" content="${escapeHtml(description)}" />`);
