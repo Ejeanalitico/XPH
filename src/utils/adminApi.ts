@@ -115,6 +115,11 @@ export async function adminLogout(): Promise<void> {
     credentials: 'include',
   }).catch(() => null);
   activeAdminSession = null;
+  businessClientsCache = null;
+  businessSnapshotCache = null;
+  if (typeof window !== 'undefined') {
+    Object.keys(window.sessionStorage).filter((key) => key.startsWith(`${BUSINESS_SNAPSHOT_CACHE_KEY}:`)).forEach((key) => window.sessionStorage.removeItem(key));
+  }
 }
 
 export async function loadAdminConfig(_session?: AdminSession | null): Promise<Record<string, any>> {
@@ -195,31 +200,64 @@ async function adminBusinessRequest<T>(action: string, payload: Record<string, u
   return data as T;
 }
 
-export async function loadBusinessSnapshot(): Promise<BusinessSnapshot> {
-  const data = await adminBusinessRequest<{ snapshot: BusinessSnapshot }>('adminBusinessSnapshot');
+const BUSINESS_SNAPSHOT_CACHE_KEY = 'xph-business-snapshot-v3';
+let businessSnapshotCache: { scope: string; snapshot: BusinessSnapshot } | null = null;
+
+function normalizeBusinessSnapshot(snapshot?: Partial<BusinessSnapshot> | null): BusinessSnapshot {
   return {
-    clients: Array.isArray(data.snapshot?.clients) ? data.snapshot.clients : [],
-    followUps: Array.isArray(data.snapshot?.followUps) ? data.snapshot.followUps : [],
-    expenses: Array.isArray(data.snapshot?.expenses) ? data.snapshot.expenses : [],
-    payments: Array.isArray(data.snapshot?.payments) ? data.snapshot.payments : [],
-    transactions: Array.isArray(data.snapshot?.transactions) ? data.snapshot.transactions : [],
-    adjustments: Array.isArray(data.snapshot?.adjustments) ? data.snapshot.adjustments : [],
-    packageSnapshots: Array.isArray(data.snapshot?.packageSnapshots) ? data.snapshot.packageSnapshots : [],
-    services: Array.isArray(data.snapshot?.services) ? data.snapshot.services : [],
-    addons: Array.isArray(data.snapshot?.addons) ? data.snapshot.addons : [],
-    users: Array.isArray(data.snapshot?.users) ? data.snapshot.users : [],
-    teamFunctions: Array.isArray(data.snapshot?.teamFunctions) ? data.snapshot.teamFunctions : [],
-    assignments: Array.isArray(data.snapshot?.assignments) ? data.snapshot.assignments : [],
-    gmailConfig: data.snapshot?.gmailConfig || null,
-    emailTemplates: Array.isArray(data.snapshot?.emailTemplates) ? data.snapshot.emailTemplates : [],
-    emailHistory: Array.isArray(data.snapshot?.emailHistory) ? data.snapshot.emailHistory : [],
-    notifications: Array.isArray(data.snapshot?.notifications) ? data.snapshot.notifications : [],
-    auditLog: Array.isArray(data.snapshot?.auditLog) ? data.snapshot.auditLog : [],
-    galleries: Array.isArray(data.snapshot?.galleries) ? data.snapshot.galleries : [],
-    internalEvents: Array.isArray(data.snapshot?.internalEvents) ? data.snapshot.internalEvents.map((item) => ({ ...item, userIds: Array.isArray(item.userIds) ? item.userIds : [] })) : [],
-    contracts: Array.isArray(data.snapshot?.contracts) ? data.snapshot.contracts : [],
-    ownerSignatureConfigured: Boolean(data.snapshot?.ownerSignatureConfigured),
+    clients: Array.isArray(snapshot?.clients) ? snapshot.clients : [],
+    followUps: Array.isArray(snapshot?.followUps) ? snapshot.followUps : [],
+    expenses: Array.isArray(snapshot?.expenses) ? snapshot.expenses : [],
+    payments: Array.isArray(snapshot?.payments) ? snapshot.payments : [],
+    transactions: Array.isArray(snapshot?.transactions) ? snapshot.transactions : [],
+    adjustments: Array.isArray(snapshot?.adjustments) ? snapshot.adjustments : [],
+    packageSnapshots: Array.isArray(snapshot?.packageSnapshots) ? snapshot.packageSnapshots : [],
+    services: Array.isArray(snapshot?.services) ? snapshot.services : [],
+    addons: Array.isArray(snapshot?.addons) ? snapshot.addons : [],
+    users: Array.isArray(snapshot?.users) ? snapshot.users : [],
+    teamFunctions: Array.isArray(snapshot?.teamFunctions) ? snapshot.teamFunctions : [],
+    assignments: Array.isArray(snapshot?.assignments) ? snapshot.assignments : [],
+    gmailConfig: snapshot?.gmailConfig || null,
+    emailTemplates: Array.isArray(snapshot?.emailTemplates) ? snapshot.emailTemplates : [],
+    emailHistory: Array.isArray(snapshot?.emailHistory) ? snapshot.emailHistory : [],
+    notifications: Array.isArray(snapshot?.notifications) ? snapshot.notifications : [],
+    auditLog: Array.isArray(snapshot?.auditLog) ? snapshot.auditLog : [],
+    galleries: Array.isArray(snapshot?.galleries) ? snapshot.galleries : [],
+    internalEvents: Array.isArray(snapshot?.internalEvents) ? snapshot.internalEvents.map((item) => ({ ...item, userIds: Array.isArray(item.userIds) ? item.userIds : [] })) : [],
+    contracts: Array.isArray(snapshot?.contracts) ? snapshot.contracts : [],
+    ownerSignatureConfigured: Boolean(snapshot?.ownerSignatureConfigured),
   };
+}
+
+export async function loadBusinessSnapshot(force = false): Promise<BusinessSnapshot> {
+  const data = await adminBusinessRequest<{ snapshot: BusinessSnapshot }>('adminBusinessSnapshot', { force });
+  return normalizeBusinessSnapshot(data.snapshot);
+}
+
+export function readCachedBusinessSnapshot(scope: string): BusinessSnapshot | null {
+  if (businessSnapshotCache?.scope === scope) return businessSnapshotCache.snapshot;
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.sessionStorage.getItem(`${BUSINESS_SNAPSHOT_CACHE_KEY}:${scope}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { snapshot?: Partial<BusinessSnapshot> };
+    const snapshot = normalizeBusinessSnapshot(parsed.snapshot);
+    businessSnapshotCache = { scope, snapshot };
+    return snapshot;
+  } catch (_) {
+    window.sessionStorage.removeItem(`${BUSINESS_SNAPSHOT_CACHE_KEY}:${scope}`);
+    return null;
+  }
+}
+
+export function cacheBusinessSnapshot(snapshot: BusinessSnapshot, scope: string): void {
+  const normalized = normalizeBusinessSnapshot(snapshot);
+  businessSnapshotCache = { scope, snapshot: normalized };
+  businessClientsCache = normalized.clients;
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.setItem(`${BUSINESS_SNAPSHOT_CACHE_KEY}:${scope}`, JSON.stringify({ snapshot: normalized }));
+  } catch (_) {}
 }
 
 let businessClientsCache: CrmClient[] | null = null;
@@ -250,8 +288,21 @@ export async function convertProspectToClient(prospectId: string): Promise<CrmCl
 }
 
 export async function syncClientCalendar(client: CrmClient): Promise<CrmClient> {
-  const data = await adminBusinessRequest<{ client: CrmClient }>('adminCalendarSync', { clientId: client.id, eventDate: client.eventDate, eventTime: client.eventTime, preSessionDate: client.preSessionDate, preSessionTime: client.preSessionTime });
+  const data = await adminBusinessRequest<{ client: CrmClient }>('adminCalendarSync', { clientId: client.id });
   return data.client;
+}
+
+export type CalendarSyncSummary = {
+  processed: number;
+  synchronized: number;
+  failed: number;
+  created: number;
+  updated: number;
+  duplicatesDeleted: number;
+};
+
+export async function syncAllClientCalendars(): Promise<{ clients: CrmClient[]; summary: CalendarSyncSummary }> {
+  return await adminBusinessRequest('adminCalendarSyncAll');
 }
 
 export async function saveBusinessExpense(expense: Partial<BusinessExpense>): Promise<BusinessExpense> {

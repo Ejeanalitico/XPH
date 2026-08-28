@@ -146,6 +146,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
   const [message, setMessage] = useState('');
   const [successModal, setSuccessModal] = useState(false);
   const [tab, setTab] = useState<Tab>(initialTab);
+  const [businessRefreshSignal, setBusinessRefreshSignal] = useState(0);
 
   const [packages, setPackages] = useState<Record<string, PackageOption[]>>(PACKAGES_BY_EVENT);
   const [catalogCategories, setCatalogCategories] = useState<CatalogCategory[]>(DEFAULT_CATEGORIES);
@@ -578,7 +579,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
         <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div><p className="text-xs uppercase tracking-widest text-[#D4AF37] font-mono">XPH Fotografía & Video</p><h1 className="text-3xl font-bold">Administrador</h1><p className="text-sm text-gray-400">Todo el contenido vive en este panel.</p></div>
           <div className="flex flex-wrap gap-2">
-            <button onClick={() => refresh().then(() => notify('Configuración y Drive actualizados.')).catch((e) => notify(e.message))} className="px-4 py-2.5 rounded-xl border border-white/15 text-sm flex items-center gap-2"><RefreshCw className="w-4 h-4" />Actualizar</button>
+            <button onClick={() => { if (tab === 'business') setBusinessRefreshSignal((value) => value + 1); else refresh().then(() => notify('Módulo actualizado.')).catch((e) => notify(e.message)); }} className="px-4 py-2.5 rounded-xl border border-white/15 text-sm flex items-center gap-2"><RefreshCw className="w-4 h-4" />Actualizar módulo</button>
             <a href="/" className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/15 text-sm">Ver sitio</a>
             <button onClick={handleLogout} className="px-4 py-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-sm flex items-center gap-2"><LogOut className="w-4 h-4" />Cerrar sesión</button>
           </div>
@@ -597,7 +598,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
           ].filter((item) => session.role === 'SUPER_ADMIN' || item.id === 'business').map((item) => { const Icon = item.icon; return <button key={item.id} onClick={() => setTab(item.id)} className={`px-4 py-3 rounded-xl text-sm font-semibold whitespace-nowrap flex items-center gap-2 ${tab === item.id ? 'bg-[#D4AF37] text-black' : 'text-gray-300 hover:bg-white/5'}`}><Icon className="w-4 h-4" />{item.label}</button>; })}
         </nav>
 
-        {tab === 'business' && <BusinessAdminPanel notify={notify} session={session} />}
+        {tab === 'business' && <BusinessAdminPanel notify={notify} session={session} refreshSignal={businessRefreshSignal} />}
 
         {tab === 'packages' && (
           <section className="space-y-7">

@@ -13,6 +13,7 @@ import {
   FileSignature,
   Loader2,
   Mail,
+  Menu,
   PenLine,
   Plus,
   RefreshCw,
@@ -22,20 +23,23 @@ import {
   Users,
   UserCog,
   UserCircle,
+  X,
 } from 'lucide-react';
 import {
   createContractSigningLink,
   cacheBusinessClients,
+  cacheBusinessSnapshot,
   convertProspectToClient,
   createCrmFollowUp,
   finalizeBusinessContract,
-  loadBusinessClients,
   loadBusinessSnapshot,
+  readCachedBusinessSnapshot,
   saveBusinessExpense,
   saveBusinessPayment,
   saveFinancialAdjustment,
   saveCrmClient,
   syncClientCalendar,
+  syncAllClientCalendars,
   saveOwnerSignature,
   saveInternalCalendarEvent,
   uploadBusinessContract,
@@ -202,12 +206,18 @@ const expenseFingerprint = (expense: Partial<BusinessExpense>) => [
 interface Props {
   notify: (message: string) => void;
   session: AdminSession;
+  refreshSignal?: number;
 }
 
-export const BusinessAdminPanel: React.FC<Props> = ({ notify, session }) => {
+export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSignal = 0 }) => {
+  const snapshotCacheScope = `${session.role}:${session.userId || session.email || 'unknown'}`;
   const [tab, setTab] = useState<BusinessTab>('overview');
-  const [snapshot, setSnapshot] = useState<BusinessSnapshot>(emptySnapshot);
+  const [snapshot, setSnapshot] = useState<BusinessSnapshot>(() => readCachedBusinessSnapshot(snapshotCacheScope) || emptySnapshot);
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [syncingAllCalendars, setSyncingAllCalendars] = useState(false);
+  const [syncingClientId, setSyncingClientId] = useState('');
+  const [businessMenuOpen, setBusinessMenuOpen] = useState(false);
   const [showClientForm, setShowClientForm] = useState(false);
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [showInlinePayment, setShowInlinePayment] = useState(false);
@@ -232,23 +242,23 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session }) => {
   const [followUpDraft, setFollowUpDraft] = useState<Partial<CrmFollowUp>>({ occurredAt: now(), conversation: '', result: '', nextAction: '', nextActionAt: '' });
   const [internalEventDraft, setInternalEventDraft] = useState<Partial<InternalCalendarEvent> | null>(null);
 
-  const refresh = async () => {
-    setBusy(true);
+  const refresh = async (force = true) => {
+    if (refreshing) return;
+    setRefreshing(true);
     try {
-      const clients = await loadBusinessClients();
-      setSnapshot((previous) => ({ ...previous, clients }));
-      setBusy(false);
-      const complete = await loadBusinessSnapshot();
+      const complete = await loadBusinessSnapshot(force);
       cacheBusinessClients(complete.clients);
       setSnapshot(complete);
     } catch (error: any) {
       notify(error?.message || 'No se pudo cargar el control del negocio.');
     } finally {
-      setBusy(false);
+      setRefreshing(false);
     }
   };
 
-  useEffect(() => { refresh(); }, []);
+  useEffect(() => { refresh(false); }, []);
+  useEffect(() => { if (refreshSignal > 0) refresh(true); }, [refreshSignal]);
+  useEffect(() => { cacheBusinessSnapshot(snapshot, snapshotCacheScope); }, [snapshot, snapshotCacheScope]);
   useEffect(() => {
     if (session.role === 'SUPER_ADMIN') return;
     if (session.permissions.includes('CALENDAR')) setTab('calendar');
@@ -403,29 +413,31 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session }) => {
   };
 
   const syncCalendar = async (client: CrmClient) => {
-    setBusy(true);
+    if (syncingClientId) return;
+    setSyncingClientId(client.id);
     try {
       const saved = await syncClientCalendar(client);
       setSnapshot((prev) => ({ ...prev, clients: prev.clients.map((item) => item.id === saved.id ? saved : item) }));
-      setModalNotice('Evento y sesión previa sincronizados con Google Calendar.');
+      setModalNotice('Calendar fue rectificado: se actualizó el evento válido y se eliminaron duplicados verificados.');
     } catch (error: any) { setModalNotice(error?.message || 'No se pudo sincronizar Google Calendar.'); }
-    finally { setBusy(false); }
+    finally { setSyncingClientId(''); }
   };
 
   const syncAllCalendars = async () => {
     const records = snapshot.clients.filter((item) => item.recordType === 'Cliente' && (dateValue(item.eventDate) || dateValue(item.preSessionDate) || item.calendarEventId || item.preSessionCalendarEventId));
     if (!records.length) return setModalNotice('No hay eventos o sesiones con fecha para sincronizar.');
-    setBusy(true);
-    let synced = 0;
-    let failed = 0;
-    const savedClients: CrmClient[] = [];
-    for (const record of records) {
-      try { savedClients.push(await syncClientCalendar(record)); synced += 1; }
-      catch (_) { failed += 1; }
+    if (syncingAllCalendars) return;
+    setSyncingAllCalendars(true);
+    try {
+      const result = await syncAllClientCalendars();
+      setSnapshot((current) => ({ ...current, clients: current.clients.map((item) => result.clients.find((saved) => saved.id === item.id) || item) }));
+      const summary = result.summary;
+      setModalNotice(`${summary.synchronized} expediente(s) reconciliados. ${summary.created} evento(s) creados, ${summary.updated} actualizados y ${summary.duplicatesDeleted} duplicado(s) verificado(s) eliminados.${summary.failed ? ` ${summary.failed} operación(es) requieren revisión.` : ''}`);
+    } catch (error: any) {
+      setModalNotice(error?.message || 'No se pudo reconciliar Google Calendar.');
+    } finally {
+      setSyncingAllCalendars(false);
     }
-    setSnapshot((current) => ({ ...current, clients: current.clients.map((item) => savedClients.find((saved) => saved.id === item.id) || item) }));
-    setBusy(false);
-    setModalNotice(`${synced} expediente(s) sincronizados sin duplicar.${failed ? ` ${failed} requieren revisión.` : ''}`);
   };
 
   const saveFollowUp = async (event: React.FormEvent) => {
@@ -534,6 +546,23 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session }) => {
   const canEditSelected = Boolean(selectedClient && (session.role === 'SUPER_ADMIN' || (selectedClient.recordType === 'Prospecto' ? session.permissions.includes('CRM_WRITE') : session.permissions.includes('CLIENTS_WRITE'))));
   const canCreateCurrentType = session.role === 'SUPER_ADMIN' || (tab === 'prospects' ? session.permissions.includes('CRM_WRITE') : session.permissions.includes('CLIENTS_WRITE'));
   const canManageFinance = session.role === 'SUPER_ADMIN';
+  const businessNavItems = [
+    { id: 'overview' as const, label: 'Control financiero', icon: TrendingUp },
+    { id: 'prospects' as const, label: 'Prospectos', icon: Users },
+    { id: 'clients' as const, label: 'Clientes', icon: BriefcaseBusiness },
+    { id: 'calendar' as const, label: 'Calendario', icon: CalendarDays },
+    { id: 'payments' as const, label: 'Pagos de clientes', icon: CreditCard },
+    { id: 'expenses' as const, label: 'Control de gastos', icon: BadgeDollarSign },
+    { id: 'contracts' as const, label: 'Contratos y firmas', icon: FileSignature },
+    { id: 'email' as const, label: 'Correo / Gmail', icon: Mail },
+    { id: 'team' as const, label: 'Usuarios / equipo', icon: UserCog },
+    { id: 'account' as const, label: 'Mi cuenta', icon: UserCircle },
+  ].filter((item) => session.role === 'SUPER_ADMIN' || (
+    item.id === 'prospects' ? session.permissions.includes('CRM_READ') :
+    item.id === 'clients' ? session.permissions.includes('CLIENTS_READ') || session.permissions.includes('CRM_READ') :
+    item.id === 'calendar' ? session.permissions.includes('CALENDAR') : item.id === 'account'
+  ));
+  const activeBusinessNavItem = businessNavItems.find((item) => item.id === tab) || businessNavItems[0];
   const selectedClientPayments = selectedClient ? snapshot.payments.filter((payment) => payment.clientId === selectedClient.id && payment.status !== 'Anulado') : [];
   const selectedClientContract = selectedClient ? snapshot.contracts.find((contract) => contract.clientId === selectedClient.id) : undefined;
   const selectedFollowUps = selectedClient ? snapshot.followUps.filter((item) => item.prospectId === selectedClient.id || item.clientId === selectedClient.id).sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt))) : [];
@@ -674,35 +703,23 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session }) => {
           <h2 className="text-2xl font-bold">{session.role === 'SUPER_ADMIN' ? 'Clientes, gastos y contratos' : 'Operación asignada'}</h2>
           <p className="mt-1 text-sm text-gray-400">{session.role === 'SUPER_ADMIN' ? 'Información privada del negocio. Los registros nuevos comienzan vacíos.' : 'Solo aparecen tus clientes, actividades y datos operativos autorizados.'}</p>
         </div>
-        <button onClick={refresh} disabled={busy} className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/15 px-4 py-2.5 text-sm disabled:opacity-40">
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Actualizar
+        <button onClick={() => refresh(true)} disabled={refreshing} className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/15 px-4 py-2.5 text-sm disabled:opacity-40">
+          {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} {refreshing ? 'Actualizando…' : 'Actualizar datos'}
         </button>
       </div>
 
       {session.role === 'SUPER_ADMIN' ? <div className="grid gap-3 sm:grid-cols-3"><Metric label="Prospectos y clientes" value={String(snapshot.clients.length)} icon={Users} /><Metric label="Contratos" value={String(snapshot.contracts.length)} icon={FileSignature} /><Metric label="Cobrado / contratado" value={`${money(financials.collected)} / ${money(financials.contracted)}`} icon={BadgeDollarSign} /></div> : <div className="grid gap-3 sm:grid-cols-3"><Metric label="Clientes asignados" value={String(snapshot.clients.filter((item) => item.recordType === 'Cliente').length)} icon={Users} /><Metric label="Actividades asignadas" value={String(snapshot.assignments.length)} icon={CalendarDays} /><Metric label="Próximos 7 días" value={String(snapshot.assignments.filter((item) => { const diff = dayDifference(item.startDate); return diff >= 0 && diff <= 7; }).length)} icon={BriefcaseBusiness} /></div>}
 
-      <div className="flex overflow-x-auto gap-2 rounded-2xl border border-white/10 bg-[#161C28] p-1.5">
-        {[
-          { id: 'overview' as const, label: 'Control financiero', icon: TrendingUp },
-          { id: 'prospects' as const, label: 'Prospectos', icon: Users },
-          { id: 'clients' as const, label: 'Clientes', icon: BriefcaseBusiness },
-          { id: 'calendar' as const, label: 'Calendario', icon: CalendarDays },
-          { id: 'payments' as const, label: 'Pagos de clientes', icon: CreditCard },
-          { id: 'expenses' as const, label: 'Control de gastos', icon: BadgeDollarSign },
-          { id: 'contracts' as const, label: 'Contratos y firmas', icon: FileSignature },
-          { id: 'email' as const, label: 'Correo / Gmail', icon: Mail },
-          { id: 'team' as const, label: 'Usuarios / equipo', icon: UserCog },
-          { id: 'account' as const, label: 'Mi cuenta', icon: UserCircle },
-        ].filter((item) => session.role === 'SUPER_ADMIN' || (
-          item.id === 'prospects' ? session.permissions.includes('CRM_READ') :
-          item.id === 'clients' ? session.permissions.includes('CLIENTS_READ') || session.permissions.includes('CRM_READ') :
-          item.id === 'calendar' ? session.permissions.includes('CALENDAR') : item.id === 'account'
-        )).map((item) => { const Icon = item.icon; return (
-          <button key={item.id} onClick={() => setTab(item.id)} className={`flex items-center gap-2 whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-semibold ${tab === item.id ? 'bg-white text-black' : 'text-gray-300'}`}>
-            <Icon className="h-4 w-4" />{item.label}
-          </button>
-        ); })}
-      </div>
+      <button type="button" onClick={() => setBusinessMenuOpen(true)} className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-[#161C28] px-4 py-3 text-left lg:hidden" aria-haspopup="dialog" aria-expanded={businessMenuOpen}>
+        <span className="flex items-center gap-3 text-sm font-semibold text-white">{activeBusinessNavItem && React.createElement(activeBusinessNavItem.icon, { className: 'h-4 w-4 text-[#D4AF37]' })}{activeBusinessNavItem?.label || 'Menú del negocio'}</span>
+        <Menu className="h-5 w-5 text-[#D4AF37]" />
+      </button>
+
+      {businessMenuOpen && <div className="fixed inset-0 z-[110] lg:hidden" role="dialog" aria-modal="true" aria-label="Menú de Clientes y negocio"><button type="button" aria-label="Cerrar menú" className="absolute inset-0 bg-black/75 backdrop-blur-sm" onClick={() => setBusinessMenuOpen(false)} /><aside className="absolute inset-y-0 left-0 w-[min(86vw,320px)] overflow-y-auto border-r border-white/10 bg-[#111722] p-4 shadow-2xl"><div className="mb-5 flex items-center justify-between"><div><p className="text-[10px] uppercase tracking-[0.2em] text-[#D4AF37]">Clientes y negocio</p><h3 className="mt-1 font-bold text-white">Menú operativo</h3></div><button type="button" onClick={() => setBusinessMenuOpen(false)} aria-label="Cerrar menú" className="rounded-xl border border-white/10 p-2 text-gray-300"><X className="h-5 w-5" /></button></div><nav className="space-y-1">{businessNavItems.map((item) => { const Icon = item.icon; return <button key={item.id} type="button" onClick={() => { setTab(item.id); setBusinessMenuOpen(false); }} className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-semibold ${tab === item.id ? 'bg-[#D4AF37] text-black' : 'text-gray-300 hover:bg-white/5'}`}><Icon className="h-4 w-4" />{item.label}</button>; })}</nav></aside></div>}
+
+      <div className="gap-5 lg:grid lg:grid-cols-[230px_minmax(0,1fr)]">
+        <aside className="hidden lg:block"><nav className="sticky top-4 space-y-1 rounded-2xl border border-white/10 bg-[#161C28] p-2" aria-label="Secciones de Clientes y negocio">{businessNavItems.map((item) => { const Icon = item.icon; return <button key={item.id} type="button" onClick={() => setTab(item.id)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold transition-colors ${tab === item.id ? 'bg-white text-black' : 'text-gray-300 hover:bg-white/5 hover:text-white'}`}><Icon className="h-4 w-4 shrink-0" />{item.label}</button>; })}</nav></aside>
+        <div className="min-w-0 space-y-5">
 
       {tab === 'overview' && (
         <div className="space-y-5">
@@ -767,7 +784,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session }) => {
             <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111722] shadow-2xl shadow-black/20">
               <div className="flex flex-col gap-3 border-b border-white/10 bg-[#161C28] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-3"><button onClick={() => { setSelectedClientId(''); setShowClientForm(false); }} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-gray-200 hover:bg-white/5">← Clientes</button><span className="inline-flex items-center gap-2 rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-3 py-2 text-xs text-emerald-200"><CheckCircle2 className="h-4 w-4" />{selectedClient.status}</span></div>
-                <div className="flex flex-wrap gap-2">{canEditSelected && selectedClient.recordType === 'Prospecto' && <button onClick={convertSelectedProspect} disabled={busy} className="rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100">Convertir en cliente</button>}{canManageFinance && selectedClient.recordType === 'Cliente' && <button onClick={() => prepareNextPayment(selectedClient)} className="rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100">Agregar pago al plan</button>}{canManageFinance && selectedClientContract && <a href={adminContractPdfUrl(selectedClientContract.id, 'latest', contractPdfRevision(selectedClientContract))} target="_blank" rel="noreferrer" className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm text-white">{contractViewLabel(selectedClientContract)}</a>}{canEditSelected && <button onClick={() => { setClientDraft(selectedClient); setShowClientForm(true); }} className="rounded-lg bg-[#D4AF37] px-4 py-2 text-sm font-bold text-black">Editar seguimiento</button>}{canEditSelected && selectedClient.recordType === 'Cliente' && <button onClick={() => syncCalendar(selectedClient)} disabled={busy} className="rounded-lg border border-sky-300/30 bg-sky-400/10 px-4 py-2 text-sm text-sky-100 disabled:border-white/10 disabled:bg-transparent disabled:text-gray-600">Actualizar Calendar</button>}</div>
+                <div className="flex flex-wrap gap-2">{canEditSelected && selectedClient.recordType === 'Prospecto' && <button onClick={convertSelectedProspect} disabled={busy} className="rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100">Convertir en cliente</button>}{canManageFinance && selectedClient.recordType === 'Cliente' && <button onClick={() => prepareNextPayment(selectedClient)} className="rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100">Agregar pago al plan</button>}{canManageFinance && selectedClientContract && <a href={adminContractPdfUrl(selectedClientContract.id, 'latest', contractPdfRevision(selectedClientContract))} target="_blank" rel="noreferrer" className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm text-white">{contractViewLabel(selectedClientContract)}</a>}{canEditSelected && <button onClick={() => { setClientDraft(selectedClient); setShowClientForm(true); }} className="rounded-lg bg-[#D4AF37] px-4 py-2 text-sm font-bold text-black">Editar seguimiento</button>}{canEditSelected && selectedClient.recordType === 'Cliente' && <button onClick={() => syncCalendar(selectedClient)} disabled={Boolean(syncingClientId)} className="inline-flex items-center gap-2 rounded-lg border border-sky-300/30 bg-sky-400/10 px-4 py-2 text-sm text-sky-100 disabled:border-white/10 disabled:bg-transparent disabled:text-gray-600">{syncingClientId === selectedClient.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}{syncingClientId === selectedClient.id ? 'Rectificando…' : 'Actualizar Calendar'}</button>}</div>
               </div>
               {showInlinePayment && <div className="border-b border-white/10 p-5"><div className="mb-3 flex items-center justify-between"><h3 className="font-semibold text-white">Registrar siguiente pago de {selectedClient.name}</h3><button onClick={() => setShowInlinePayment(false)} className="text-xs text-gray-400">Cerrar</button></div><PaymentForm draft={paymentDraft} receipt={paymentReceipt} clients={snapshot.clients} contracts={snapshot.contracts} onChange={setPaymentDraft} onReceipt={setPaymentReceipt} onSubmit={savePayment} onCancel={() => { setPaymentDraft(blankPayment()); setPaymentReceipt(null); setShowInlinePayment(false); }} busy={busy} /></div>}
               {session.role !== 'SUPER_ADMIN' && selectedClient.recordType === 'Cliente' ? <ProviderClientView client={selectedClient} snapshot={snapshot} /> : showClientForm && canEditSelected ? <ClientForm draft={clientDraft} onChange={setClientDraft} onSubmit={saveClient} onCancel={() => setShowClientForm(false)} busy={busy} /> : canEditSelected ? <><ClientDetails client={selectedClient} paid={paidForClient(selectedClient)} followUps={selectedFollowUps} followUpDraft={followUpDraft} onFollowUpChange={setFollowUpDraft} onFollowUpSubmit={saveFollowUp} onInlineSave={saveInlineClient} busy={busy} />{selectedClient.recordType === 'Cliente' && <ClientOperationsPanel client={selectedClient} snapshot={snapshot} onSnapshotChange={setSnapshot} onClientPatch={saveInlineClient} notify={notify} />}</> : <ProviderClientView client={selectedClient} snapshot={snapshot} />}
@@ -808,7 +825,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session }) => {
             <button aria-label="Periodo siguiente" onClick={() => moveCalendar(1)} className="rounded-full border border-white/15 bg-white/10 p-2 text-white hover:bg-white/20"><ChevronRight className="h-5 w-5 stroke-[2.5]" /></button>
             <h3 className="min-w-[190px] text-xl font-bold capitalize">{calendarView === 'day' ? new Intl.DateTimeFormat('es-MX', { dateStyle: 'full' }).format(calendarCursor) : monthLabel(calendarCursor)}</h3>
             <div className="flex overflow-x-auto rounded-xl border border-white/10 p-1">{([['month','Mes'],['week','Semana'],['day','Día'],['upcoming','Próximos']] as const).map(([value, label]) => <button key={value} onClick={() => setCalendarView(value)} className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${calendarView === value ? 'bg-white text-black' : 'text-gray-400'}`}>{label}</button>)}</div>
-            {session.role === 'SUPER_ADMIN' && <button onClick={syncAllCalendars} disabled={busy} className="ml-auto inline-flex items-center gap-2 rounded-xl border border-sky-300/30 px-3 py-2 text-xs text-sky-100"><RefreshCw className="h-4 w-4" />Sincronizar calendario</button>}
+            {session.role === 'SUPER_ADMIN' && <button onClick={syncAllCalendars} disabled={syncingAllCalendars} className="ml-auto inline-flex items-center gap-2 rounded-xl border border-sky-300/30 px-3 py-2 text-xs text-sky-100 disabled:cursor-wait disabled:opacity-60">{syncingAllCalendars ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}{syncingAllCalendars ? 'Rectificando calendarios…' : 'Rectificar y sincronizar'}</button>}
           </div>
           <div className={`${calendarView === 'month' ? 'hidden sm:grid' : 'hidden'} grid-cols-7 border-b border-white/10 bg-black/15 text-center text-[10px] font-semibold uppercase tracking-wider text-gray-400`}>{['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'].map((day) => <div key={day} className="py-2">{day}</div>)}</div>
           <div className={`${calendarView === 'month' ? 'hidden sm:grid' : 'hidden'} grid-cols-7`}>
@@ -873,6 +890,8 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session }) => {
       {tab === 'team' && session.role === 'SUPER_ADMIN' && <TeamAdminPanel snapshot={snapshot} onSnapshotChange={setSnapshot} notify={notify} superAdminEmail={session.email} />}
       {tab === 'email' && session.role === 'SUPER_ADMIN' && <GmailAdminPanel snapshot={snapshot} onSnapshotChange={setSnapshot} onRefresh={refresh} notify={notify} />}
       {tab === 'account' && <section className="mx-auto max-w-3xl rounded-2xl border border-white/10 bg-[#161C28] p-6"><div className="flex items-center gap-3"><UserCircle className="h-10 w-10 text-[#D4AF37]" /><div><h3 className="text-xl font-bold">{session.role === 'SUPER_ADMIN' ? 'Javier García' : currentTeamUser?.displayName || `${currentTeamUser?.name || ''} ${currentTeamUser?.lastName || ''}`.trim() || session.email}</h3><p className="text-sm text-gray-400">{session.role === 'SUPER_ADMIN' ? 'Super Admin' : currentTeamUser?.functionName || 'Colaborador'}</p></div></div><dl className="mt-6 grid gap-3 sm:grid-cols-2"><div className="rounded-xl border border-white/10 p-4"><dt className="text-xs text-gray-500">Correo</dt><dd className="mt-1 break-all text-sm">{session.email || currentTeamUser?.email || 'Sin correo'}</dd></div><div className="rounded-xl border border-white/10 p-4"><dt className="text-xs text-gray-500">Estado de Google Calendar</dt><dd className={`mt-1 text-sm font-semibold ${session.role === 'SUPER_ADMIN' || currentTeamUser?.calendarConnected ? 'text-emerald-300' : 'text-amber-300'}`}>{session.role === 'SUPER_ADMIN' ? 'Cuenta principal administrada' : currentTeamUser?.calendarConnected ? 'Conectado' : 'Pendiente de conectar mediante invitación'}</dd></div><div className="rounded-xl border border-white/10 p-4 sm:col-span-2"><dt className="text-xs text-gray-500">Permisos vigentes</dt><dd className="mt-2 flex flex-wrap gap-2">{session.role === 'SUPER_ADMIN' ? <span className="rounded-full bg-emerald-400/10 px-3 py-1 text-xs text-emerald-300">Acceso completo</span> : session.permissions.map((permission) => <span key={permission} className="rounded-full border border-white/10 px-3 py-1 text-xs text-gray-300">{permission}</span>)}</dd></div></dl><p className="mt-5 text-xs leading-5 text-gray-500">Los permisos solo los puede cambiar el Super Admin. La función visible del colaborador no concede privilegios administrativos.</p></section>}
+        </div>
+      </div>
       {internalEventDraft && session.role === 'SUPER_ADMIN' && <div className="fixed inset-0 z-[100] grid place-items-center overflow-y-auto bg-black/75 p-4"><form onSubmit={persistInternalEvent} className="my-6 w-full max-w-2xl rounded-2xl border border-violet-400/25 bg-[#161C28] p-5 shadow-2xl"><h3 className="text-lg font-semibold text-violet-100">Evento interno</h3><div className="mt-4 grid gap-3 sm:grid-cols-2"><input value={internalEventDraft.title || ''} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, title: event.target.value })} placeholder="Título" className={`${inputClass} sm:col-span-2`} required /><select value={internalEventDraft.activityType || 'Junta'} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, activityType: event.target.value })} className={inputClass}>{['Junta','Capacitación','Mantenimiento','Compra de equipo','Bloqueo personal','Día no disponible','Otro'].map((item) => <option key={item}>{item}</option>)}</select><select value={internalEventDraft.visibility || 'SUPER_ADMIN'} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, visibility: event.target.value as InternalCalendarEvent['visibility'] })} className={inputClass}><option value="SUPER_ADMIN">Solo Super Admin</option><option value="SELECTED">Usuarios seleccionados</option></select><label className="text-xs text-gray-400">Fecha inicial<input type="date" value={dateValue(internalEventDraft.startDate)} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, startDate: event.target.value })} className={`${inputClass} mt-1`} required /></label><label className="text-xs text-gray-400">Hora inicial<input type="time" value={timeValue(internalEventDraft.startTime)} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, startTime: event.target.value })} className={`${inputClass} mt-1`} /></label><label className="text-xs text-gray-400">Fecha final<input type="date" value={dateValue(internalEventDraft.endDate)} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, endDate: event.target.value })} className={`${inputClass} mt-1`} /></label><label className="text-xs text-gray-400">Hora final<input type="time" value={timeValue(internalEventDraft.endTime)} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, endTime: event.target.value })} className={`${inputClass} mt-1`} /></label><input value={internalEventDraft.location || ''} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, location: event.target.value })} placeholder="Lugar" className={`${inputClass} sm:col-span-2`} /><textarea value={internalEventDraft.notes || ''} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, notes: event.target.value })} placeholder="Notas" className={`${inputClass} min-h-24 sm:col-span-2`} />{internalEventDraft.visibility === 'SELECTED' && <fieldset className="grid gap-2 rounded-xl border border-white/10 p-3 sm:col-span-2 sm:grid-cols-2"><legend className="px-2 text-xs text-gray-300">Usuarios con visibilidad</legend>{snapshot.users.filter((item) => item.status === 'ACTIVO').map((user) => <label key={user.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={(internalEventDraft.userIds || []).includes(user.id)} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, userIds: event.target.checked ? [...(internalEventDraft.userIds || []), user.id] : (internalEventDraft.userIds || []).filter((id) => id !== user.id) })} />{user.displayName || `${user.name} ${user.lastName}`}</label>)}</fieldset>}<select value={internalEventDraft.status || 'ACTIVO'} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, status: event.target.value as InternalCalendarEvent['status'] })} className={inputClass}><option>ACTIVO</option><option>CANCELADO</option></select></div><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setInternalEventDraft(null)} className="rounded-xl border border-white/15 px-4 py-2.5 text-sm">Cancelar</button><button disabled={busy} className="rounded-xl bg-violet-200 px-4 py-2.5 text-sm font-bold text-violet-950">Guardar y sincronizar</button></div></form></div>}
     </section>
   );

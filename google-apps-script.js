@@ -185,6 +185,7 @@ function logAudit(ss, action, details, elementId, user) {
         user || 'Admin XPH',
         'APLICADO_EXITOSO'
       ]);
+      clearBusinessRecordCache('Historial_Auditoria');
     }
   } catch (e) {
     Logger.log('Error audit log: ' + e);
@@ -494,7 +495,48 @@ var BUSINESS_HEADERS = {
   ownerSignature: ['id', 'fileId', 'updatedAt']
 };
 
+var BUSINESS_SCHEMA_VERSION = '2026-08-28-calendar-performance-v1';
+var BUSINESS_RECORD_CACHE_TTL_SECONDS = 21600;
+
+function businessSchemaPropertyKey(ss) {
+  return 'xph_business_schema_' + String(ss && ss.getId ? ss.getId() : 'default');
+}
+
+function businessRecordCacheKey(sheetName) {
+  return 'xph_records_v3_' + String(sheetName || '').replace(/[^A-Za-z0-9_]/g, '_');
+}
+
+function cacheBusinessRecords(sheetName, records) {
+  try { CacheService.getScriptCache().put(businessRecordCacheKey(sheetName), JSON.stringify(records || []), BUSINESS_RECORD_CACHE_TTL_SECONDS); }
+  catch (_) { clearBusinessRecordCache(sheetName); }
+}
+
+function updateCachedBusinessRecord(sheetName, record) {
+  try {
+    var cache = CacheService.getScriptCache();
+    var key = businessRecordCacheKey(sheetName);
+    var raw = cache.get(key);
+    if (raw === null) return;
+    var records = JSON.parse(raw);
+    var index = records.findIndex(function(item) { return String(item.id) === String(record.id); });
+    if (index >= 0) records[index] = record;
+    else records.push(record);
+    cacheBusinessRecords(sheetName, records);
+  } catch (_) { clearBusinessRecordCache(sheetName); }
+}
+
+function clearBusinessRecordCache(sheetName) {
+  try { CacheService.getScriptCache().remove(businessRecordCacheKey(sheetName)); } catch (_) {}
+}
+
+function clearBusinessSnapshotCaches() {
+  ['CRM_Clientes','Seguimientos_CRM','Gastos','Pagos_Clientes','Movimientos_Financieros','Ajustes_Financieros','Paquetes_Cliente','Servicios_Contratados','Adicionales_Cliente','Usuarios_CRM','Funciones_Equipo','Invitaciones_Usuarios','Asignaciones_Equipo','Gmail_Config','Plantillas_Email','Historial_Correos','Notificaciones_CRM','Galerias_Clientes','Eventos_Internos','Contratos','Firma_Administrador','Historial_Auditoria'].forEach(clearBusinessRecordCache);
+}
+
 function ensureBusinessSchema(ss) {
+  var schemaKey = businessSchemaPropertyKey(ss);
+  var schemaProperties = PropertiesService.getScriptProperties();
+  if (schemaProperties.getProperty(schemaKey) === BUSINESS_SCHEMA_VERSION) return;
   var businessSheets = {
     'CRM_Clientes': BUSINESS_HEADERS.clients,
     'Seguimientos_CRM': BUSINESS_HEADERS.followUps,
@@ -548,6 +590,8 @@ function ensureBusinessSchema(ss) {
   }
   var gmailSheet = ss.getSheetByName('Gmail_Config');
   if (gmailSheet && gmailSheet.getLastRow() < 2) gmailSheet.appendRow(['xph-gmail', false, '', 'XPH Fotografía & Video', '', '<p>XPH Fotografía & Video</p>', '', false, false, false, new Date().toISOString()]);
+  schemaProperties.setProperty(schemaKey, BUSINESS_SCHEMA_VERSION);
+  clearBusinessSnapshotCaches();
 }
 
 function businessBoolean(value) {
@@ -815,13 +859,20 @@ function cleanBusinessText(value, maxLength) {
 }
 
 function readBusinessRecords(ss, sheetName, headers) {
+  try {
+    var cachedRecords = CacheService.getScriptCache().get(businessRecordCacheKey(sheetName));
+    if (cachedRecords !== null) return JSON.parse(cachedRecords);
+  } catch (_) {}
   var sheet = ss.getSheetByName(sheetName);
-  if (!sheet || sheet.getLastRow() < 2) return [];
+  if (!sheet || sheet.getLastRow() < 2) {
+    cacheBusinessRecords(sheetName, []);
+    return [];
+  }
   var timeZone = ss.getSpreadsheetTimeZone() || Session.getScriptTimeZone() || 'America/Mexico_City';
   var dateHeaders = { eventDate: true, preSessionDate: true, date: true, dueDate: true };
   var timeHeaders = { eventTime: true, preSessionTime: true };
   var values = sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).getValues();
-  return values.filter(function(row) { return cleanBusinessText(row[0], 200) !== ''; }).map(function(row) {
+  var records = values.filter(function(row) { return cleanBusinessText(row[0], 200) !== ''; }).map(function(row) {
     var record = {};
     headers.forEach(function(header, index) {
       var value = row[index];
@@ -834,6 +885,8 @@ function readBusinessRecords(ss, sheetName, headers) {
     });
     return record;
   });
+  cacheBusinessRecords(sheetName, records);
+  return records;
 }
 
 function upsertBusinessRecord(ss, sheetName, headers, record) {
@@ -855,6 +908,7 @@ function upsertBusinessRecord(ss, sheetName, headers, record) {
   });
   if (rowNumber > 0) sheet.getRange(rowNumber, 1, 1, headers.length).setValues([row]);
   else sheet.appendRow(row);
+  updateCachedBusinessRecord(sheetName, record);
   return record;
 }
 
@@ -1289,6 +1343,25 @@ function assignmentDateTime(dateValue, timeValue, fallbackHours) {
   return result;
 }
 
+function collaboratorCalendarRequest(url, options) {
+  var response = UrlFetchApp.fetch(url, Object.assign({ muteHttpExceptions: true }, options || {}));
+  var parsed = {};
+  try { parsed = JSON.parse(response.getContentText() || '{}'); } catch (_) {}
+  return { code: response.getResponseCode(), data: parsed };
+}
+
+function collaboratorLegacyMatch(item, expectedSummary, start, reconcileKey) {
+  if (!item || item.status === 'cancelled') return false;
+  var actualSummary = normalizeCalendarMatchText(item.summary || '');
+  if (actualSummary.indexOf('xph ') !== 0) return false;
+  var itemStart = item.start && (item.start.dateTime || item.start.date) || '';
+  if (String(itemStart).slice(0, 10) !== Utilities.formatDate(start, businessCalendarTimeZone(), 'yyyy-MM-dd')) return false;
+  if (actualSummary === normalizeCalendarMatchText(expectedSummary)) return true;
+  if (calendarEventClientToken(item.summary) !== calendarEventClientToken(expectedSummary)) return false;
+  var expectedKind = String(reconcileKey).indexOf(':session') >= 0 ? 'session' : 'event';
+  return calendarEventKind(item.summary) === expectedKind && calendarEventKind(expectedSummary) === expectedKind;
+}
+
 function syncAssignmentToCollaboratorCalendar(user, assignment, client) {
   if (!user || String(user.calendarConnected) !== 'true') return { eventId: assignment.calendarEventId || '', status: 'Desconectado' };
   var tokenRecordRaw = PropertiesService.getScriptProperties().getProperty('xph_user_oauth_' + user.id);
@@ -1312,25 +1385,49 @@ function syncAssignmentToCollaboratorCalendar(user, assignment, client) {
   if (!accessToken) return { eventId: assignment.calendarEventId || '', status: 'Error' };
   var headers = { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' };
   var baseUrl = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
-  if (String(assignment.status) === 'CANCELADA') {
-    if (assignment.calendarEventId) UrlFetchApp.fetch(baseUrl + '/' + encodeURIComponent(assignment.calendarEventId), { method: 'delete', headers: headers, muteHttpExceptions: true });
-    return { eventId: '', status: 'Sincronizado' };
-  }
   var start = assignmentDateTime(assignment.startDate, assignment.startTime);
   var end = assignment.endDate ? assignmentDateTime(assignment.endDate, assignment.endTime || assignment.startTime) : assignmentDateTime(assignment.startDate, assignment.endTime || assignment.startTime, assignment.endTime ? 0 : 1);
   if (end.getTime() <= start.getTime()) end = new Date(start.getTime() + 60 * 60 * 1000);
+  var reconcileKey = 'assignment:' + assignment.id + ':' + inferredAssignmentScheduleSource(assignment).toLowerCase();
+  var summary = 'XPH · ' + (assignment.activityType || client.eventType || 'Evento') + ' · ' + (client.name || 'Cliente');
+  var listUrl = baseUrl + '?singleEvents=true&showDeleted=false&maxResults=100&timeMin=' + encodeURIComponent(new Date(start.getTime() - 36 * 60 * 60 * 1000).toISOString()) + '&timeMax=' + encodeURIComponent(new Date(start.getTime() + 60 * 60 * 60 * 1000).toISOString());
+  var listed = collaboratorCalendarRequest(listUrl, { method: 'get', headers: headers });
+  var items = listed.code >= 200 && listed.code < 300 && Array.isArray(listed.data.items) ? listed.data.items : [];
+  var matches = items.filter(function(item) {
+    var tag = item.extendedProperties && item.extendedProperties.private && item.extendedProperties.private.xphCrmKey || '';
+    return tag === reconcileKey || collaboratorLegacyMatch(item, summary, start, reconcileKey);
+  });
+  if (assignment.calendarEventId && !matches.some(function(item) { return String(item.id) === String(assignment.calendarEventId); })) {
+    var stored = collaboratorCalendarRequest(baseUrl + '/' + encodeURIComponent(assignment.calendarEventId), { method: 'get', headers: headers });
+    if (stored.code >= 200 && stored.code < 300 && stored.data.id) matches.unshift(stored.data);
+  }
+  var canonical = assignment.calendarEventId ? matches.find(function(item) { return String(item.id) === String(assignment.calendarEventId); }) : null;
+  if (!canonical) canonical = matches.find(function(item) { return item.extendedProperties && item.extendedProperties.private && item.extendedProperties.private.xphCrmKey === reconcileKey; }) || matches[0] || null;
+  var duplicatesDeleted = 0;
+  matches.forEach(function(item) {
+    if (canonical && String(item.id) === String(canonical.id)) return;
+    var removed = collaboratorCalendarRequest(baseUrl + '/' + encodeURIComponent(item.id), { method: 'delete', headers: headers });
+    if ([200, 204, 410].indexOf(removed.code) >= 0) duplicatesDeleted++;
+  });
+  if (String(assignment.status) === 'CANCELADA') {
+    if (canonical && canonical.id) {
+      var cancelled = collaboratorCalendarRequest(baseUrl + '/' + encodeURIComponent(canonical.id), { method: 'delete', headers: headers });
+      if ([200, 204, 410].indexOf(cancelled.code) >= 0) duplicatesDeleted++;
+    }
+    return { eventId: '', status: 'Sincronizado', created: 0, updated: 0, duplicatesDeleted: duplicatesDeleted };
+  }
   var body = {
-    summary: 'XPH · ' + (assignment.activityType || client.eventType || 'Evento') + ' · ' + (client.name || 'Cliente'),
+    summary: summary,
     location: client.eventLocation || client.preSessionLocation || '',
     description: 'Función: ' + (assignment.functionName || user.functionName || '') + '\nInformación operativa: ' + (assignment.notes || 'Sin notas') + '\nCliente: ' + (client.name || ''),
     start: { dateTime: start.toISOString(), timeZone: businessCalendarTimeZone() },
     end: { dateTime: end.toISOString(), timeZone: businessCalendarTimeZone() },
-    reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: 10080 }, { method: 'popup', minutes: 1440 }] }
+    reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: 10080 }, { method: 'popup', minutes: 1440 }] },
+    extendedProperties: { private: { xphCrmKey: reconcileKey, xphAssignmentId: String(assignment.id), xphClientId: String(client.id || '') } }
   };
-  var eventUrl = assignment.calendarEventId ? baseUrl + '/' + encodeURIComponent(assignment.calendarEventId) : baseUrl;
-  var response = UrlFetchApp.fetch(eventUrl, { method: assignment.calendarEventId ? 'patch' : 'post', headers: headers, payload: JSON.stringify(body), muteHttpExceptions: true });
-  var result = JSON.parse(response.getContentText() || '{}');
-  return result.id ? { eventId: result.id, status: 'Sincronizado' } : { eventId: assignment.calendarEventId || '', status: 'Error' };
+  var saved = collaboratorCalendarRequest(canonical && canonical.id ? baseUrl + '/' + encodeURIComponent(canonical.id) : baseUrl, { method: canonical && canonical.id ? 'patch' : 'post', headers: headers, payload: JSON.stringify(body) });
+  var result = saved.data || {};
+  return result.id ? { eventId: result.id, status: 'Sincronizado', created: canonical ? 0 : 1, updated: canonical ? 1 : 0, duplicatesDeleted: duplicatesDeleted } : { eventId: canonical && canonical.id || assignment.calendarEventId || '', status: 'Error', created: 0, updated: 0, duplicatesDeleted: duplicatesDeleted };
 }
 
 function businessTimeAfter(timeValue, hoursToAdd) {
@@ -1353,6 +1450,7 @@ function syncClientAssignments(ss, client, eventReady, sessionReady) {
   var assignments = readBusinessRecords(ss, 'Asignaciones_Equipo', BUSINESS_HEADERS.assignments)
     .filter(function(item) { return String(item.clientId) === String(client.id); });
   var users = readBusinessRecords(ss, 'Usuarios_CRM', BUSINESS_HEADERS.users);
+  var summary = { created: 0, updated: 0, duplicatesDeleted: 0, failed: 0 };
   assignments.forEach(function(assignment) {
     var user = users.find(function(item) { return String(item.id) === String(assignment.userId); });
     if (!user) return;
@@ -1378,12 +1476,18 @@ function syncClientAssignments(ss, client, eventReady, sessionReady) {
       var result = syncAssignmentToCollaboratorCalendar(user, syncRecord, client);
       assignment.calendarEventId = sourceReady && String(assignment.status) !== 'CANCELADA' ? result.eventId : '';
       assignment.syncStatus = result.status;
+      summary.created += Number(result.created || 0);
+      summary.updated += Number(result.updated || 0);
+      summary.duplicatesDeleted += Number(result.duplicatesDeleted || 0);
+      if (result.status === 'Error') summary.failed++;
     } catch (error) {
       assignment.syncStatus = 'Error';
+      summary.failed++;
     }
     assignment.updatedAt = businessNow();
     upsertBusinessRecord(ss, 'Asignaciones_Equipo', BUSINESS_HEADERS.assignments, assignment);
   });
+  return summary;
 }
 
 var BUSINESS_CALENDAR_TIME_ZONE_CACHE = '';
@@ -1463,8 +1567,71 @@ function authorizeCalendarIntegration() {
   return CalendarApp.getDefaultCalendar().getName();
 }
 
-function upsertClientCalendarEvent(calendar, eventId, title, start, durationHours, location, description, guestEmail, allDay) {
-  var event = eventId ? calendar.getEventById(eventId) : null;
+function normalizeCalendarMatchText(value) {
+  var text = String(value || '').toLowerCase().trim();
+  try { text = text.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); } catch (_) {}
+  return text.replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function calendarEventDayKey(event) {
+  try { return Utilities.formatDate(event.getStartTime(), businessCalendarTimeZone(), 'yyyy-MM-dd'); } catch (_) { return ''; }
+}
+
+function calendarEventClientToken(title) {
+  var pieces = String(title || '').split('·');
+  return normalizeCalendarMatchText(pieces.length ? pieces[pieces.length - 1] : title);
+}
+
+function calendarEventKind(title) {
+  return /(sesion|preboda|save the date)/.test(normalizeCalendarMatchText(title)) ? 'session' : 'event';
+}
+
+function isStrictLegacyCalendarMatch(event, title, start, reconcileKey) {
+  var existingTitle = '';
+  try { existingTitle = event.getTitle(); } catch (_) { return false; }
+  if (normalizeCalendarMatchText(existingTitle).indexOf('xph ') !== 0) return false;
+  if (calendarEventDayKey(event) !== Utilities.formatDate(start, businessCalendarTimeZone(), 'yyyy-MM-dd')) return false;
+  var expectedTitle = normalizeCalendarMatchText(title);
+  var actualTitle = normalizeCalendarMatchText(existingTitle);
+  if (actualTitle === expectedTitle) return true;
+  var expectedClient = calendarEventClientToken(title);
+  if (!expectedClient || calendarEventClientToken(existingTitle) !== expectedClient) return false;
+  var expectedKind = String(reconcileKey || '').indexOf(':session') >= 0 ? 'session' : 'event';
+  return calendarEventKind(existingTitle) === expectedKind && calendarEventKind(title) === expectedKind;
+}
+
+function getCalendarEventByIdSafe(calendar, eventId) {
+  if (!eventId) return null;
+  try { return calendar.getEventById(eventId); } catch (_) { return null; }
+}
+
+function calendarEventsForReconciliation(calendar, eventId, reconcileKey, title, start) {
+  var matches = [];
+  var seen = {};
+  var stored = getCalendarEventByIdSafe(calendar, eventId);
+  if (stored) { matches.push(stored); seen[String(stored.getId())] = true; }
+  var candidates = [];
+  try { candidates = calendar.getEvents(new Date(start.getTime() - 36 * 60 * 60 * 1000), new Date(start.getTime() + 60 * 60 * 60 * 1000)); } catch (_) {}
+  candidates.forEach(function(candidate) {
+    var candidateId = String(candidate.getId());
+    if (seen[candidateId]) return;
+    var tagged = '';
+    try { tagged = candidate.getTag('xphCrmKey') || ''; } catch (_) {}
+    if (tagged === reconcileKey || isStrictLegacyCalendarMatch(candidate, title, start, reconcileKey)) {
+      matches.push(candidate);
+      seen[candidateId] = true;
+    }
+  });
+  return matches;
+}
+
+function upsertClientCalendarEvent(calendar, eventId, title, start, durationHours, location, description, guestEmail, allDay, reconcileKey) {
+  var matches = calendarEventsForReconciliation(calendar, eventId, reconcileKey, title, start);
+  var event = null;
+  if (eventId) event = matches.find(function(item) { return String(item.getId()) === String(eventId); }) || null;
+  if (!event) event = matches.find(function(item) { try { return item.getTag('xphCrmKey') === reconcileKey; } catch (_) { return false; } }) || null;
+  if (!event && matches.length) event = matches[0];
+  var created = !event;
   var end = new Date(start.getTime() + Math.max(0.5, Number(durationHours) || 1) * 60 * 60 * 1000);
   if (event) {
     event.setTitle(title).setLocation(location || '').setDescription(description || '');
@@ -1475,20 +1642,34 @@ function upsertClientCalendarEvent(calendar, eventId, title, start, durationHour
       ? calendar.createAllDayEvent(title, start, { location: location || '', description: description || '' })
       : calendar.createEvent(title, start, end, { location: location || '', description: description || '' });
   }
+  try { event.setTag('xphCrmKey', reconcileKey); } catch (_) {}
   event.removeAllReminders();
   event.addPopupReminder(10080);
   event.addPopupReminder(1440);
-  if (guestEmail) event.addGuest(guestEmail);
-  return event;
+  try {
+    event.getGuestList().forEach(function(guest) {
+      if (!guestEmail || String(guest.getEmail()).toLowerCase() !== String(guestEmail).toLowerCase()) event.removeGuest(guest.getEmail());
+    });
+  } catch (_) {}
+  if (guestEmail) { try { event.addGuest(guestEmail); } catch (_) {} }
+  var canonicalId = String(event.getId());
+  var duplicatesDeleted = 0;
+  matches.forEach(function(candidate) {
+    if (String(candidate.getId()) === canonicalId) return;
+    try { candidate.deleteEvent(); duplicatesDeleted++; } catch (_) {}
+  });
+  return { eventId: canonicalId, created: created ? 1 : 0, updated: created ? 0 : 1, duplicatesDeleted: duplicatesDeleted };
 }
 
-function removeClientCalendarEvent(calendar, eventId) {
-  if (!eventId) return '';
-  try {
-    var event = calendar.getEventById(eventId);
-    if (event) event.deleteEvent();
-  } catch (_) {}
-  return '';
+function removeClientCalendarEvent(calendar, eventId, reconcileKey, title, start) {
+  var matches = start && reconcileKey && title ? calendarEventsForReconciliation(calendar, eventId, reconcileKey, title, start) : [];
+  if (!matches.length) {
+    var stored = getCalendarEventByIdSafe(calendar, eventId);
+    if (stored) matches = [stored];
+  }
+  var deleted = 0;
+  matches.forEach(function(event) { try { event.deleteEvent(); deleted++; } catch (_) {} });
+  return { eventId: '', duplicatesDeleted: deleted };
 }
 
 function driveUploadFolder() {
@@ -1674,6 +1855,78 @@ function finalizeDrivePhotoUpload(ss, payload) {
   return { status: 'success', fileId: fileId, url: directUrl, driveUrl: 'https://drive.google.com/file/d/' + fileId + '/view' };
 }
 
+function emptyCalendarSyncSummary() {
+  return { processed: 0, synchronized: 0, failed: 0, created: 0, updated: 0, duplicatesDeleted: 0 };
+}
+
+function addCalendarSyncResult(summary, result) {
+  summary.created += Number(result && result.created || 0);
+  summary.updated += Number(result && result.updated || 0);
+  summary.duplicatesDeleted += Number(result && result.duplicatesDeleted || 0);
+  summary.failed += Number(result && result.failed || 0);
+}
+
+function syncCalendarClientRecord(ss, calendarClient) {
+  if (!calendarClient) throw new Error('Cliente no localizado.');
+  var syncSummary = emptyCalendarSyncSummary();
+  syncSummary.processed = 1;
+  var eventReady = Boolean(calendarClient.recordType === 'Cliente' && calendarClient.eventDate && String(calendarClient.status) !== 'Archivado');
+  var sessionReady = Boolean(calendarClient.recordType === 'Cliente' && calendarClient.preSessionApplies && calendarClient.preSessionDate && String(calendarClient.preSessionStatus) !== 'Cancelada');
+  var hasLinkedAssignment = readBusinessRecords(ss, 'Asignaciones_Equipo', BUSINESS_HEADERS.assignments).some(function(item) { return String(item.clientId) === String(calendarClient.id) && Boolean(item.calendarEventId); });
+  if (!eventReady && !sessionReady && !calendarClient.calendarEventId && !calendarClient.preSessionCalendarEventId && !hasLinkedAssignment) throw new Error('Registra al menos la fecha del evento o de la sesión antes de sincronizar.');
+  var calendar = CalendarApp.getDefaultCalendar();
+  var guest = calendarClient.inviteClientToCalendar && calendarClient.email ? calendarClient.email : '';
+  var eventTitle = 'XPH · ' + (calendarClient.eventType || 'Evento') + ' · ' + (calendarClient.name || calendarClient.honoreeName || 'Cliente');
+  var eventDescription = 'Cliente: ' + (calendarClient.name || '') + '\nTeléfono: ' + (calendarClient.phone || '') + '\nPaquete: ' + (calendarClient.packageName || 'Por confirmar') + '\nContrato: ' + (calendarClient.contractId || 'Pendiente');
+  var eventKey = 'client:' + calendarClient.id + ':event';
+  var normalizedEventStart = null;
+  if (calendarClient.eventDate) {
+    calendarClient.eventDate = normalizeBusinessDate(calendarClient.eventDate);
+    calendarClient.eventTime = normalizeBusinessTime(calendarClient.eventTime);
+    normalizedEventStart = calendarClient.eventTime ? calendarDateTime(calendarClient.eventDate, calendarClient.eventTime) : calendarDateOnly(calendarClient.eventDate);
+  }
+  if (eventReady) {
+    var mainEvent = upsertClientCalendarEvent(calendar, calendarClient.calendarEventId, eventTitle, normalizedEventStart, calendarClient.serviceHours || 1, calendarClient.eventLocation, eventDescription, guest, !calendarClient.eventTime, eventKey);
+    calendarClient.calendarEventId = mainEvent.eventId;
+    addCalendarSyncResult(syncSummary, mainEvent);
+  } else {
+    var removedMain = removeClientCalendarEvent(calendar, calendarClient.calendarEventId, normalizedEventStart ? eventKey : '', eventTitle, normalizedEventStart);
+    calendarClient.calendarEventId = removedMain.eventId;
+    syncSummary.duplicatesDeleted += Number(removedMain.duplicatesDeleted || 0);
+  }
+  var sessionTitle = 'XPH · ' + (calendarClient.preSessionType || 'Sesión previa') + ' · ' + (calendarClient.name || 'Cliente');
+  var sessionKey = 'client:' + calendarClient.id + ':session';
+  var normalizedSessionStart = null;
+  if (calendarClient.preSessionDate) {
+    calendarClient.preSessionDate = normalizeBusinessDate(calendarClient.preSessionDate);
+    calendarClient.preSessionTime = normalizeBusinessTime(calendarClient.preSessionTime);
+    normalizedSessionStart = calendarClient.preSessionTime ? calendarDateTime(calendarClient.preSessionDate, calendarClient.preSessionTime) : calendarDateOnly(calendarClient.preSessionDate);
+  }
+  if (sessionReady) {
+    var sessionDuration = 2;
+    if (calendarClient.preSessionTime && calendarClient.preSessionEndTime) {
+      var sessionEnd = calendarDateTime(calendarClient.preSessionDate, calendarClient.preSessionEndTime);
+      sessionDuration = Math.max(0.5, (sessionEnd.getTime() - normalizedSessionStart.getTime()) / 3600000);
+    }
+    var sessionEvent = upsertClientCalendarEvent(calendar, calendarClient.preSessionCalendarEventId, sessionTitle, normalizedSessionStart, sessionDuration, calendarClient.preSessionAddress || calendarClient.preSessionLocation, eventDescription + '\nNotas de sesión: ' + (calendarClient.preSessionNotes || 'Sin notas'), guest, !calendarClient.preSessionTime, sessionKey);
+    calendarClient.preSessionCalendarEventId = sessionEvent.eventId;
+    addCalendarSyncResult(syncSummary, sessionEvent);
+  } else {
+    var removedSession = removeClientCalendarEvent(calendar, calendarClient.preSessionCalendarEventId, normalizedSessionStart ? sessionKey : '', sessionTitle, normalizedSessionStart);
+    calendarClient.preSessionCalendarEventId = removedSession.eventId;
+    syncSummary.duplicatesDeleted += Number(removedSession.duplicatesDeleted || 0);
+  }
+  addCalendarSyncResult(syncSummary, syncClientAssignments(ss, calendarClient, eventReady, sessionReady));
+  calendarClient.calendarSyncStatus = syncSummary.failed ? 'Error' : 'Sincronizado';
+  calendarClient.calendarSyncedAt = businessNow();
+  calendarClient.calendarSyncError = syncSummary.failed ? 'Una o más asignaciones de colaboradores no pudieron sincronizarse.' : '';
+  calendarClient.updatedAt = businessNow();
+  upsertBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, calendarClient);
+  syncSummary.synchronized = syncSummary.failed ? 0 : 1;
+  logAudit(ss, 'CALENDARIO_RECONCILIADO', { title: eventTitle, session: sessionReady, created: syncSummary.created, updated: syncSummary.updated, duplicatesDeleted: syncSummary.duplicatesDeleted, failed: syncSummary.failed }, calendarClient.id, 'Admin XPH');
+  return { client: calendarClient, summary: syncSummary };
+}
+
 function handleBusinessAction(ss, action, payload) {
   payload = payload || {};
   ensureBusinessSchema(ss);
@@ -1691,6 +1944,7 @@ function handleBusinessAction(ss, action, payload) {
     };
   }
   if (action === 'businessSnapshot') {
+    if (businessBoolean(payload.force)) clearBusinessSnapshotCaches();
     var signatureRows = readBusinessRecords(ss, 'Firma_Administrador', BUSINESS_HEADERS.ownerSignature);
     var gmailConfigRows = readBusinessRecords(ss, 'Gmail_Config', BUSINESS_HEADERS.gmailConfig);
     return {
@@ -1773,44 +2027,38 @@ function handleBusinessAction(ss, action, payload) {
 
   if (action === 'calendarSync') {
     var calendarClient = findBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, payload.clientId);
-    if (!calendarClient) throw new Error('Cliente no localizado.');
-    var eventReady = Boolean(calendarClient.recordType === 'Cliente' && calendarClient.eventDate && String(calendarClient.status) !== 'Archivado');
-    var sessionReady = Boolean(calendarClient.recordType === 'Cliente' && calendarClient.preSessionApplies && calendarClient.preSessionDate && String(calendarClient.preSessionStatus) !== 'Cancelada');
-    var hasLinkedAssignment = readBusinessRecords(ss, 'Asignaciones_Equipo', BUSINESS_HEADERS.assignments).some(function(item) { return String(item.clientId) === String(calendarClient.id) && Boolean(item.calendarEventId); });
-    if (!eventReady && !sessionReady && !calendarClient.calendarEventId && !calendarClient.preSessionCalendarEventId && !hasLinkedAssignment) throw new Error('Registra al menos la fecha del evento o de la sesión antes de sincronizar.');
-    var calendar = CalendarApp.getDefaultCalendar();
-    var guest = calendarClient.inviteClientToCalendar && calendarClient.email ? calendarClient.email : '';
-    var eventTitle = 'XPH · ' + (calendarClient.eventType || 'Evento') + ' · ' + (calendarClient.name || calendarClient.honoreeName || 'Cliente');
-    var eventDescription = 'Cliente: ' + (calendarClient.name || '') + '\nTeléfono: ' + (calendarClient.phone || '') + '\nPaquete: ' + (calendarClient.packageName || 'Por confirmar') + '\nContrato: ' + (calendarClient.contractId || 'Pendiente');
-    if (eventReady) {
-      calendarClient.eventDate = normalizeBusinessDate(calendarClient.eventDate);
-      calendarClient.eventTime = normalizeBusinessTime(calendarClient.eventTime);
-      var eventAllDay = !calendarClient.eventTime;
-      var eventStart = eventAllDay ? calendarDateOnly(calendarClient.eventDate) : calendarDateTime(calendarClient.eventDate, calendarClient.eventTime);
-      var mainEvent = upsertClientCalendarEvent(calendar, calendarClient.calendarEventId, eventTitle, eventStart, calendarClient.serviceHours || 1, calendarClient.eventLocation, eventDescription, guest, eventAllDay);
-      calendarClient.calendarEventId = mainEvent.getId();
-    } else calendarClient.calendarEventId = removeClientCalendarEvent(calendar, calendarClient.calendarEventId);
-    if (sessionReady) {
-      calendarClient.preSessionDate = normalizeBusinessDate(calendarClient.preSessionDate);
-      calendarClient.preSessionTime = normalizeBusinessTime(calendarClient.preSessionTime);
-      var sessionAllDay = !calendarClient.preSessionTime;
-      var sessionStart = sessionAllDay ? calendarDateOnly(calendarClient.preSessionDate) : calendarDateTime(calendarClient.preSessionDate, calendarClient.preSessionTime);
-      var sessionDuration = 2;
-      if (!sessionAllDay && calendarClient.preSessionEndTime) {
-        var sessionEnd = calendarDateTime(calendarClient.preSessionDate, calendarClient.preSessionEndTime);
-        sessionDuration = Math.max(0.5, (sessionEnd.getTime() - sessionStart.getTime()) / (60 * 60 * 1000));
+    var calendarResult = syncCalendarClientRecord(ss, calendarClient);
+    return { status: 'success', client: calendarResult.client, summary: calendarResult.summary };
+  }
+
+  if (action === 'calendarSyncAll') {
+    var allSummary = emptyCalendarSyncSummary();
+    var eligibleClients = readBusinessRecords(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients).filter(function(item) {
+      return String(item.recordType) === 'Cliente' && (item.eventDate || item.preSessionDate || item.calendarEventId || item.preSessionCalendarEventId);
+    });
+    var synchronizedClients = [];
+    eligibleClients.forEach(function(item) {
+      try {
+        var result = syncCalendarClientRecord(ss, item);
+        synchronizedClients.push(result.client);
+        allSummary.processed++;
+        allSummary.synchronized += Number(result.summary.synchronized || 0);
+        allSummary.created += Number(result.summary.created || 0);
+        allSummary.updated += Number(result.summary.updated || 0);
+        allSummary.duplicatesDeleted += Number(result.summary.duplicatesDeleted || 0);
+        allSummary.failed += Number(result.summary.failed || 0);
+      } catch (error) {
+        item.calendarSyncStatus = 'Error';
+        item.calendarSyncError = cleanBusinessText(error && error.message || error, 1000);
+        item.updatedAt = businessNow();
+        upsertBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, item);
+        synchronizedClients.push(item);
+        allSummary.processed++;
+        allSummary.failed++;
       }
-      var sessionEvent = upsertClientCalendarEvent(calendar, calendarClient.preSessionCalendarEventId, 'XPH · ' + (calendarClient.preSessionType || 'Sesión previa') + ' · ' + (calendarClient.name || 'Cliente'), sessionStart, sessionDuration, calendarClient.preSessionAddress || calendarClient.preSessionLocation, eventDescription + '\nNotas de sesión: ' + (calendarClient.preSessionNotes || 'Sin notas'), guest, sessionAllDay);
-      calendarClient.preSessionCalendarEventId = sessionEvent.getId();
-    } else calendarClient.preSessionCalendarEventId = removeClientCalendarEvent(calendar, calendarClient.preSessionCalendarEventId);
-    syncClientAssignments(ss, calendarClient, eventReady, sessionReady);
-    calendarClient.calendarSyncStatus = 'Sincronizado';
-    calendarClient.calendarSyncedAt = businessNow();
-    calendarClient.calendarSyncError = '';
-    calendarClient.updatedAt = businessNow();
-    upsertBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, calendarClient);
-    logAudit(ss, 'CALENDARIO_SINCRONIZADO', eventTitle + (sessionReady ? ' + sesión previa' : ''), calendarClient.id, 'Admin XPH');
-    return { status: 'success', client: calendarClient };
+    });
+    logAudit(ss, 'CALENDARIO_RECONCILIACION_MASIVA', allSummary, 'calendar-sync-all-' + Date.now(), 'Admin XPH');
+    return { status: 'success', clients: synchronizedClients, summary: allSummary };
   }
 
   if (action === 'gmailConfigUpsert') {
@@ -1917,17 +2165,19 @@ function handleBusinessAction(ss, action, payload) {
     };
     if (!internalEvent.title || !internalEvent.startDate || ['SUPER_ADMIN', 'SELECTED'].indexOf(internalEvent.visibility) < 0 || ['ACTIVO', 'CANCELADO'].indexOf(internalEvent.status) < 0) throw new Error('El evento interno requiere título, fecha, visibilidad y estado válidos.');
     var internalCalendar = CalendarApp.getDefaultCalendar();
-    if (internalEvent.status === 'CANCELADO') internalEvent.calendarEventId = removeClientCalendarEvent(internalCalendar, internalEvent.calendarEventId);
+    var internalAllDay = !internalEvent.startTime;
+    var internalStart = internalAllDay ? calendarDateOnly(internalEvent.startDate) : calendarDateTime(internalEvent.startDate, internalEvent.startTime);
+    var internalTitle = 'XPH · ' + internalEvent.activityType + ' · ' + internalEvent.title;
+    var internalKey = 'internal:' + internalEvent.id;
+    if (internalEvent.status === 'CANCELADO') internalEvent.calendarEventId = removeClientCalendarEvent(internalCalendar, internalEvent.calendarEventId, internalKey, internalTitle, internalStart).eventId;
     else {
-      var internalAllDay = !internalEvent.startTime;
-      var internalStart = internalAllDay ? calendarDateOnly(internalEvent.startDate) : calendarDateTime(internalEvent.startDate, internalEvent.startTime);
       var duration = 1;
       if (!internalAllDay && internalEvent.endTime) {
         var internalEnd = calendarDateTime(internalEvent.endDate || internalEvent.startDate, internalEvent.endTime);
         duration = Math.max(0.5, (internalEnd.getTime() - internalStart.getTime()) / 3600000);
       }
-      var syncedInternal = upsertClientCalendarEvent(internalCalendar, internalEvent.calendarEventId, 'XPH · ' + internalEvent.activityType + ' · ' + internalEvent.title, internalStart, duration, internalEvent.location, internalEvent.notes, '', internalAllDay);
-      internalEvent.calendarEventId = syncedInternal.getId();
+      var syncedInternal = upsertClientCalendarEvent(internalCalendar, internalEvent.calendarEventId, internalTitle, internalStart, duration, internalEvent.location, internalEvent.notes, '', internalAllDay, internalKey);
+      internalEvent.calendarEventId = syncedInternal.eventId;
     }
     internalEvent.syncStatus = 'Sincronizado';
     upsertBusinessRecord(ss, 'Eventos_Internos', BUSINESS_HEADERS.internalEvents, internalEvent);
@@ -2504,7 +2754,7 @@ function doPost(e) {
     var ss = getDatabaseSpreadsheet();
 
     var businessActions = [
-      'businessClients', 'businessSnapshot', 'uploadInit', 'uploadFinalize', 'contractUploadInit', 'contractUploadFinalize', 'gmailLogoUploadInit', 'gmailLogoUploadFinalize', 'galleryUploadInit', 'galleryUploadFinalize', 'galleryCreate', 'galleryStatusUpdate', 'internalEventUpsert', 'crmUpsert', 'followUpCreate', 'prospectConvert', 'calendarSync', 'expenseUpsert', 'paymentUpsert', 'adjustmentUpsert', 'clientPackageAssign', 'serviceUpsert', 'addonUpsert', 'teamFunctionUpsert', 'teamUserUpsert', 'teamInviteCreate', 'teamInviteResolve', 'teamGoogleConnect', 'teamAssignmentUpsert', 'gmailConfigUpsert', 'gmailTest', 'emailTemplateUpsert', 'emailSend', 'notificationRead', 'remindersRun', 'remindersInstall', 'contractUpload', 'contractCreateLink',
+      'businessClients', 'businessSnapshot', 'uploadInit', 'uploadFinalize', 'contractUploadInit', 'contractUploadFinalize', 'gmailLogoUploadInit', 'gmailLogoUploadFinalize', 'galleryUploadInit', 'galleryUploadFinalize', 'galleryCreate', 'galleryStatusUpdate', 'internalEventUpsert', 'crmUpsert', 'followUpCreate', 'prospectConvert', 'calendarSync', 'calendarSyncAll', 'expenseUpsert', 'paymentUpsert', 'adjustmentUpsert', 'clientPackageAssign', 'serviceUpsert', 'addonUpsert', 'teamFunctionUpsert', 'teamUserUpsert', 'teamInviteCreate', 'teamInviteResolve', 'teamGoogleConnect', 'teamAssignmentUpsert', 'gmailConfigUpsert', 'gmailTest', 'emailTemplateUpsert', 'emailSend', 'notificationRead', 'remindersRun', 'remindersInstall', 'contractUpload', 'contractCreateLink',
       'contractInvalidate', 'contractResolve', 'contractCompleteSignature', 'ownerSignatureSave',
       'contractAdminPdfData', 'contractFinalizeData', 'contractFinalize'
     ];

@@ -1003,6 +1003,7 @@ export default async function handler(req, res) {
       'adminFollowUpCreate',
       'adminProspectConvert',
       'adminCalendarSync',
+      'adminCalendarSyncAll',
       'adminExpenseUpsert',
       'adminPaymentUpsert',
       'adminAdjustmentUpsert',
@@ -1043,7 +1044,7 @@ export default async function handler(req, res) {
       const permissionByAction = {
         adminBusinessClients: 'CRM_OR_CLIENT_READ', adminBusinessSnapshot: 'CRM_OR_CLIENT_READ',
         adminCrmUpsert: 'CRM_OR_CLIENT_WRITE', adminFollowUpCreate: 'CRM_WRITE', adminProspectConvert: 'CRM_WRITE',
-        adminCalendarSync: 'CALENDAR',
+        adminCalendarSync: 'CALENDAR', adminCalendarSyncAll: 'CALENDAR',
         adminExpenseUpsert: 'FINANCE', adminPaymentUpsert: 'FINANCE', adminAdjustmentUpsert: 'FINANCE',
         adminClientPackageAssign: 'CLIENTS_WRITE', adminServiceUpsert: 'CLIENTS_WRITE', adminAddonUpsert: 'CLIENTS_WRITE',
         adminContractUpload: 'CONTRACTS', adminContractUploadInit: 'CONTRACTS', adminDriveUploadBody: uploadPermissionByKind[uploadKind] || 'SUPER_ADMIN', adminContractUploadFinalize: 'CONTRACTS', adminContractCreateLink: 'CONTRACTS', adminOwnerSignatureSave: 'CONTRACTS', adminContractFinalize: 'CONTRACTS',
@@ -1210,13 +1211,18 @@ export default async function handler(req, res) {
         }
         try {
           const result = await forwardBusinessAction('calendarSync', { clientId });
-          return res.status(200).json({ status: 'success', client: result.client });
+          return res.status(200).json({ status: 'success', client: result.client, summary: result.summary || null });
         } catch (error) {
           const message = String(error?.message || error || 'No se pudo actualizar Calendar.').replace(/^Error:\s*/i, '');
           await forwardBusinessAction('crmUpsert', { client: { id: clientId, calendarSyncStatus: 'Error', calendarSyncError: message } }).catch(() => null);
           if (/fecha y el horario|fecha.*horario/i.test(message)) return res.status(400).json({ status: 'error', message });
           throw error;
         }
+      }
+      if (action === 'adminCalendarSyncAll') {
+        if (session.role !== 'SUPER_ADMIN') return res.status(403).json({ status: 'error', message: 'Solo el Super Admin puede reconciliar todos los calendarios.' });
+        const result = await forwardBusinessAction('calendarSyncAll');
+        return res.status(200).json({ status: 'success', clients: Array.isArray(result.clients) ? result.clients : [], summary: result.summary || {} });
       }
       if (action === 'adminExpenseUpsert') {
         const expense = submitted.expense || {};
