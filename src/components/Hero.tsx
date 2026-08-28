@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { Sparkles, ChevronRight, HeartHandshake, MapPin, CalendarCheck, Camera } from 'lucide-react';
-import { HeroCoverSetting, RoutePath } from '../types';
+import { BuiltInRoutePath, CatalogCategory, HeroCoverSetting, RoutePath } from '../types';
+import { DEFAULT_CATALOG_CATEGORIES } from '../utils/catalogCategories';
 
 interface HeroProps {
   currentRoute: RoutePath;
+  categories?: CatalogCategory[];
   onQuoteClick: () => void;
   onGalleryClick: () => void;
   onCitaClick: () => void;
@@ -14,6 +16,7 @@ interface HeroProps {
 
 export const Hero: React.FC<HeroProps> = ({
   currentRoute,
+  categories = DEFAULT_CATALOG_CATEGORIES,
   onQuoteClick,
   onGalleryClick,
   onCitaClick,
@@ -22,7 +25,7 @@ export const Hero: React.FC<HeroProps> = ({
   mediaReady = true,
 }) => {
   const [loadedImageUrl, setLoadedImageUrl] = useState<string | null>(null);
-  const routeContent: Record<RoutePath, { badge: string; title: string; highlight: string; subtitle: string; imageUrl: string; imageTag: string }> = {
+  const routeContent: Record<BuiltInRoutePath, { badge: string; title: string; highlight: string; subtitle: string; imageUrl: string; imageTag: string }> = {
     inicio: {
       badge: 'Fotografía & video en CDMX, Estado de México y zona centro',
       title: 'Fotografía para momentos que merecen ',
@@ -73,9 +76,17 @@ export const Hero: React.FC<HeroProps> = ({
     },
   };
 
-  const current = routeContent[currentRoute];
+  const category = categories.find((item) => item.id === currentRoute);
+  const current = routeContent[currentRoute as BuiltInRoutePath] || {
+    badge: `${category?.name || 'Servicio XPH'} · Atención personalizada`,
+    title: 'Conoce nuestros servicios de ',
+    highlight: category?.name || 'fotografía y video',
+    subtitle: category?.description || `Revisa los paquetes de ${category?.name || 'esta categoría'}, arma tu cotización y solicita disponibilidad directamente.`,
+    imageUrl: category?.imageUrl || 'https://images.unsplash.com/photo-1520854221256-17451cc331bf?auto=format&fit=crop&w=1000&q=85',
+    imageTag: category?.name || 'XPH Fotografía & Video',
+  };
   const setting = heroCoverSettings[currentRoute];
-  const imageUrl = setting?.url || heroCovers[currentRoute] || current.imageUrl;
+  const imageUrl = setting?.url || heroCovers[currentRoute] || category?.imageUrl || current.imageUrl;
   const managedCover = Boolean(setting?.url || heroCovers[currentRoute]);
   const coverLabel = setting?.label || current.imageTag;
   const coverDescription = setting?.description || (managedCover

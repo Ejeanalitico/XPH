@@ -1,4 +1,4 @@
-import { CatalogCategory, PackageOption, RoutePath } from '../types';
+import { BuiltInEventType, CatalogCategory, PackageOption } from '../types';
 
 export const BUILT_IN_CATEGORY_LABELS: Record<string, string> = {
   bodas: 'Bodas',
@@ -18,7 +18,7 @@ export const DEFAULT_CATALOG_CATEGORIES: CatalogCategory[] = Object.entries(BUIL
   order: index + 1,
 }));
 
-const slugify = (value: string) => value
+export const slugifyCatalogValue = (value: string) => value
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '')
   .toLowerCase()
@@ -35,7 +35,7 @@ export function resolvePublishedCategories(
   const categories = source.map((item: any, index: number): CatalogCategory => ({
     id: String(item?.id || `categoria-${index + 1}`),
     name: String(item?.name || BUILT_IN_CATEGORY_LABELS[String(item?.id || '')] || 'Categoría'),
-    slug: slugify(String(item?.slug || item?.name || item?.id || `categoria-${index + 1}`)),
+    slug: slugifyCatalogValue(String(item?.slug || item?.name || item?.id || `categoria-${index + 1}`)),
     description: String(item?.description || ''),
     imageUrl: String(item?.imageUrl || ''),
     active: item?.active !== false,
@@ -49,7 +49,7 @@ export function resolvePublishedCategories(
     categories.push({
       id,
       name: BUILT_IN_CATEGORY_LABELS[id] || id,
-      slug: slugify(id),
+      slug: slugifyCatalogValue(id),
       description: '',
       imageUrl: '',
       active: true,
@@ -63,7 +63,15 @@ export function resolvePublishedCategories(
 export const categoryLabel = (id: string, categories: CatalogCategory[]) =>
   categories.find((item) => item.id === id)?.name || BUILT_IN_CATEGORY_LABELS[id] || id;
 
-const BUILT_IN_ROUTES = new Set<RoutePath>(['bodas', 'xv-anos', 'bautizos', 'retratos', 'empresarial']);
+const BUILT_IN_ROUTES = new Set<BuiltInEventType>(['bodas', 'xv-anos', 'bautizos', 'retratos', 'empresarial']);
 
-export const isBuiltInCategoryRoute = (value: string): value is Exclude<RoutePath, 'inicio'> =>
-  BUILT_IN_ROUTES.has(value as RoutePath);
+export const isBuiltInCategoryRoute = (value: string): value is BuiltInEventType =>
+  BUILT_IN_ROUTES.has(value as BuiltInEventType);
+
+export const categoryForRoute = (route: string, categories: CatalogCategory[]) =>
+  categories.find((category) => category.id === route || category.slug === route);
+
+export const categoryRouteFromSlug = (slug: string, categories: CatalogCategory[]) => {
+  const normalized = slugifyCatalogValue(slug);
+  return categories.find((category) => category.active && category.slug === normalized)?.id || '';
+};

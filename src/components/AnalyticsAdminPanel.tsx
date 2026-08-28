@@ -18,7 +18,7 @@ import {
   Target,
   Users,
 } from 'lucide-react';
-import { RoutePath, SeoSettings } from '../types';
+import { BuiltInRoutePath, CatalogCategory, RoutePath, SeoSettings } from '../types';
 import {
   AdminAnalytics,
   AdminSession,
@@ -33,6 +33,7 @@ import { normalizeSeoSettings } from '../utils/seo';
 interface Props {
   session: AdminSession;
   seoSettings: SeoSettings;
+  categories?: CatalogCategory[];
   onSeoSettingsChange: (settings: SeoSettings) => void;
 }
 
@@ -60,7 +61,7 @@ const COUNTRY_LABELS: Record<string, string> = {
   ES: 'España',
 };
 
-const SEO_ROUTE_LABELS: Record<RoutePath, string> = {
+const SEO_ROUTE_LABELS: Record<BuiltInRoutePath, string> = {
   inicio: 'Inicio',
   bodas: 'Bodas',
   'xv-anos': 'XV años',
@@ -163,7 +164,7 @@ const SearchConsoleTable: React.FC<{ rows: SearchConsoleRow[] }> = ({ rows }) =>
   );
 };
 
-export const AnalyticsAdminPanel: React.FC<Props> = ({ session, seoSettings, onSeoSettingsChange }) => {
+export const AnalyticsAdminPanel: React.FC<Props> = ({ session, seoSettings, categories = [], onSeoSettingsChange }) => {
   const [period, setPeriod] = useState<Period>(28);
   const [reloadKey, setReloadKey] = useState(0);
   const [analytics, setAnalytics] = useState<AdminAnalytics | null>(null);
@@ -171,13 +172,19 @@ export const AnalyticsAdminPanel: React.FC<Props> = ({ session, seoSettings, onS
   const [error, setError] = useState('');
   const [excludeThisDevice, setExcludeThisDevice] = useState(isAnalyticsExcluded);
   const [seoRoute, setSeoRoute] = useState<RoutePath>('inicio');
-  const [seoDraft, setSeoDraft] = useState(() => normalizeSeoSettings(seoSettings));
+  const [seoDraft, setSeoDraft] = useState(() => normalizeSeoSettings(seoSettings, categories));
   const [savingSeo, setSavingSeo] = useState(false);
   const [seoMessage, setSeoMessage] = useState('');
 
   useEffect(() => {
-    setSeoDraft(normalizeSeoSettings(seoSettings));
-  }, [seoSettings]);
+    setSeoDraft(normalizeSeoSettings(seoSettings, categories));
+  }, [seoSettings, categories]);
+
+  const seoRouteLabels = useMemo<Record<string, string>>(() => ({
+    ...SEO_ROUTE_LABELS,
+    ...Object.fromEntries(categories.map((category) => [category.id, category.name])),
+  }), [categories]);
+  const activeSeoSetting = seoDraft[seoRoute] || { title: '', description: '', indexed: true };
 
   const toggleAnalyticsExclusion = (excluded: boolean) => {
     setAnalyticsExcluded(excluded);
@@ -194,7 +201,7 @@ export const AnalyticsAdminPanel: React.FC<Props> = ({ session, seoSettings, onS
         'ADMIN_SEO',
         'Títulos, descripciones y reglas de indexación actualizados desde el administrador',
       );
-      const saved = normalizeSeoSettings(confirmed.seoSettings || seoDraft);
+      const saved = normalizeSeoSettings(confirmed.seoSettings || seoDraft, categories);
       setSeoDraft(saved);
       onSeoSettingsChange(saved);
       setSeoMessage('Configuración SEO guardada y publicada.');
@@ -380,14 +387,14 @@ export const AnalyticsAdminPanel: React.FC<Props> = ({ session, seoSettings, onS
           <div><h3 className="font-bold flex items-center gap-2"><Search className="w-4 h-4 text-[#D4AF37]" />Control de indexación</h3><p className="text-sm text-gray-400 mt-1">Edita lo que Google muestra y permite o bloquea la indexación de cada página pública.</p></div>
           <button type="button" onClick={saveSeo} disabled={savingSeo} className="px-5 py-2.5 rounded-xl bg-[#D4AF37] text-black font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-40">{savingSeo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}Guardar y publicar</button>
         </div>
-        <div className="flex overflow-x-auto gap-2">{(Object.keys(SEO_ROUTE_LABELS) as RoutePath[]).map((route) => <button key={route} type="button" onClick={() => setSeoRoute(route)} className={`px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap ${seoRoute === route ? 'bg-white text-black' : 'bg-[#0B0F17] border border-white/10 text-gray-300'}`}>{SEO_ROUTE_LABELS[route]}</button>)}</div>
+        <div className="flex overflow-x-auto gap-2">{Object.entries(seoRouteLabels).map(([route, label]) => <button key={route} type="button" onClick={() => setSeoRoute(route)} className={`px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap ${seoRoute === route ? 'bg-white text-black' : 'bg-[#0B0F17] border border-white/10 text-gray-300'}`}>{label}</button>)}</div>
         <div className="grid lg:grid-cols-[1fr_240px] gap-4">
           <div className="space-y-4">
-            <label className="text-xs text-gray-400 block">Título para Google<input value={seoDraft[seoRoute].title} maxLength={120} onChange={(event) => setSeoDraft((prev) => ({ ...prev, [seoRoute]: { ...prev[seoRoute], title: event.target.value } }))} className="mt-1 w-full px-4 py-3 rounded-xl bg-[#0B0F17] border border-white/10 text-white" /></label>
-            <label className="text-xs text-gray-400 block">Descripción para Google<textarea value={seoDraft[seoRoute].description} maxLength={320} rows={4} onChange={(event) => setSeoDraft((prev) => ({ ...prev, [seoRoute]: { ...prev[seoRoute], description: event.target.value } }))} className="mt-1 w-full px-4 py-3 rounded-xl bg-[#0B0F17] border border-white/10 text-white resize-y" /></label>
+            <label className="text-xs text-gray-400 block">Título para Google<input value={activeSeoSetting.title} maxLength={120} onChange={(event) => setSeoDraft((prev) => ({ ...prev, [seoRoute]: { ...activeSeoSetting, title: event.target.value } }))} className="mt-1 w-full px-4 py-3 rounded-xl bg-[#0B0F17] border border-white/10 text-white" /></label>
+            <label className="text-xs text-gray-400 block">Descripción para Google<textarea value={activeSeoSetting.description} maxLength={320} rows={4} onChange={(event) => setSeoDraft((prev) => ({ ...prev, [seoRoute]: { ...activeSeoSetting, description: event.target.value } }))} className="mt-1 w-full px-4 py-3 rounded-xl bg-[#0B0F17] border border-white/10 text-white resize-y" /></label>
           </div>
           <label className="rounded-xl bg-[#0B0F17] border border-white/10 p-4 flex items-start gap-3 cursor-pointer h-fit">
-            <input type="checkbox" checked={seoDraft[seoRoute].indexed} onChange={(event) => setSeoDraft((prev) => ({ ...prev, [seoRoute]: { ...prev[seoRoute], indexed: event.target.checked } }))} className="accent-[#D4AF37] w-4 h-4 mt-0.5" />
+            <input type="checkbox" checked={activeSeoSetting.indexed} onChange={(event) => setSeoDraft((prev) => ({ ...prev, [seoRoute]: { ...activeSeoSetting, indexed: event.target.checked } }))} className="accent-[#D4AF37] w-4 h-4 mt-0.5" />
             <span><span className="block text-sm font-semibold">Permitir indexación</span><span className="block text-xs text-gray-500 mt-1">Desactívalo para publicar la directiva noindex en esta página.</span></span>
           </label>
         </div>

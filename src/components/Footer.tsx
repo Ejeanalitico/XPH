@@ -1,7 +1,8 @@
 import React from 'react';
 import { MapPin, Mail, Phone, Clock, MessageSquare, ExternalLink } from 'lucide-react';
-import { RoutePath, FooterContact } from '../types';
+import { CatalogCategory, RoutePath, FooterContact } from '../types';
 import { DEFAULT_FOOTER_CONTACT, normalizeFooterContact } from '../footerConfig';
+import { DEFAULT_CATALOG_CATEGORIES } from '../utils/catalogCategories';
 import { routePath } from '../utils/seo';
 
 interface FooterProps {
@@ -9,6 +10,7 @@ interface FooterProps {
   onOpenClientPortal?: () => void;
   onOpenAdminPortal?: () => void;
   footerContact?: FooterContact;
+  categories?: CatalogCategory[];
 }
 
 const XPH_LOGO = '/xph-logo.png?v=20260814-6';
@@ -16,8 +18,16 @@ const XPH_LOGO = '/xph-logo.png?v=20260814-6';
 export const Footer: React.FC<FooterProps> = ({
   onNavigateRoute,
   footerContact = DEFAULT_FOOTER_CONTACT,
+  categories = DEFAULT_CATALOG_CATEGORIES,
 }) => {
   const config = normalizeFooterContact(footerContact);
+  const configuredRoutes = new Set(config.services.map((service) => service.route));
+  const services = [
+    ...config.services,
+    ...categories
+      .filter((category) => category.active && !configuredRoutes.has(category.id))
+      .map((category) => ({ id: `category-${category.id}`, label: `✦ ${category.name}`, route: category.id })),
+  ];
   const whatsappHref = `https://wa.me/${config.whatsapp.replace(/\D/g, '')}`;
   const phoneHref = `tel:${config.phone.replace(/[^+\d]/g, '')}`;
   const safeHref = (href: string) => href.startsWith('#') || /^https?:\/\//i.test(href) ? href : '#';
@@ -42,7 +52,7 @@ export const Footer: React.FC<FooterProps> = ({
           <div className="space-y-3">
             <h4 className="text-xs font-bold text-white uppercase tracking-wider font-mono">{config.specialtiesTitle}</h4>
             <ul className="space-y-2">
-              {config.services.map((service) => <li key={service.id}><a href={routePath(service.route)} onClick={(event) => { event.preventDefault(); onNavigateRoute(service.route); }} className="hover:text-[#D4AF37] text-left cursor-pointer">{service.label}</a></li>)}
+              {services.map((service) => <li key={service.id}><a href={routePath(service.route, categories)} onClick={(event) => { event.preventDefault(); onNavigateRoute(service.route); }} className="hover:text-[#D4AF37] text-left cursor-pointer">{service.label}</a></li>)}
             </ul>
           </div>
 

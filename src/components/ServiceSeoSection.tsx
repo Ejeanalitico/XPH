@@ -1,6 +1,7 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { ArrowRight, CheckCircle2, HelpCircle, MapPin } from 'lucide-react';
-import { RoutePath } from '../types';
+import { BuiltInRoutePath, CatalogCategory, PackageOption, RoutePath } from '../types';
+import { DEFAULT_CATALOG_CATEGORIES } from '../utils/catalogCategories';
 import { routePath } from '../utils/seo';
 
 type RouteContent = {
@@ -11,7 +12,7 @@ type RouteContent = {
   faqs: Array<{ question: string; answer: string }>;
 };
 
-const CONTENT: Record<RoutePath, RouteContent> = {
+const CONTENT: Record<BuiltInRoutePath, RouteContent> = {
   inicio: {
     eyebrow: 'Fotografía y video en Ciudad de México',
     heading: 'Producción visual para celebraciones, personas y empresas',
@@ -80,7 +81,7 @@ const CONTENT: Record<RoutePath, RouteContent> = {
   },
 };
 
-const RELATED_ROUTES: Record<RoutePath, RoutePath[]> = {
+const RELATED_ROUTES: Record<BuiltInRoutePath, RoutePath[]> = {
   inicio: ['bodas', 'xv-anos', 'retratos', 'empresarial'],
   bodas: ['xv-anos', 'retratos'],
   'xv-anos': ['bodas', 'retratos'],
@@ -89,7 +90,7 @@ const RELATED_ROUTES: Record<RoutePath, RoutePath[]> = {
   empresarial: ['retratos', 'inicio'],
 };
 
-const ROUTE_LABELS: Record<RoutePath, string> = {
+const ROUTE_LABELS: Record<BuiltInRoutePath, string> = {
   inicio: 'Todos los servicios',
   bodas: 'Fotografía de bodas',
   'xv-anos': 'Foto y video para XV años',
@@ -100,12 +101,50 @@ const ROUTE_LABELS: Record<RoutePath, string> = {
 
 interface Props {
   currentRoute: RoutePath;
+  categories?: CatalogCategory[];
+  packages?: PackageOption[];
   onNavigateRoute: (route: RoutePath) => void;
   onQuoteClick: () => void;
 }
 
-export const ServiceSeoSection: React.FC<Props> = ({ currentRoute, onNavigateRoute, onQuoteClick }) => {
-  const content = CONTENT[currentRoute];
+export const ServiceSeoSection: React.FC<Props> = ({
+  currentRoute,
+  categories = DEFAULT_CATALOG_CATEGORIES,
+  packages = [],
+  onNavigateRoute,
+  onQuoteClick,
+}) => {
+  const category = categories.find((item) => item.id === currentRoute);
+  const content = useMemo<RouteContent>(() => {
+    const builtIn = CONTENT[currentRoute as BuiltInRoutePath];
+    if (builtIn) return builtIn;
+    const name = category?.name || 'servicios de fotografía y video';
+    const packageDetails = [...new Set(packages.flatMap((pkg) => pkg.features || []))].filter(Boolean).slice(0, 3);
+    return {
+      eyebrow: `${name} en Ciudad de México`,
+      heading: `${name} con paquetes y atención personalizada`,
+      intro: category?.description || `Conoce las opciones de ${name} disponibles con XPH. Compara los paquetes publicados y solicita disponibilidad para tu fecha, ubicación y necesidades.`,
+      details: packageDetails.length ? packageDetails : [
+        `Paquetes configurados especialmente para ${name}`,
+        'Atención en CDMX, Estado de México y zona centro',
+        'Cotización y disponibilidad confirmadas personalmente',
+      ],
+      faqs: [
+        { question: `¿Qué incluyen los paquetes de ${name}?`, answer: 'Cada paquete muestra sus servicios, entregables y precio publicado. Puedes compararlos en el cotizador de esta misma página.' },
+        { question: `¿Puedo personalizar un paquete de ${name}?`, answer: 'Sí. La propuesta puede ajustarse con servicios adicionales según la fecha, ubicación y necesidades del cliente.' },
+        { question: '¿Cómo consulto disponibilidad?', answer: 'Selecciona un paquete, completa los datos de tu solicitud y la disponibilidad se confirmará personalmente.' },
+      ],
+    };
+  }, [category, currentRoute, packages]);
+
+  const relatedRoutes = useMemo(() => {
+    const preferred = RELATED_ROUTES[currentRoute as BuiltInRoutePath] || [];
+    return [...new Set([
+      ...preferred,
+      ...categories.filter((item) => item.active && item.id !== currentRoute).map((item) => item.id),
+      ...(currentRoute === 'inicio' ? [] : ['inicio']),
+    ])].filter((route) => route !== currentRoute).slice(0, 4) as RoutePath[];
+  }, [categories, currentRoute]);
 
   useEffect(() => {
     let script = document.head.querySelector<HTMLScriptElement>('#xph-faq-structured-data');
@@ -153,7 +192,7 @@ export const ServiceSeoSection: React.FC<Props> = ({ currentRoute, onNavigateRou
 
         <nav aria-label="Servicios relacionados" className="mt-10 pt-6 border-t border-white/10 flex flex-wrap items-center gap-2">
           <span className="text-xs text-gray-500 mr-2">También te puede interesar:</span>
-          {RELATED_ROUTES[currentRoute].map((route) => <a key={route} href={routePath(route)} onClick={(event) => { event.preventDefault(); onNavigateRoute(route); }} className="px-3 py-2 rounded-full bg-white/5 border border-white/10 text-xs text-gray-300 hover:text-[#D4AF37] hover:border-[#D4AF37]/40 transition-colors">{ROUTE_LABELS[route]}</a>)}
+          {relatedRoutes.map((route) => <a key={route} href={routePath(route, categories)} onClick={(event) => { event.preventDefault(); onNavigateRoute(route); }} className="px-3 py-2 rounded-full bg-white/5 border border-white/10 text-xs text-gray-300 hover:text-[#D4AF37] hover:border-[#D4AF37]/40 transition-colors">{ROUTE_LABELS[route as BuiltInRoutePath] || categories.find((item) => item.id === route)?.name || route}</a>)}
         </nav>
       </div>
     </section>

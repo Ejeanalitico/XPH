@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test:business": "node scripts/verify-financial-rules.mjs",
     "test:crm": "node scripts/verify-crm-invariants.mjs",
-    "check": "npm run test:business && npm run test:crm && npm run typecheck && npm run build"
+    "test:routes": "node scripts/verify-dynamic-category-pages.mjs",
+    "check": "npm run test:business && npm run test:crm && npm run test:routes && npm run typecheck && npm run build"
   },
   "dependencies": {
     "@vercel/analytics": "^1.5.0",

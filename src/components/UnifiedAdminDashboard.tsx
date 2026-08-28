@@ -25,6 +25,7 @@ import {
 import { ADDONS_CATALOG, PACKAGES_BY_EVENT } from '../data/packages';
 import {
   AddOnOption,
+  BuiltInRoutePath,
   CatalogCategory,
   EventType,
   FooterContact,
@@ -72,7 +73,7 @@ const CATEGORY_LABELS: Record<EventType, string> = {
 
 const DEFAULT_CATEGORIES: CatalogCategory[] = DEFAULT_CATALOG_CATEGORIES;
 
-const COVER_LABELS: Record<RoutePath, string> = {
+const COVER_LABELS: Record<BuiltInRoutePath, string> = {
   inicio: 'Inicio',
   bodas: 'Bodas',
   'xv-anos': 'XV Años',
@@ -81,7 +82,7 @@ const COVER_LABELS: Record<RoutePath, string> = {
   empresarial: 'Empresarial & Branding',
 };
 
-const DEFAULT_COVER_TEXT: Record<RoutePath, { label: string; description: string }> = {
+const DEFAULT_COVER_TEXT: Record<BuiltInRoutePath, { label: string; description: string }> = {
   inicio: { label: 'XPH FOTOGRAFÍA & VIDEO', description: 'Producción audiovisual para momentos, eventos y marcas.' },
   bodas: { label: 'BODAS', description: 'Fotografía y video para documentar tu historia.' },
   'xv-anos': { label: 'XV AÑOS', description: 'Cobertura y sesiones para una celebración inolvidable.' },
@@ -100,14 +101,21 @@ const makeToken = () => {
 const hasManagedPackages = (value: any) => Boolean(value && Object.values(value).flat().some((pkg: any) => pkg?.managedByAdmin));
 const hasManagedAddons = (value: any) => Array.isArray(value) && value.some((item: any) => item?.managedByAdmin);
 
-const emptyCover = (route: RoutePath): HeroCoverSetting => ({
+const emptyCover = (route: RoutePath, categories: CatalogCategory[] = DEFAULT_CATEGORIES): HeroCoverSetting => {
+  const category = categories.find((item) => item.id === route);
+  const defaults = DEFAULT_COVER_TEXT[route as BuiltInRoutePath] || {
+    label: (category?.name || route).toUpperCase(),
+    description: category?.description || `Paquetes y servicios de ${category?.name || route}.`,
+  };
+  return {
   url: '',
-  label: DEFAULT_COVER_TEXT[route].label,
-  description: DEFAULT_COVER_TEXT[route].description,
+  label: defaults.label,
+  description: defaults.description,
   positionX: 50,
   positionY: 50,
   zoom: 100,
-});
+  };
+};
 
 const privateGallerySummaries = (items: GalleryImage[]): PrivateGallerySummary[] =>
   items.filter((item) => item.visibility === 'private' && item.mediaType === 'gallery-meta').map((meta) => ({
@@ -147,7 +155,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
   const [driveLoaded, setDriveLoaded] = useState(false);
   const [heroSettings, setHeroSettings] = useState<Partial<Record<RoutePath, HeroCoverSetting>>>({});
   const [footerContact, setFooterContact] = useState<FooterContact>(DEFAULT_FOOTER_CONTACT);
-  const [seoSettings, setSeoSettings] = useState<SeoSettings>(() => normalizeSeoSettings({}));
+  const [seoSettings, setSeoSettings] = useState<SeoSettings>(() => normalizeSeoSettings({}, DEFAULT_CATEGORIES));
 
   const [activeCategory, setActiveCategory] = useState<string>('bodas');
   const [publicCategory, setPublicCategory] = useState<string>('bodas');
@@ -180,7 +188,12 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
     });
     return options;
   }, [catalogCategories, publicImages]);
-  const currentCover = { ...emptyCover(coverRoute), ...(heroSettings[coverRoute] || {}) };
+  const coverOptions = useMemo(() => [
+    { id: 'inicio' as RoutePath, name: 'Inicio' },
+    ...catalogCategories.map((category) => ({ id: category.id as RoutePath, name: category.name })),
+  ], [catalogCategories]);
+  const coverRouteLabel = coverOptions.find((item) => item.id === coverRoute)?.name || COVER_LABELS[coverRoute as BuiltInRoutePath] || coverRoute;
+  const currentCover = { ...emptyCover(coverRoute, catalogCategories), ...(heroSettings[coverRoute] || {}) };
 
   const notify = (text: string) => {
     setMessage(text);
@@ -199,7 +212,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
     setGalleryImages(Array.isArray(config.galleryImages) ? config.galleryImages : []);
     setHeroSettings(config.heroCoverSettings && typeof config.heroCoverSettings === 'object' ? config.heroCoverSettings : {});
     setFooterContact(normalizeFooterContact(config.footerContact));
-    setSeoSettings(normalizeSeoSettings(config.seoSettings));
+    setSeoSettings(normalizeSeoSettings(config.seoSettings, categoriesWithPackages));
   };
 
   const needsDrive = (targetTab: Tab) => targetTab === 'public' || targetTab === 'covers' || targetTab === 'private';
@@ -280,6 +293,13 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
       ) as Record<string, PackageOption[]>;
       const managedAddons = addons.map((addon) => ({ ...addon, managedByAdmin: true }));
       const normalizedCategories = catalogCategories.map((category, index) => ({ ...category, slug: slugify(category.slug || category.name), order: index + 1, updatedAt: new Date().toISOString(), createdAt: category.createdAt || new Date().toISOString() }));
+      const reservedSlugs = new Set(['api', 'assets', 'firmar', 'inicio', 'sitemap-xml', 'robots-txt', 'xph-logo-png']);
+      const slugs = normalizedCategories.map((category) => category.slug);
+      const duplicateSlug = slugs.find((slug, index) => slugs.indexOf(slug) !== index);
+      if (normalizedCategories.some((category) => !category.name.trim() || !category.slug)) throw new Error('Cada categoría necesita nombre y liga pública.');
+      if (duplicateSlug) throw new Error(`La liga /${duplicateSlug} está repetida. Usa una liga distinta para cada categoría.`);
+      const reservedSlug = slugs.find((slug) => reservedSlugs.has(slug));
+      if (reservedSlug) throw new Error(`La liga /${reservedSlug} está reservada por el sistema. Elige otra.`);
       const confirmed = await saveAdminConfig(session, { packages: managedPackages, addons: managedAddons, catalogCategories: normalizedCategories }, 'ADMIN_PAQUETES', 'Categorías, paquetes y adicionales actualizados desde el administrador web');
       if (!hasManagedPackages(confirmed.packages) || !hasManagedAddons(confirmed.addons)) throw new Error('La nube no devolvió el catálogo guardado.');
       if (stablePackages(confirmed.packages) !== stablePackages(managedPackages)) throw new Error('Los paquetes no coinciden después del guardado. Vuelve a intentarlo.');
@@ -435,14 +455,14 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
   };
 
   const updateCover = (patch: Partial<HeroCoverSetting>) => {
-    setHeroSettings((prev) => ({ ...prev, [coverRoute]: { ...emptyCover(coverRoute), ...(prev[coverRoute] || {}), ...patch } }));
+    setHeroSettings((prev) => ({ ...prev, [coverRoute]: { ...emptyCover(coverRoute, catalogCategories), ...(prev[coverRoute] || {}), ...patch } }));
   };
 
   const uploadCover = async () => {
     if (!session || !coverFile) return;
     setBusy(true);
     try {
-      const uploaded = await adminUploadMedia(session, coverFile, { title: `Portada ${COVER_LABELS[coverRoute]}`, category: coverRoute === 'inicio' ? 'bodas' : coverRoute, location: 'Portada XPH' });
+      const uploaded = await adminUploadMedia(session, coverFile, { title: `Portada ${coverRouteLabel}`, category: coverRoute === 'inicio' ? 'bodas' : coverRoute, location: 'Portada XPH' });
       updateCover({ url: uploaded.url, positionX: 50, positionY: 50, zoom: 100 });
       setCoverFile(null);
       notify('Imagen cargada. Ajusta el encuadre y guarda la portada.');
@@ -459,7 +479,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
       const confirmedSetting = confirmed.heroCoverSettings?.[coverRoute];
       if (!confirmedSetting?.url || confirmedSetting.url !== currentCover.url) throw new Error('La portada no quedó confirmada en la nube.');
       setHeroSettings(confirmed.heroCoverSettings);
-      notify(`Portada de ${COVER_LABELS[coverRoute]} guardada y publicada.`);
+      notify(`Portada de ${coverRouteLabel} guardada y publicada.`);
     } catch (error: any) { notify(error?.message || 'No se pudo guardar la portada.'); }
     finally { setBusy(false); }
   };
@@ -585,6 +605,10 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-xl font-bold">Categorías comerciales</h2><p className="mt-1 text-xs text-gray-400">Crea, edita, ordena, activa o desactiva categorías sin modificar código.</p></div><button onClick={addCategory} className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-4 py-2.5 text-sm"><Plus className="h-4 w-4" />Nueva categoría</button></div>
               <div className="mt-4 grid gap-3 lg:grid-cols-2">{catalogCategories.map((category, index) => <article key={category.id} className={`rounded-xl border p-4 ${activeCategory === category.id ? 'border-[#D4AF37]/60 bg-[#D4AF37]/5' : 'border-white/10 bg-[#0B0F17]/50'}`}><div className="flex items-start gap-3">{category.imageUrl ? <img src={category.imageUrl} alt={category.name} className="h-16 w-16 shrink-0 rounded-lg object-cover" /> : <div className="grid h-16 w-16 shrink-0 place-items-center rounded-lg border border-dashed border-white/15 text-[10px] text-gray-500">Sin imagen</div>}<div className="min-w-0 flex-1 space-y-2"><input value={category.name} onChange={(event) => updateCategory(category.id, { name: event.target.value })} onFocus={() => setActiveCategory(category.id)} className="w-full rounded-lg border border-white/10 bg-[#0B0F17] px-3 py-2 text-sm font-semibold" /><input value={category.slug} onChange={(event) => updateCategory(category.id, { slug: slugify(event.target.value) })} className="w-full rounded-lg border border-white/10 bg-[#0B0F17] px-3 py-2 font-mono text-xs" placeholder="slug" /></div></div><textarea value={category.description} onChange={(event) => updateCategory(category.id, { description: event.target.value })} placeholder="Descripción de la categoría" className="mt-3 min-h-16 w-full rounded-lg border border-white/10 bg-[#0B0F17] px-3 py-2 text-xs" /><div className="mt-3 flex flex-wrap items-center gap-2"><label className="cursor-pointer rounded-lg border border-white/10 px-3 py-2 text-xs"><Upload className="mr-1 inline h-3.5 w-3.5" />Subir imagen<input type="file" accept="image/*" className="hidden" onChange={(event) => uploadCategoryImage(category, event.target.files?.[0])} /></label><button onClick={() => setCategoryImagePickerId(categoryImagePickerId === category.id ? '' : category.id)} className="rounded-lg border border-white/10 px-3 py-2 text-xs"><ImageIcon className="mr-1 inline h-3.5 w-3.5" />Elegir de galería</button><button onClick={() => updateCategory(category.id, { active: !category.active })} className={`rounded-lg px-3 py-2 text-xs ${category.active ? 'bg-emerald-500/15 text-emerald-300' : 'bg-white/5 text-gray-400'}`}>{category.active ? 'Activa' : 'Inactiva'}</button><button onClick={() => moveCategory(category.id, -1)} disabled={index === 0} className="rounded-lg border border-white/10 px-3 py-2 text-xs disabled:opacity-30">↑</button><button onClick={() => moveCategory(category.id, 1)} disabled={index === catalogCategories.length - 1} className="rounded-lg border border-white/10 px-3 py-2 text-xs disabled:opacity-30">↓</button><button onClick={() => setActiveCategory(category.id)} className="ml-auto rounded-lg border border-[#D4AF37]/30 px-3 py-2 text-xs text-[#F5D76E]">Ver paquetes</button></div>{categoryImagePickerId === category.id && <div className="mt-3 rounded-xl border border-[#D4AF37]/25 bg-[#0B0F17] p-3"><p className="mb-2 text-[11px] text-gray-400">Selecciona una imagen ya publicada en tu galería.</p><div className="grid max-h-56 grid-cols-3 gap-2 overflow-auto sm:grid-cols-5">{publicImages.map((image) => <button key={image.id} type="button" onClick={() => { updateCategory(category.id, { imageUrl: image.url }); setCategoryImagePickerId(''); notify('Imagen seleccionada. Guarda y publica para reflejarla en la página.'); }} className="overflow-hidden rounded-lg border border-white/10 hover:border-[#D4AF37]"><img src={image.url} alt={image.title} className="aspect-square w-full object-cover" /></button>)}</div>{!publicImages.length && <p className="py-4 text-center text-xs text-gray-500">Aún no hay imágenes públicas disponibles.</p>}</div>}</article>)}</div>
             </div>
+            <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+              <div><h3 className="text-sm font-bold text-emerald-200">Páginas públicas e indexables</h3><p className="mt-1 text-xs text-gray-400">Cada categoría activa utiliza su slug como una página independiente. Después de guardar puedes abrirla aquí.</p></div>
+              <div className="mt-3 flex flex-wrap gap-2">{catalogCategories.map((category) => <a key={category.id} href={`/${slugify(category.slug || category.name)}`} target="_blank" rel="noopener noreferrer" className="rounded-lg border border-white/10 bg-[#0B0F17] px-3 py-2 text-xs hover:border-[#D4AF37]/50"><span className="font-semibold text-white">{category.name}</span><span className="ml-2 font-mono text-emerald-300">/{slugify(category.slug || category.name)}</span>{!category.active && <span className="ml-2 text-gray-500">inactiva</span>}</a>)}</div>
+            </div>
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
               <div className="flex overflow-x-auto gap-2">{catalogCategories.map((item) => <button key={item.id} onClick={() => setActiveCategory(item.id)} className={`px-4 py-2.5 rounded-xl text-xs font-semibold whitespace-nowrap ${activeCategory === item.id ? 'bg-white text-black' : 'bg-[#161C28] border border-white/10 text-gray-300'}`}>{item.name}{!item.active ? ' · inactiva' : ''}</button>)}</div>
               <div className="flex gap-2"><button onClick={addPackage} className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm flex items-center gap-2"><Plus className="w-4 h-4" />Nuevo paquete</button><button onClick={saveCatalog} disabled={busy} className="px-5 py-2.5 rounded-xl bg-[#D4AF37] text-black font-bold text-sm flex items-center gap-2 disabled:opacity-40">{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}Guardar y publicar</button></div>
@@ -630,7 +654,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
 
         {tab === 'covers' && (
           <section className="space-y-6">
-            <div className="flex overflow-x-auto gap-2">{(Object.keys(COVER_LABELS) as RoutePath[]).map((route) => <button key={route} onClick={() => setCoverRoute(route)} className={`px-4 py-2.5 rounded-xl text-xs font-semibold whitespace-nowrap ${coverRoute === route ? 'bg-white text-black' : 'bg-[#161C28] border border-white/10 text-gray-300'}`}>{COVER_LABELS[route]}</button>)}</div>
+            <div className="flex overflow-x-auto gap-2">{coverOptions.map((option) => <button key={option.id} onClick={() => setCoverRoute(option.id)} className={`px-4 py-2.5 rounded-xl text-xs font-semibold whitespace-nowrap ${coverRoute === option.id ? 'bg-white text-black' : 'bg-[#161C28] border border-white/10 text-gray-300'}`}>{option.name}</button>)}</div>
             <div className="grid lg:grid-cols-[1.1fr_.9fr] gap-6">
               <div className="space-y-4 rounded-2xl bg-[#161C28] border border-white/10 p-5"><h2 className="text-xl font-bold">Vista previa y recorte</h2><div className="relative rounded-2xl overflow-hidden border border-white/10 bg-black h-[460px]">{currentCover.url ? <img src={currentCover.url} alt="Portada" className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: `${currentCover.positionX}% ${currentCover.positionY}%`, transform: `scale(${currentCover.zoom / 100})` }} /> : <div className="absolute inset-0 flex items-center justify-center text-gray-500">Selecciona una imagen</div>}<div className="absolute inset-0 bg-gradient-to-t from-[#0B0F17] via-transparent to-transparent opacity-80" /><div className="absolute bottom-4 left-4 right-4 p-4 rounded-xl bg-[#0B0F17]/90 border border-white/10"><p className="text-xs uppercase tracking-widest text-[#D4AF37] font-semibold">{currentCover.label}</p><p className="text-xs text-gray-400 mt-1">{currentCover.description}</p></div></div><div className="grid sm:grid-cols-3 gap-4"><label className="text-xs text-gray-300">Horizontal {currentCover.positionX}%<input type="range" min="0" max="100" value={currentCover.positionX} onChange={(e) => updateCover({ positionX: Number(e.target.value) })} className="w-full" /></label><label className="text-xs text-gray-300">Vertical {currentCover.positionY}%<input type="range" min="0" max="100" value={currentCover.positionY} onChange={(e) => updateCover({ positionY: Number(e.target.value) })} className="w-full" /></label><label className="text-xs text-gray-300">Zoom {currentCover.zoom}%<input type="range" min="100" max="250" step="5" value={currentCover.zoom} onChange={(e) => updateCover({ zoom: Number(e.target.value) })} className="w-full" /></label></div></div>
               <div className="space-y-5"><div className="rounded-2xl bg-[#161C28] border border-white/10 p-5 space-y-4"><h2 className="text-xl font-bold">Texto de la portada</h2><label className="text-xs text-gray-400 block">Título<input value={currentCover.label} onChange={(e) => updateCover({ label: e.target.value })} className="mt-1 w-full px-4 py-3 rounded-xl bg-[#0B0F17] border border-white/10" /></label><label className="text-xs text-gray-400 block">Descripción<textarea value={currentCover.description} onChange={(e) => updateCover({ description: e.target.value })} rows={3} className="mt-1 w-full px-4 py-3 rounded-xl bg-[#0B0F17] border border-white/10 resize-y" /></label></div><div className="rounded-2xl bg-[#161C28] border border-white/10 p-5 space-y-3"><h2 className="text-xl font-bold">Subir otra imagen</h2><input type="file" accept="image/*" onChange={(e) => setCoverFile(e.target.files?.[0] || null)} /><button onClick={uploadCover} disabled={!coverFile || busy} className="px-5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm disabled:opacity-40"><Upload className="inline w-4 h-4 mr-2" />Subir portada</button></div><button onClick={saveCover} disabled={!currentCover.url || busy} className="w-full py-3 rounded-xl bg-[#D4AF37] text-black font-bold disabled:opacity-40"><Save className="inline w-4 h-4 mr-2" />Guardar portada</button></div>
@@ -641,7 +665,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
 
         {tab === 'promotions' && <PromotionAdminSettings adminSession={session} />}
 
-        {tab === 'analytics' && <AnalyticsAdminPanel session={session} seoSettings={seoSettings} onSeoSettingsChange={setSeoSettings} />}
+        {tab === 'analytics' && <AnalyticsAdminPanel session={session} seoSettings={seoSettings} categories={catalogCategories} onSeoSettingsChange={setSeoSettings} />}
 
         {tab === 'footer' && (() => {
           const normalized = normalizeFooterContact(footerContact);
@@ -681,7 +705,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
               <div className="rounded-2xl bg-[#161C28] border border-white/10 p-5 space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3"><div><h3 className="text-lg font-bold">Servicios</h3><p className="text-xs text-gray-400">Cada elemento abre la sección correspondiente de la página.</p></div><button onClick={() => patchFooter('services', [...normalized.services, { id: `service-${Date.now()}`, label: 'Nuevo servicio', route: 'bodas' }])} className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-xs"><Plus className="inline w-4 h-4 mr-1" />Agregar servicio</button></div>
                 <label className="text-xs text-gray-400 block">Título de la sección<input value={normalized.specialtiesTitle} onChange={(e) => patchFooter('specialtiesTitle', e.target.value)} className={inputClass} /></label>
-                <div className="space-y-3">{normalized.services.map((service, index) => <div key={service.id} className="grid sm:grid-cols-[1fr_220px_44px] gap-2"><input value={service.label} onChange={(e) => updateService(index, { label: e.target.value })} className="px-3 py-2.5 rounded-xl bg-[#0B0F17] border border-white/10" /><select value={service.route} onChange={(e) => updateService(index, { route: e.target.value as RoutePath })} className="px-3 py-2.5 rounded-xl bg-[#0B0F17] border border-white/10">{(Object.keys(COVER_LABELS) as RoutePath[]).map((route) => <option key={route} value={route}>{COVER_LABELS[route]}</option>)}</select><button onClick={() => patchFooter('services', normalized.services.filter((_, itemIndex) => itemIndex !== index))} className="rounded-xl bg-rose-500/10 text-rose-400"><Trash2 className="w-4 h-4 mx-auto" /></button></div>)}</div>
+                <div className="space-y-3">{normalized.services.map((service, index) => <div key={service.id} className="grid sm:grid-cols-[1fr_220px_44px] gap-2"><input value={service.label} onChange={(e) => updateService(index, { label: e.target.value })} className="px-3 py-2.5 rounded-xl bg-[#0B0F17] border border-white/10" /><select value={service.route} onChange={(e) => updateService(index, { route: e.target.value as RoutePath })} className="px-3 py-2.5 rounded-xl bg-[#0B0F17] border border-white/10">{coverOptions.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}</select><button onClick={() => patchFooter('services', normalized.services.filter((_, itemIndex) => itemIndex !== index))} className="rounded-xl bg-rose-500/10 text-rose-400"><Trash2 className="w-4 h-4 mx-auto" /></button></div>)}</div>
               </div>
 
               <div className="grid lg:grid-cols-2 gap-5">

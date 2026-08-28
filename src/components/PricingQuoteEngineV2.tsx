@@ -2,7 +2,7 @@ import React from 'react';
 import { Check, Minus, Plus, Sparkles, X } from 'lucide-react';
 import { AddOnOption, BookingState, CatalogCategory, EventType, PackageOption, RoutePath } from '../types';
 import { ADDONS_CATALOG, PACKAGES_BY_EVENT } from '../data/packages';
-import { DEFAULT_CATALOG_CATEGORIES, isBuiltInCategoryRoute } from '../utils/catalogCategories';
+import { DEFAULT_CATALOG_CATEGORIES } from '../utils/catalogCategories';
 
 interface Props {
   currentRoute: RoutePath;
@@ -63,7 +63,7 @@ export const PricingQuoteEngineV2: React.FC<Props> = ({
       extraHours: 0,
       total: 0,
     }, 0);
-    if (isBuiltInCategoryRoute(eventType)) onNavigateRoute?.(eventType);
+    onNavigateRoute?.(eventType);
   };
 
   const handleSelectPackage = (packageId: string) => {

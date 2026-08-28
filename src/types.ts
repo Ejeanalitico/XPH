@@ -1,7 +1,7 @@
-export type RoutePath = 'inicio' | 'bodas' | 'xv-anos' | 'bautizos' | 'retratos' | 'empresarial';
-
 export type BuiltInEventType = 'bodas' | 'xv-anos' | 'bautizos' | 'retratos' | 'empresarial';
+export type BuiltInRoutePath = 'inicio' | BuiltInEventType;
 export type EventType = BuiltInEventType | (string & {});
+export type RoutePath = BuiltInRoutePath | (string & {});
 
 export interface SeoPageSetting {
   title: string;
@@ -9,7 +9,7 @@ export interface SeoPageSetting {
   indexed: boolean;
 }
 
-export type SeoSettings = Partial<Record<RoutePath, SeoPageSetting>>;
+export type SeoSettings = Partial<Record<string, SeoPageSetting>>;
 
 export type GalleryCategory = 'all' | EventType | 'previa';
 
