@@ -37,6 +37,7 @@
   ],
   "rewrites": [
     { "source": "/xph-logo.png", "destination": "/api/xph-logo-png" },
+    { "source": "/api/proxy", "destination": "/api/proxy-safe" },
     { "source": "/api/:path*", "destination": "/api/:path*" },
     { "source": "/sitemap.xml", "destination": "/api/sitemap" },
     { "source": "/bodas", "destination": "/bodas/index.html" },
