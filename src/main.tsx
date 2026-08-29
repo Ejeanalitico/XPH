@@ -11,6 +11,23 @@ import { isAnalyticsExcluded } from './utils/analyticsPrivacy';
 import './index.css';
 import './branding.css';
 
+// Route browser requests that target the legacy proxy through the safety wrapper.
+// This keeps existing callers unchanged while preventing a desktop preview from
+// invalidating a mobile contract link and normalizes duplicate contract records.
+const nativeFetch = window.fetch.bind(window);
+window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+  if (typeof input === 'string') {
+    const safeUrl = input.replace(/^\/api\/proxy(?=\?|$)/, '/api/proxy-safe');
+    return nativeFetch(safeUrl, init);
+  }
+  if (input instanceof URL && input.origin === window.location.origin && input.pathname === '/api/proxy') {
+    const safeUrl = new URL(input.toString());
+    safeUrl.pathname = '/api/proxy-safe';
+    return nativeFetch(safeUrl, init);
+  }
+  return nativeFetch(input, init);
+}) as typeof window.fetch;
+
 // XPH production entry: public quote V2 + editable promotions.
 const params = new URLSearchParams(window.location.search);
 const adminMode = params.get('xph-admin');
