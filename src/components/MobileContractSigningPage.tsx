@@ -10,6 +10,8 @@ interface Props {
 
 type PublicContract = Pick<BusinessContract, 'id' | 'clientName' | 'folio' | 'eventType' | 'eventDate' | 'status' | 'expiresAt'>;
 
+const safeContractPdfUrl = (token: string) => publicContractPdfUrl(token).replace(/^\/api\/proxy(?=\?|$)/, '/api/proxy-safe');
+
 export const MobileContractSigningPage: React.FC<Props> = ({ token }) => {
   const [contract, setContract] = useState<PublicContract | null>(null);
   const [loading, setLoading] = useState(true);
@@ -54,7 +56,7 @@ export const MobileContractSigningPage: React.FC<Props> = ({ token }) => {
 
         {step === 'read' && <>
           <section className="overflow-hidden rounded-2xl border border-white/10 bg-white">
-            <iframe title={`Contrato ${contract.folio}`} src={publicContractPdfUrl(token)} className="h-[66vh] w-full bg-white" />
+            <iframe title={`Contrato ${contract.folio}`} src={safeContractPdfUrl(token)} className="h-[66vh] w-full bg-white" />
           </section>
           <section className="space-y-4 rounded-2xl border border-white/10 bg-[#161C28] p-4">
             <div className="flex gap-3 text-xs leading-5 text-gray-300"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[#D4AF37]" /><p>Lee el documento completo. Tu aceptación y firma se guardarán con fecha, hora y datos técnicos de esta sesión como evidencia.</p></div>
