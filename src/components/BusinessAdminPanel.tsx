@@ -6,6 +6,7 @@ import {
   BriefcaseBusiness,
   CalendarDays,
   CheckCircle2,
+  ClipboardCheck,
   ChevronLeft,
   ChevronRight,
   ClipboardCopy,
@@ -66,7 +67,9 @@ import { TeamAdminPanel } from './TeamAdminPanel';
 import { GmailAdminPanel } from './GmailAdminPanel';
 import { calculateFinancialSummary, collectedForClient, collectedPaymentAmount, isOverduePayment, pendingPaymentAmount } from '../utils/financialRules.js';
 
-type BusinessTab = 'overview' | 'prospects' | 'clients' | 'calendar' | 'payments' | 'expenses' | 'contracts' | 'email' | 'team' | 'account';
+const SalesExecutionCenter = React.lazy(() => import('./SalesExecutionCenter'));
+
+type BusinessTab = 'overview' | 'execution' | 'prospects' | 'clients' | 'calendar' | 'payments' | 'expenses' | 'contracts' | 'email' | 'team' | 'account';
 
 const emptySnapshot: BusinessSnapshot = { clients: [], followUps: [], expenses: [], payments: [], transactions: [], adjustments: [], packageSnapshots: [], services: [], addons: [], users: [], teamFunctions: [], assignments: [], gmailConfig: null, emailTemplates: [], emailHistory: [], notifications: [], auditLog: [], galleries: [], internalEvents: [], contracts: [], ownerSignatureConfigured: false };
 const today = () => new Date().toISOString().slice(0, 10);
@@ -556,6 +559,20 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
     if (notification.status === 'PENDIENTE') await updateNotificationStatus(notification.id, 'LEIDA');
   };
 
+  const updateProspectStage = async (client: CrmClient, status: CrmClient['status']) => {
+    if (client.recordType !== 'Prospecto' || client.status === status) return;
+    setBusy(true);
+    try {
+      const saved = await saveCrmClient({ ...client, status });
+      setSnapshot((current) => ({ ...current, clients: current.clients.map((item) => item.id === saved.id ? saved : item) }));
+      setModalNotice(`${client.name || 'El prospecto'} ahora está en “${status}”.`);
+    } catch (error: any) {
+      setModalNotice(error?.message || 'No se pudo actualizar la etapa comercial.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const selectedClient = snapshot.clients.find((client) => client.id === selectedClientId);
   const currentTeamUser = snapshot.users.find((user) => user.id === session.userId);
   const canEditSelected = Boolean(selectedClient && (session.role === 'SUPER_ADMIN' || (selectedClient.recordType === 'Prospecto' ? session.permissions.includes('CRM_WRITE') : session.permissions.includes('CLIENTS_WRITE'))));
@@ -565,6 +582,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
   const visibleNotifications = snapshot.notifications.filter((item) => item.status !== 'ANULADA').slice(0, 20);
   const businessNavItems = [
     { id: 'overview' as const, label: 'Control financiero', icon: TrendingUp },
+    { id: 'execution' as const, label: 'Centro de ejecución', icon: ClipboardCheck },
     { id: 'prospects' as const, label: 'Prospectos', icon: Users },
     { id: 'clients' as const, label: 'Clientes', icon: BriefcaseBusiness },
     { id: 'calendar' as const, label: 'Calendario', icon: CalendarDays },
@@ -575,6 +593,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
     { id: 'team' as const, label: 'Usuarios / equipo', icon: UserCog },
     { id: 'account' as const, label: 'Mi cuenta', icon: UserCircle },
   ].filter((item) => session.role === 'SUPER_ADMIN' || (
+    item.id === 'execution' ? session.permissions.includes('CRM_READ') :
     item.id === 'prospects' ? session.permissions.includes('CRM_READ') :
     item.id === 'clients' ? session.permissions.includes('CLIENTS_READ') || session.permissions.includes('CRM_READ') :
     item.id === 'calendar' ? session.permissions.includes('CALENDAR') : item.id === 'account'
@@ -800,6 +819,8 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
           </section>
         </div>
       )}
+
+      {tab === 'execution' && <React.Suspense fallback={<div className="flex min-h-64 items-center justify-center rounded-2xl border border-white/10 bg-[#161C28]"><Loader2 className="h-7 w-7 animate-spin text-[#D4AF37]" /><span className="ml-3 text-sm text-gray-300">Preparando centro de ejecución…</span></div>}><SalesExecutionCenter snapshot={snapshot} onOpenRecord={openClientDetails} onOpenNotification={openNotificationAction} onUpdateStage={updateProspectStage} /></React.Suspense>}
 
       {(tab === 'prospects' || tab === 'clients') && (
         <div className="space-y-4">
