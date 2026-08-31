@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { EyeOff, Image as ImageIcon, Loader2, Save, Trash2, Upload } from 'lucide-react';
+import { CheckCircle2, EyeOff, Image as ImageIcon, Loader2, Save, Trash2, Upload } from 'lucide-react';
 import { EMPTY_PROMOTION_POPUP, PromotionPopupConfig, PromotionPopupMode } from '../promotion';
 import { AdminSession, adminUploadMedia, loadAdminConfig, saveAdminConfig } from '../utils/adminApi';
 
@@ -10,6 +10,7 @@ interface PromotionAdminSettingsProps {
 export const PromotionAdminSettings: React.FC<PromotionAdminSettingsProps> = ({ adminSession }) => {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const [modalNotice, setModalNotice] = useState('');
   const [uploadedImageName, setUploadedImageName] = useState('');
   const [form, setForm] = useState<PromotionPopupConfig>({ ...EMPTY_PROMOTION_POPUP });
 
@@ -42,8 +43,9 @@ export const PromotionAdminSettings: React.FC<PromotionAdminSettingsProps> = ({ 
     try {
       const uploaded = await adminUploadMedia(session, file, {
         title: form.title || 'Promoción XPH',
-        category: 'empresarial',
+        category: 'private',
         location: 'Promoción XPH',
+        visibility: 'cover',
       });
       setForm((prev) => ({
         ...prev,
@@ -70,7 +72,9 @@ export const PromotionAdminSettings: React.FC<PromotionAdminSettingsProps> = ({ 
         throw new Error('La promoción no quedó confirmada en la nube. Intenta guardarla nuevamente.');
       }
       setForm({ ...EMPTY_PROMOTION_POPUP, ...confirmed.promotionPopup });
-      setMessage(next.enabled ? 'Promoción guardada y publicada.' : 'Promoción guardada como desactivada.');
+      const confirmation = next.enabled ? 'Promoción guardada y publicada. La imagen quedó oculta de todas las galerías.' : 'Promoción guardada como desactivada.';
+      setMessage(confirmation);
+      setModalNotice(confirmation);
     } catch (error: any) {
       setMessage(error?.message || 'No se pudo guardar la promoción.');
     } finally {
@@ -89,6 +93,7 @@ export const PromotionAdminSettings: React.FC<PromotionAdminSettingsProps> = ({ 
       }
       setForm({ ...EMPTY_PROMOTION_POPUP, ...confirmed.promotionPopup });
       setMessage('Pop-up desactivado. Su contenido se conserva para volver a activarlo después.');
+      setModalNotice('Pop-up desactivado. Su contenido quedó guardado para volver a activarlo después.');
     } catch (error: any) {
       setMessage(error?.message || 'No se pudo desactivar.');
     } finally {
@@ -106,6 +111,7 @@ export const PromotionAdminSettings: React.FC<PromotionAdminSettingsProps> = ({ 
       setForm({ ...EMPTY_PROMOTION_POPUP });
       setUploadedImageName('');
       setMessage('Pop-up eliminado por completo.');
+      setModalNotice('Pop-up eliminado por completo.');
     } catch (error: any) {
       setMessage(error?.message || 'No se pudo eliminar.');
     } finally {
@@ -114,6 +120,8 @@ export const PromotionAdminSettings: React.FC<PromotionAdminSettingsProps> = ({ 
   };
 
   return (
+    <>
+      {modalNotice && <div className="fixed inset-0 z-[180] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="promotion-save-title"><div className="w-full max-w-sm rounded-2xl border border-[#D4AF37]/30 bg-[#161C28] p-6 text-center shadow-2xl"><CheckCircle2 className="mx-auto h-11 w-11 text-emerald-400" /><h3 id="promotion-save-title" className="mt-4 text-xl font-bold text-white">Cambios confirmados</h3><p className="mt-2 text-sm leading-6 text-gray-300">{modalNotice}</p><button type="button" autoFocus onClick={() => setModalNotice('')} className="mt-6 w-full rounded-xl bg-[#D4AF37] px-4 py-3 text-sm font-bold text-black">Aceptar</button></div></div>}
         <div className="w-full rounded-2xl bg-[#161C28] border border-white/10 p-6 sm:p-7 space-y-6 shadow-2xl">
           <div className="flex items-start justify-between gap-4">
             <div><p className="text-xs uppercase tracking-widest text-[#D4AF37] font-mono">PROMOCIONES</p><h2 className="text-2xl font-bold">Pop-up promocional</h2><p className="text-xs text-gray-400 mt-1">Puedes publicarlo como texto, imagen o ambos. El visitante siempre podrá cerrarlo.</p></div>
@@ -162,5 +170,6 @@ export const PromotionAdminSettings: React.FC<PromotionAdminSettingsProps> = ({ 
             <button type="button" onClick={remove} disabled={busy} className="py-3 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-300 font-bold text-sm disabled:opacity-40"><Trash2 className="inline w-4 h-4 mr-2" />Eliminar pop-up</button>
           </div>
         </div>
+    </>
   );
 };

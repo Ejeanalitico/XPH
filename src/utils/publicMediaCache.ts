@@ -1,7 +1,7 @@
 import { GalleryImage, HeroCoverSetting, RoutePath } from '../types';
 
-const PUBLIC_MEDIA_CACHE_KEY = 'xph-public-media:v1';
-const CACHE_VERSION = 1;
+const PUBLIC_MEDIA_CACHE_KEY = 'xph-public-media:v2';
+const CACHE_VERSION = 2;
 
 export interface PublicMediaSnapshot {
   version: number;

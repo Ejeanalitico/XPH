@@ -307,11 +307,16 @@ function heroCoverSettingsMap(items) {
   }, {});
 }
 
-function publicGalleryOnly(items) {
+function publicGalleryOnly(items, promotionPopup = null) {
   if (!Array.isArray(items)) return [];
+  const promotionImageUrls = new Set(items
+    .filter((item) => item?.id === PROMOTION_META_ID && item?.promotionPopup?.imageUrl)
+    .map((item) => String(item.promotionPopup.imageUrl)));
+  if (promotionPopup?.imageUrl) promotionImageUrls.add(String(promotionPopup.imageUrl));
   return items
     .filter((item) => {
       if (!item || !item.url) return false;
+      if (promotionImageUrls.has(String(item.url))) return false;
       if (item.visibility === 'private' || item.visibility === 'cover') return false;
       if (item.galleryId || item.gallerySlug || item.galleryToken) return false;
       if (item.mediaType === 'gallery-meta' || item.mediaType === 'cover-meta' || item.mediaType === 'video') return false;
@@ -368,7 +373,7 @@ function sanitizePublicConfig(payload) {
     copy.config.promotionPopup = copy.config.promotionPopup && typeof copy.config.promotionPopup === 'object'
       ? copy.config.promotionPopup
       : promotionPopupFromGallery(allGalleryItems);
-    copy.config.galleryImages = publicGalleryOnly(allGalleryItems);
+    copy.config.galleryImages = publicGalleryOnly(allGalleryItems, copy.config.promotionPopup);
     delete copy.config.adminCredentials;
     delete copy.config.quotes;
     delete copy.config.testimonials;
@@ -434,7 +439,12 @@ function encodePromotionIntoGallery(config, patch) {
     : Array.isArray(config.galleryImages)
       ? [...config.galleryImages]
       : [];
-  const withoutPrevious = baseGallery.filter((item) => item?.id !== PROMOTION_META_ID);
+  const promotionImageUrl = String(patch.promotionPopup?.imageUrl || '');
+  const withoutPrevious = baseGallery
+    .filter((item) => item?.id !== PROMOTION_META_ID)
+    .map((item) => promotionImageUrl && String(item?.url || '') === promotionImageUrl
+      ? { ...item, category: 'private', visibility: 'cover', mediaType: 'image', location: 'Promoción XPH' }
+      : item);
 
   if (patch.promotionPopup && typeof patch.promotionPopup === 'object') {
     withoutPrevious.unshift({
@@ -1155,6 +1165,17 @@ export default async function handler(req, res) {
           category: String(submitted.category || '').slice(0, 80),
           location: String(submitted.location || '').slice(0, 180),
         });
+        const visibility = ['private', 'cover'].includes(String(submitted.visibility || '')) ? String(submitted.visibility) : 'public';
+        if (visibility !== 'public') {
+          const latestPayload = await fetchConfigFromScript();
+          const latestConfig = normalizeConfig(latestPayload);
+          const galleryImages = (Array.isArray(latestConfig.galleryImages) ? latestConfig.galleryImages : []).map((item) =>
+            String(item?.id || '') === String(result.fileId || fileId)
+              ? { ...item, category: 'private', visibility, mediaType: 'image', location: String(submitted.location || 'Promoción XPH').slice(0, 180) }
+              : item
+          );
+          await forwardSaveConfig({ galleryImages }, 'ADMIN_RECURSO_OCULTO', `Imagen ${result.fileId || fileId} reservada para pop-up`);
+        }
         return res.status(200).json({ status: 'success', fileId: result.fileId, url: result.url, driveUrl: result.driveUrl });
       }
       if (action === 'adminCrmUpsert') {

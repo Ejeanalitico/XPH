@@ -550,7 +550,7 @@ async function fileToDataUrl(file: File): Promise<string> {
 export async function adminUploadMedia(
   _session: AdminSession | null | undefined,
   file: File,
-  options: { title: string; category: string; location: string }
+  options: { title: string; category: string; location: string; visibility?: 'public' | 'private' | 'cover' }
 ): Promise<{ fileId: string; url: string }> {
   if (!file.type.startsWith('image/')) throw new Error('Selecciona un archivo de imagen válido.');
   if (file.size <= 0 || file.size > 100_000_000) throw new Error('La fotografía debe pesar entre 1 byte y 100 MB.');
@@ -570,7 +570,7 @@ export async function adminUploadMedia(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ fileId, title: options.title, category: options.category, location: options.location }),
+    body: JSON.stringify({ fileId, title: options.title, category: options.category, location: options.location, visibility: options.visibility || 'public' }),
   });
   const saved = await parseResponse(finalizeRes);
   return { fileId: saved.fileId, url: saved.url };
