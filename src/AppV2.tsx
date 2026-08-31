@@ -144,6 +144,11 @@ export default function AppV2() {
         heroCoverSettings: data.heroCoverSettings && typeof data.heroCoverSettings === 'object' ? data.heroCoverSettings : {},
       };
 
+      // La promoción no debe depender de la precarga de galerías o portadas.
+      // Si Drive responde lento, el pop-up todavía debe abrir de inmediato.
+      if (data.promotionPopup && typeof data.promotionPopup === 'object') setPromotionPopup(data.promotionPopup as PromotionPopupConfig);
+      else setPromotionPopup(null);
+
       writePublicMediaCache(publicMedia);
       await preloadCriticalPublicMedia(publicMedia, currentRoute);
       if (cancelled) return;
@@ -152,8 +157,6 @@ export default function AppV2() {
       setHeroCovers(publicMedia.heroCovers);
       setHeroCoverSettings(publicMedia.heroCoverSettings);
       setMediaReady(true);
-      if (data.promotionPopup && typeof data.promotionPopup === 'object') setPromotionPopup(data.promotionPopup as PromotionPopupConfig);
-      else setPromotionPopup(null);
 
       const publishedPackages = resolvePublishedPackages(data);
       const publishedCategories = resolvePublishedCategories(data, publishedPackages);
