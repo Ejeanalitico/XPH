@@ -5,6 +5,7 @@ import {
   Camera,
   Check,
   CheckCircle2,
+  ChevronDown,
   Clipboard,
   FileVideo2,
   FolderLock,
@@ -43,7 +44,7 @@ import {
 import { DEFAULT_FOOTER_CONTACT, normalizeFooterContact } from '../footerConfig';
 import { PromotionAdminSettings } from './PromotionAdminSettings';
 import { AnalyticsAdminPanel } from './AnalyticsAdminPanel';
-import { BusinessAdminPanel } from './BusinessAdminPanel';
+import { BusinessAdminPanel, BusinessTab } from './BusinessAdminPanel';
 import { setAnalyticsExcluded } from '../utils/analyticsPrivacy';
 import { normalizeSeoSettings } from '../utils/seo';
 import { DEFAULT_CATALOG_CATEGORIES } from '../utils/catalogCategories';
@@ -74,6 +75,30 @@ const ADMIN_NAV_ITEMS = [
   { id: 'footer' as Tab, label: 'Pie de página', description: 'Contacto, enlaces y redes sociales', icon: PanelBottom },
   { id: 'private' as Tab, label: 'Galerías privadas', description: 'Entregas privadas para clientes', icon: FolderLock },
 ];
+
+const BUSINESS_SUBMENU: Array<{ id: BusinessTab; label: string }> = [
+  { id: 'overview', label: 'Control financiero' },
+  { id: 'execution', label: 'Centro de ejecución' },
+  { id: 'prospects', label: 'Prospectos' },
+  { id: 'clients', label: 'Clientes' },
+  { id: 'calendar', label: 'Calendario' },
+  { id: 'payments', label: 'Pagos de clientes' },
+  { id: 'expenses', label: 'Control de gastos' },
+  { id: 'contracts', label: 'Contratos y firmas' },
+  { id: 'email', label: 'Correo / Gmail' },
+  { id: 'team', label: 'Usuarios / equipo' },
+  { id: 'account', label: 'Mi cuenta' },
+];
+
+const AREA_SUBMENUS: Record<Exclude<Tab, 'business'>, string[]> = {
+  packages: ['Categorías comerciales', 'Páginas indexables', 'Paquetes y servicios'],
+  public: ['Fotografías públicas', 'Cargar fotografías'],
+  covers: ['Portadas por sección'],
+  promotions: ['Promociones y anuncios'],
+  analytics: ['Tráfico', 'SEO e indexación'],
+  footer: ['Contacto', 'Servicios y enlaces', 'Redes sociales'],
+  private: ['Galerías de clientes', 'Archivos privados'],
+};
 
 const CATEGORY_LABELS: Record<EventType, string> = {
   bodas: 'Bodas',
@@ -159,6 +184,8 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
   const [successModal, setSuccessModal] = useState(false);
   const [tab, setTab] = useState<Tab>(initialTab);
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
+  const [expandedAdminArea, setExpandedAdminArea] = useState<Tab | null>(initialTab);
+  const [businessTab, setBusinessTab] = useState<BusinessTab>('overview');
   const [businessRefreshSignal, setBusinessRefreshSignal] = useState(0);
 
   const [packages, setPackages] = useState<Record<string, PackageOption[]>>(PACKAGES_BY_EVENT);
@@ -605,9 +632,9 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
           <span className="ml-3 inline-flex shrink-0 items-center gap-2 rounded-xl border border-[#D4AF37]/25 bg-[#D4AF37]/10 px-3 py-2 text-xs font-semibold text-[#F5D76E]"><Menu className="h-5 w-5" />Menú</span>
         </button>
 
-        {adminMenuOpen && <div className="fixed inset-0 z-[140]" role="dialog" aria-modal="true" aria-label="Menú principal del administrador"><button type="button" aria-label="Cerrar menú principal" className="absolute inset-0 bg-black/75 backdrop-blur-sm" onClick={() => setAdminMenuOpen(false)} /><aside className="absolute inset-y-0 right-0 w-[min(92vw,380px)] overflow-y-auto border-l border-white/10 bg-[#111722] p-4 shadow-2xl"><div className="mb-5 flex items-center justify-between"><div><p className="text-[10px] uppercase tracking-[0.2em] text-[#D4AF37]">Administrador XPH</p><h2 className="mt-1 text-lg font-bold text-white">Áreas y submenús</h2></div><button type="button" onClick={() => setAdminMenuOpen(false)} aria-label="Cerrar menú" className="rounded-xl border border-white/10 p-2 text-gray-300 hover:bg-white/5"><X className="h-5 w-5" /></button></div><nav className="space-y-2" aria-label="Áreas del administrador">{adminNavItems.map((item) => { const Icon = item.icon; return <button key={item.id} type="button" onClick={() => { setTab(item.id); setAdminMenuOpen(false); }} className={`flex w-full items-start gap-3 rounded-xl border px-4 py-3 text-left ${tab === item.id ? 'border-[#D4AF37]/40 bg-[#D4AF37] text-black' : 'border-white/5 bg-white/[0.02] text-gray-300 hover:bg-white/5'}`}><Icon className="mt-0.5 h-5 w-5 shrink-0" /><span><strong className="block text-sm">{item.label}</strong><span className={`mt-1 block text-xs leading-5 ${tab === item.id ? 'text-black/65' : 'text-gray-500'}`}>{item.description}</span></span></button>; })}</nav></aside></div>}
+        {adminMenuOpen && <div className="fixed inset-0 z-[140]" role="dialog" aria-modal="true" aria-label="Menú principal del administrador"><button type="button" aria-label="Cerrar menú principal" className="absolute inset-0 bg-black/75 backdrop-blur-sm" onClick={() => setAdminMenuOpen(false)} /><aside className="absolute inset-y-0 right-0 w-[min(94vw,410px)] overflow-y-auto border-l border-white/10 bg-[#111722] p-4 shadow-2xl"><div className="mb-5 flex items-center justify-between"><div><p className="text-[10px] uppercase tracking-[0.2em] text-[#D4AF37]">Administrador XPH</p><h2 className="mt-1 text-lg font-bold text-white">Menú</h2><p className="mt-1 text-xs text-gray-500">Toca un área para mostrar su submenú</p></div><button type="button" onClick={() => setAdminMenuOpen(false)} aria-label="Cerrar menú" className="rounded-xl border border-white/10 p-2 text-gray-300 hover:bg-white/5"><X className="h-5 w-5" /></button></div><nav className="space-y-2" aria-label="Áreas del administrador">{adminNavItems.map((item) => { const Icon = item.icon; const expanded = expandedAdminArea === item.id; const submenu = item.id === 'business' ? BUSINESS_SUBMENU.filter((subitem) => session.role === 'SUPER_ADMIN' || (subitem.id === 'execution' || subitem.id === 'prospects' ? session.permissions.includes('CRM_READ') : subitem.id === 'clients' ? session.permissions.includes('CLIENTS_READ') || session.permissions.includes('CRM_READ') : subitem.id === 'calendar' ? session.permissions.includes('CALENDAR') : subitem.id === 'account')) : AREA_SUBMENUS[item.id]; return <section key={item.id} className={`overflow-hidden rounded-xl border ${tab === item.id ? 'border-[#D4AF37]/35' : 'border-white/5'}`}><button type="button" onClick={() => setExpandedAdminArea(expanded ? null : item.id)} className={`flex w-full items-start gap-3 px-4 py-3 text-left ${tab === item.id ? 'bg-[#D4AF37]/10 text-[#F5D76E]' : 'bg-white/[0.02] text-gray-300 hover:bg-white/5'}`} aria-expanded={expanded}><Icon className="mt-0.5 h-5 w-5 shrink-0" /><span className="min-w-0 flex-1"><strong className="block text-sm">{item.label}</strong><span className="mt-1 block text-xs leading-5 text-gray-500">{item.description}</span></span><ChevronDown className={`mt-1 h-4 w-4 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} /></button>{expanded && <div className="space-y-1 border-t border-white/5 bg-black/15 p-2">{item.id === 'business' ? (submenu as typeof BUSINESS_SUBMENU).map((subitem) => <button key={subitem.id} type="button" onClick={() => { setTab('business'); setBusinessTab(subitem.id); setAdminMenuOpen(false); }} className={`flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-left text-sm ${tab === 'business' && businessTab === subitem.id ? 'bg-[#D4AF37] font-semibold text-black' : 'text-gray-300 hover:bg-white/5'}`}><span className="h-1.5 w-1.5 rounded-full bg-current" />{subitem.label}</button>) : (submenu as string[]).map((label, index) => <button key={label} type="button" onClick={() => { setTab(item.id); setAdminMenuOpen(false); }} className={`flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-left text-sm ${tab === item.id && index === 0 ? 'bg-[#D4AF37] font-semibold text-black' : 'text-gray-300 hover:bg-white/5'}`}><span className="h-1.5 w-1.5 rounded-full bg-current" />{label}</button>)}</div>}</section>; })}</nav></aside></div>}
 
-        {tab === 'business' && <BusinessAdminPanel notify={notify} session={session} refreshSignal={businessRefreshSignal} />}
+        {tab === 'business' && <BusinessAdminPanel notify={notify} session={session} refreshSignal={businessRefreshSignal} activeTab={businessTab} onActiveTabChange={setBusinessTab} />}
 
         {tab === 'packages' && (
           <section className="space-y-7">

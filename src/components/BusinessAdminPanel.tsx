@@ -15,7 +15,6 @@ import {
   FileSignature,
   Loader2,
   Mail,
-  Menu,
   PenLine,
   Plus,
   RefreshCw,
@@ -69,7 +68,7 @@ import { calculateFinancialSummary, collectedForClient, collectedPaymentAmount, 
 
 const SalesExecutionCenter = React.lazy(() => import('./SalesExecutionCenter'));
 
-type BusinessTab = 'overview' | 'execution' | 'prospects' | 'clients' | 'calendar' | 'payments' | 'expenses' | 'contracts' | 'email' | 'team' | 'account';
+export type BusinessTab = 'overview' | 'execution' | 'prospects' | 'clients' | 'calendar' | 'payments' | 'expenses' | 'contracts' | 'email' | 'team' | 'account';
 
 const emptySnapshot: BusinessSnapshot = { clients: [], followUps: [], expenses: [], payments: [], transactions: [], adjustments: [], packageSnapshots: [], services: [], addons: [], users: [], teamFunctions: [], assignments: [], gmailConfig: null, emailTemplates: [], emailHistory: [], notifications: [], auditLog: [], galleries: [], internalEvents: [], contracts: [], ownerSignatureConfigured: false };
 const today = () => new Date().toISOString().slice(0, 10);
@@ -211,17 +210,23 @@ interface Props {
   notify: (message: string) => void;
   session: AdminSession;
   refreshSignal?: number;
+  activeTab?: BusinessTab;
+  onActiveTabChange?: (tab: BusinessTab) => void;
 }
 
-export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSignal = 0 }) => {
+export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSignal = 0, activeTab, onActiveTabChange }) => {
   const snapshotCacheScope = `${session.role}:${session.userId || session.email || 'unknown'}`;
-  const [tab, setTab] = useState<BusinessTab>('overview');
+  const [internalTab, setInternalTab] = useState<BusinessTab>('overview');
+  const tab = activeTab ?? internalTab;
+  const setTab = (nextTab: BusinessTab) => {
+    setInternalTab(nextTab);
+    onActiveTabChange?.(nextTab);
+  };
   const [snapshot, setSnapshot] = useState<BusinessSnapshot>(() => readCachedBusinessSnapshot(snapshotCacheScope) || emptySnapshot);
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [syncingAllCalendars, setSyncingAllCalendars] = useState(false);
   const [syncingClientId, setSyncingClientId] = useState('');
-  const [businessMenuOpen, setBusinessMenuOpen] = useState(false);
   const [notificationMenuOpen, setNotificationMenuOpen] = useState(false);
   const [focusedNotificationId, setFocusedNotificationId] = useState('');
   const [showClientForm, setShowClientForm] = useState(false);
@@ -580,25 +585,6 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
   const canManageFinance = session.role === 'SUPER_ADMIN';
   const pendingNotificationCount = snapshot.notifications.filter((item) => item.status === 'PENDIENTE').length;
   const visibleNotifications = snapshot.notifications.filter((item) => item.status !== 'ANULADA').slice(0, 20);
-  const businessNavItems = [
-    { id: 'overview' as const, label: 'Control financiero', icon: TrendingUp },
-    { id: 'execution' as const, label: 'Centro de ejecución', icon: ClipboardCheck },
-    { id: 'prospects' as const, label: 'Prospectos', icon: Users },
-    { id: 'clients' as const, label: 'Clientes', icon: BriefcaseBusiness },
-    { id: 'calendar' as const, label: 'Calendario', icon: CalendarDays },
-    { id: 'payments' as const, label: 'Pagos de clientes', icon: CreditCard },
-    { id: 'expenses' as const, label: 'Control de gastos', icon: BadgeDollarSign },
-    { id: 'contracts' as const, label: 'Contratos y firmas', icon: FileSignature },
-    { id: 'email' as const, label: 'Correo / Gmail', icon: Mail },
-    { id: 'team' as const, label: 'Usuarios / equipo', icon: UserCog },
-    { id: 'account' as const, label: 'Mi cuenta', icon: UserCircle },
-  ].filter((item) => session.role === 'SUPER_ADMIN' || (
-    item.id === 'execution' ? session.permissions.includes('CRM_READ') :
-    item.id === 'prospects' ? session.permissions.includes('CRM_READ') :
-    item.id === 'clients' ? session.permissions.includes('CLIENTS_READ') || session.permissions.includes('CRM_READ') :
-    item.id === 'calendar' ? session.permissions.includes('CALENDAR') : item.id === 'account'
-  ));
-  const activeBusinessNavItem = businessNavItems.find((item) => item.id === tab) || businessNavItems[0];
   const selectedClientPayments = selectedClient ? snapshot.payments.filter((payment) => payment.clientId === selectedClient.id && payment.status !== 'Anulado') : [];
   const selectedClientContract = selectedClient ? snapshot.contracts.find((contract) => contract.clientId === selectedClient.id) : undefined;
   const selectedFollowUps = selectedClient ? snapshot.followUps.filter((item) => item.prospectId === selectedClient.id || item.clientId === selectedClient.id).sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt))) : [];
@@ -752,13 +738,6 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
       </div>
 
       {session.role === 'SUPER_ADMIN' ? <div className="grid gap-3 sm:grid-cols-3"><Metric label="Prospectos y clientes" value={String(snapshot.clients.length)} icon={Users} /><Metric label="Contratos" value={String(snapshot.contracts.length)} icon={FileSignature} /><Metric label="Cobrado / contratado" value={`${money(financials.collected)} / ${money(financials.contracted)}`} icon={BadgeDollarSign} /></div> : <div className="grid gap-3 sm:grid-cols-3"><Metric label="Clientes asignados" value={String(snapshot.clients.filter((item) => item.recordType === 'Cliente').length)} icon={Users} /><Metric label="Actividades asignadas" value={String(snapshot.assignments.length)} icon={CalendarDays} /><Metric label="Próximos 7 días" value={String(snapshot.assignments.filter((item) => { const diff = dayDifference(item.startDate); return diff >= 0 && diff <= 7; }).length)} icon={BriefcaseBusiness} /></div>}
-
-      <button type="button" onClick={() => setBusinessMenuOpen(true)} className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-[#161C28] px-4 py-3 text-left" aria-haspopup="dialog" aria-expanded={businessMenuOpen}>
-        <span className="flex items-center gap-3 text-sm font-semibold text-white">{activeBusinessNavItem && React.createElement(activeBusinessNavItem.icon, { className: 'h-4 w-4 text-[#D4AF37]' })}{activeBusinessNavItem?.label || 'Menú del negocio'}</span>
-        <span className="inline-flex items-center gap-2 rounded-xl border border-[#D4AF37]/25 bg-[#D4AF37]/10 px-3 py-2 text-xs font-semibold text-[#F5D76E]"><Menu className="h-5 w-5" />Submenú</span>
-      </button>
-
-      {businessMenuOpen && <div className="fixed inset-0 z-[150]" role="dialog" aria-modal="true" aria-label="Submenú de Clientes y negocio"><button type="button" aria-label="Cerrar submenú" className="absolute inset-0 bg-black/75 backdrop-blur-sm" onClick={() => setBusinessMenuOpen(false)} /><aside className="absolute inset-y-0 right-0 w-[min(92vw,370px)] overflow-y-auto border-l border-white/10 bg-[#111722] p-4 shadow-2xl"><div className="mb-5 flex items-center justify-between"><div><p className="text-[10px] uppercase tracking-[0.2em] text-[#D4AF37]">Clientes y negocio</p><h3 className="mt-1 text-lg font-bold text-white">Submenú operativo</h3><p className="mt-1 text-xs text-gray-500">Selecciona la función que deseas abrir</p></div><button type="button" onClick={() => setBusinessMenuOpen(false)} aria-label="Cerrar submenú" className="rounded-xl border border-white/10 p-2 text-gray-300 hover:bg-white/5"><X className="h-5 w-5" /></button></div><nav className="space-y-1.5">{businessNavItems.map((item) => { const Icon = item.icon; return <button key={item.id} type="button" onClick={() => { setTab(item.id); setBusinessMenuOpen(false); }} className={`flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm font-semibold ${tab === item.id ? 'border-[#D4AF37]/40 bg-[#D4AF37] text-black' : 'border-white/5 bg-white/[0.02] text-gray-300 hover:bg-white/5'}`}><Icon className="h-4 w-4 shrink-0" />{item.label}</button>; })}</nav></aside></div>}
 
       <div className="min-w-0 space-y-5">
 
