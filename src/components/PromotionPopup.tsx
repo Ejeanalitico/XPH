@@ -57,6 +57,13 @@ export const PromotionPopup: React.FC<PromotionPopupProps> = ({ config }) => {
 
   const showText = config.mode === 'text' || config.mode === 'both';
   const showImage = config.mode === 'image' || config.mode === 'both';
+  const ctaIsExternal = Boolean(config.ctaUrl && (() => {
+    try {
+      return new URL(config.ctaUrl, window.location.origin).origin !== window.location.origin;
+    } catch (_) {
+      return false;
+    }
+  })());
 
   return (
     <div className="fixed inset-0 z-[95] bg-black/70 backdrop-blur-sm p-4 flex items-center justify-center" onClick={close}>
@@ -84,8 +91,9 @@ export const PromotionPopup: React.FC<PromotionPopupProps> = ({ config }) => {
             {config.ctaText && config.ctaUrl && (
               <a
                 href={config.ctaUrl}
-                target={config.ctaUrl.startsWith('http') ? '_blank' : undefined}
-                rel="noopener noreferrer"
+                target={ctaIsExternal ? '_blank' : undefined}
+                rel={ctaIsExternal ? 'noopener noreferrer' : undefined}
+                onClick={close}
                 className="mt-5 inline-flex items-center gap-2 px-5 py-3 rounded-xl gold-gradient-bg text-black font-extrabold text-sm"
               >
                 {config.ctaText}<ExternalLink className="w-4 h-4" />
