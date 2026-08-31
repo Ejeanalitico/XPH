@@ -12,6 +12,7 @@ import {
   Loader2,
   LogIn,
   LogOut,
+  Menu,
   Megaphone,
   PackagePlus,
   PanelBottom,
@@ -62,6 +63,17 @@ import {
 } from '../utils/adminApi';
 
 type Tab = 'business' | 'packages' | 'public' | 'covers' | 'promotions' | 'analytics' | 'footer' | 'private';
+
+const ADMIN_NAV_ITEMS = [
+  { id: 'business' as Tab, label: 'Clientes & negocio', description: 'CRM, finanzas, ventas, clientes y equipo', icon: BriefcaseBusiness },
+  { id: 'packages' as Tab, label: 'Paquetes & precios', description: 'Categorías, paquetes y servicios comerciales', icon: PackagePlus },
+  { id: 'public' as Tab, label: 'Galería pública', description: 'Fotografías visibles en la página', icon: Camera },
+  { id: 'covers' as Tab, label: 'Portadas', description: 'Imágenes principales por sección', icon: ImageIcon },
+  { id: 'promotions' as Tab, label: 'Promociones', description: 'Anuncios y promociones activas', icon: Megaphone },
+  { id: 'analytics' as Tab, label: 'Tráfico y SEO', description: 'Visitas, posicionamiento e indexación', icon: BarChart3 },
+  { id: 'footer' as Tab, label: 'Pie de página', description: 'Contacto, enlaces y redes sociales', icon: PanelBottom },
+  { id: 'private' as Tab, label: 'Galerías privadas', description: 'Entregas privadas para clientes', icon: FolderLock },
+];
 
 const CATEGORY_LABELS: Record<EventType, string> = {
   bodas: 'Bodas',
@@ -146,6 +158,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
   const [message, setMessage] = useState('');
   const [successModal, setSuccessModal] = useState(false);
   const [tab, setTab] = useState<Tab>(initialTab);
+  const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const [businessRefreshSignal, setBusinessRefreshSignal] = useState(0);
 
   const [packages, setPackages] = useState<Record<string, PackageOption[]>>(PACKAGES_BY_EVENT);
@@ -178,6 +191,8 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
   const [driveMediaType, setDriveMediaType] = useState<'image' | 'video'>('video');
 
   const privateGalleries = useMemo(() => privateGallerySummaries(galleryImages), [galleryImages]);
+  const adminNavItems = ADMIN_NAV_ITEMS.filter((item) => session?.role === 'SUPER_ADMIN' || item.id === 'business');
+  const activeAdminNavItem = adminNavItems.find((item) => item.id === tab) || adminNavItems[0];
   const selectedGallery = privateGalleries.find((item) => item.galleryId === selectedGalleryId) || null;
   const selectedGalleryMedia = galleryImages.filter((item) => item.galleryId === selectedGalleryId && item.mediaType !== 'gallery-meta');
   const publicImages = useMemo(() => galleryImages.filter((item) => item.visibility !== 'private' && item.visibility !== 'cover' && item.mediaType !== 'gallery-meta' && item.mediaType !== 'cover-meta' && item.mediaType !== 'video' && item.category !== 'private'), [galleryImages]);
@@ -585,18 +600,12 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
           </div>
         </header>
 
-        <nav className="flex overflow-x-auto gap-2 p-1.5 rounded-2xl bg-[#161C28] border border-white/10">
-          {[
-            { id: 'business' as Tab, label: 'Clientes & negocio', icon: BriefcaseBusiness },
-            { id: 'packages' as Tab, label: 'Paquetes & precios', icon: PackagePlus },
-            { id: 'public' as Tab, label: 'Galería pública', icon: Camera },
-            { id: 'covers' as Tab, label: 'Portadas', icon: ImageIcon },
-            { id: 'promotions' as Tab, label: 'Promociones', icon: Megaphone },
-            { id: 'analytics' as Tab, label: 'Tráfico y SEO', icon: BarChart3 },
-            { id: 'footer' as Tab, label: 'Pie de página', icon: PanelBottom },
-            { id: 'private' as Tab, label: 'Galerías privadas', icon: FolderLock },
-          ].filter((item) => session.role === 'SUPER_ADMIN' || item.id === 'business').map((item) => { const Icon = item.icon; return <button key={item.id} onClick={() => setTab(item.id)} className={`px-4 py-3 rounded-xl text-sm font-semibold whitespace-nowrap flex items-center gap-2 ${tab === item.id ? 'bg-[#D4AF37] text-black' : 'text-gray-300 hover:bg-white/5'}`}><Icon className="w-4 h-4" />{item.label}</button>; })}
-        </nav>
+        <button type="button" onClick={() => setAdminMenuOpen(true)} className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-[#161C28] px-4 py-3 text-left" aria-haspopup="dialog" aria-expanded={adminMenuOpen}>
+          <span className="flex min-w-0 items-center gap-3">{activeAdminNavItem && React.createElement(activeAdminNavItem.icon, { className: 'h-5 w-5 shrink-0 text-[#D4AF37]' })}<span className="min-w-0"><strong className="block truncate text-sm text-white">{activeAdminNavItem?.label || 'Menú del administrador'}</strong><span className="block truncate text-xs text-gray-500">{activeAdminNavItem?.description}</span></span></span>
+          <span className="ml-3 inline-flex shrink-0 items-center gap-2 rounded-xl border border-[#D4AF37]/25 bg-[#D4AF37]/10 px-3 py-2 text-xs font-semibold text-[#F5D76E]"><Menu className="h-5 w-5" />Menú</span>
+        </button>
+
+        {adminMenuOpen && <div className="fixed inset-0 z-[140]" role="dialog" aria-modal="true" aria-label="Menú principal del administrador"><button type="button" aria-label="Cerrar menú principal" className="absolute inset-0 bg-black/75 backdrop-blur-sm" onClick={() => setAdminMenuOpen(false)} /><aside className="absolute inset-y-0 right-0 w-[min(92vw,380px)] overflow-y-auto border-l border-white/10 bg-[#111722] p-4 shadow-2xl"><div className="mb-5 flex items-center justify-between"><div><p className="text-[10px] uppercase tracking-[0.2em] text-[#D4AF37]">Administrador XPH</p><h2 className="mt-1 text-lg font-bold text-white">Áreas y submenús</h2></div><button type="button" onClick={() => setAdminMenuOpen(false)} aria-label="Cerrar menú" className="rounded-xl border border-white/10 p-2 text-gray-300 hover:bg-white/5"><X className="h-5 w-5" /></button></div><nav className="space-y-2" aria-label="Áreas del administrador">{adminNavItems.map((item) => { const Icon = item.icon; return <button key={item.id} type="button" onClick={() => { setTab(item.id); setAdminMenuOpen(false); }} className={`flex w-full items-start gap-3 rounded-xl border px-4 py-3 text-left ${tab === item.id ? 'border-[#D4AF37]/40 bg-[#D4AF37] text-black' : 'border-white/5 bg-white/[0.02] text-gray-300 hover:bg-white/5'}`}><Icon className="mt-0.5 h-5 w-5 shrink-0" /><span><strong className="block text-sm">{item.label}</strong><span className={`mt-1 block text-xs leading-5 ${tab === item.id ? 'text-black/65' : 'text-gray-500'}`}>{item.description}</span></span></button>; })}</nav></aside></div>}
 
         {tab === 'business' && <BusinessAdminPanel notify={notify} session={session} refreshSignal={businessRefreshSignal} />}
 
