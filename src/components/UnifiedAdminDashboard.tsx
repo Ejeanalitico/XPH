@@ -54,6 +54,7 @@ import {
   adminLogin,
   adminLogout,
   adminUploadMedia,
+  deleteManagedDriveMedia,
   driveDownloadUrl,
   drivePreviewUrl,
   extractDriveFolderId,
@@ -572,7 +573,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
     try {
       const added = await uploadImagesInBatches(privateFiles.filter((file) => file.type.startsWith('image/')), async (file): Promise<GalleryImage> => {
         const uploaded = await adminUploadMedia(session, file, { title: titleFromFilename(file.name), category: 'private', location: selectedGallery.clientName });
-        return { id: uploaded.fileId, title: titleFromFilename(file.name), category: 'private', url: uploaded.url, location: selectedGallery.clientName, visibility: 'private', mediaType: 'image', galleryId: selectedGallery.galleryId, gallerySlug: selectedGallery.slug, galleryTitle: selectedGallery.title, galleryClient: selectedGallery.clientName, downloadUrl: driveDownloadUrl(uploaded.fileId), previewUrl: uploaded.url, createdAt: new Date().toISOString() };
+        return { id: uploaded.fileId, title: titleFromFilename(file.name), category: 'private', url: uploaded.url, location: selectedGallery.clientName, visibility: 'private', mediaType: 'image', galleryId: selectedGallery.galleryId, gallerySlug: selectedGallery.slug, galleryTitle: selectedGallery.title, galleryClient: selectedGallery.clientName, storageSource: 'managed-upload', downloadUrl: driveDownloadUrl(uploaded.fileId), previewUrl: uploaded.url, createdAt: new Date().toISOString() };
       });
       const ids = new Set(added.map((item) => item.id));
       await persistGallery([...added, ...galleryImages.filter((item) => !ids.has(item.id))], 'ADMIN_GALERIA_PRIVADA', `${added.length} fotografías agregadas a ${selectedGallery.title}`);
@@ -591,7 +592,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
         const added: GalleryImage[] = files.map((file) => {
           const mediaType: 'image' | 'video' = file.mimeType.startsWith('video/') ? 'video' : 'image';
           const preview = mediaType === 'video' ? drivePreviewUrl(file.id) : `https://lh3.googleusercontent.com/d/${file.id}`;
-          return { id: file.id, title: file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '), category: 'private', url: preview, location: selectedGallery.clientName, visibility: 'private', mediaType, galleryId: selectedGallery.galleryId, gallerySlug: selectedGallery.slug, galleryTitle: selectedGallery.title, galleryClient: selectedGallery.clientName, downloadUrl: driveDownloadUrl(file.id), previewUrl: preview, driveFolderId: folderId, createdAt: new Date().toISOString() };
+          return { id: file.id, title: file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '), category: 'private', url: preview, location: selectedGallery.clientName, visibility: 'private', mediaType, galleryId: selectedGallery.galleryId, gallerySlug: selectedGallery.slug, galleryTitle: selectedGallery.title, galleryClient: selectedGallery.clientName, storageSource: 'drive-link', downloadUrl: driveDownloadUrl(file.id), previewUrl: preview, driveFolderId: folderId, createdAt: new Date().toISOString() };
         });
         const ids = new Set(added.map((item) => item.id));
         await persistGallery([...added, ...galleryImages.filter((item) => !ids.has(item.id))], 'ADMIN_GALERIA_PRIVADA', `${added.length} archivos importados desde carpeta de Drive a ${selectedGallery.title}`);
@@ -605,10 +606,50 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
     setBusy(true);
     try {
       const preview = driveMediaType === 'video' ? drivePreviewUrl(fileId) : `https://lh3.googleusercontent.com/d/${fileId}`;
-      const record: GalleryImage = { id: fileId, title: driveMediaTitle.trim() || (driveMediaType === 'video' ? 'Video del evento' : 'Fotografía'), category: 'private', url: preview, location: selectedGallery.clientName, visibility: 'private', mediaType: driveMediaType, galleryId: selectedGallery.galleryId, gallerySlug: selectedGallery.slug, galleryTitle: selectedGallery.title, galleryClient: selectedGallery.clientName, downloadUrl: driveDownloadUrl(fileId), previewUrl: preview, createdAt: new Date().toISOString() };
+      const record: GalleryImage = { id: fileId, title: driveMediaTitle.trim() || (driveMediaType === 'video' ? 'Video del evento' : 'Fotografía'), category: 'private', url: preview, location: selectedGallery.clientName, visibility: 'private', mediaType: driveMediaType, galleryId: selectedGallery.galleryId, gallerySlug: selectedGallery.slug, galleryTitle: selectedGallery.title, galleryClient: selectedGallery.clientName, storageSource: 'drive-link', downloadUrl: driveDownloadUrl(fileId), previewUrl: preview, createdAt: new Date().toISOString() };
       await persistGallery([record, ...galleryImages.filter((item) => item.id !== fileId)], 'ADMIN_GALERIA_PRIVADA', `Archivo de Drive agregado a ${selectedGallery.title}`);
       setDriveMediaUrl(''); setDriveMediaTitle(''); notify('Archivo agregado a la galería privada.');
     } catch (error: any) { notify(error?.message || 'No se pudo registrar el archivo.'); }
+    finally { setBusy(false); }
+  };
+
+  const removePrivateMedia = async (item: GalleryImage) => {
+    if (!session || !selectedGallery) return;
+    const removesManagedCopy = item.storageSource === 'managed-upload';
+    const confirmation = removesManagedCopy
+      ? `¿Eliminar “${item.title}” de la galería y enviar la copia administrada a la papelera?`
+      : `¿Quitar “${item.title}” de esta galería? El archivo original de Google Drive no se modificará.`;
+    if (!window.confirm(confirmation)) return;
+    setBusy(true);
+    try {
+      const next = galleryImages.filter((record) => !(record.galleryId === selectedGallery.galleryId && record.id === item.id && record.mediaType === item.mediaType));
+      await persistGallery(next, 'ADMIN_GALERIA_PRIVADA_ARCHIVO_ELIMINADO', `${item.title} eliminado de ${selectedGallery.title}`);
+      const stillReferenced = next.some((record) => record.id === item.id && record.mediaType !== 'gallery-meta');
+      if (removesManagedCopy && !stillReferenced) {
+        const result = await deleteManagedDriveMedia([item.id]);
+        if (!result.deleted.includes(item.id)) return notify('El archivo se quitó de la página, pero la copia almacenada no pudo enviarse a la papelera.');
+        return notify('Archivo eliminado de la galería y copia administrada enviada a la papelera.');
+      }
+      notify(stillReferenced ? 'Archivo quitado de esta galería; se conserva porque también se utiliza en otra sección.' : 'Archivo quitado de la galería. El original de Google Drive permanece intacto.');
+    } catch (error: any) { notify(error?.message || 'No se pudo eliminar el archivo de la galería.'); }
+    finally { setBusy(false); }
+  };
+
+  const removePrivateGallery = async () => {
+    if (!session || !selectedGallery) return;
+    const galleryItems = galleryImages.filter((item) => item.galleryId === selectedGallery.galleryId);
+    if (!window.confirm(`¿Eliminar la galería “${selectedGallery.title}” y sus ${selectedGallery.mediaCount} archivos de la página? Los originales enlazados de Drive no se modificarán.`)) return;
+    setBusy(true);
+    try {
+      const next = galleryImages.filter((item) => item.galleryId !== selectedGallery.galleryId);
+      await persistGallery(next, 'ADMIN_GALERIA_PRIVADA_ELIMINADA', `Galería ${selectedGallery.title} eliminada`);
+      const managedIds = Array.from(new Set<string>(galleryItems
+        .filter((item) => item.storageSource === 'managed-upload' && !next.some((record) => record.id === item.id && record.mediaType !== 'gallery-meta'))
+        .map((item) => item.id)));
+      if (managedIds.length) await deleteManagedDriveMedia(managedIds);
+      setSelectedGalleryId('');
+      notify(`Galería eliminada. ${managedIds.length ? 'Las copias administradas se enviaron a la papelera; ' : ''}los originales enlazados permanecen intactos.`);
+    } catch (error: any) { notify(error?.message || 'No se pudo eliminar la galería.'); }
     finally { setBusy(false); }
   };
 
@@ -786,7 +827,30 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
         {tab === 'private' && (
           <section className="space-y-6">
             <div className="grid lg:grid-cols-2 gap-5"><div className="rounded-2xl bg-[#161C28] border border-white/10 p-5 space-y-3"><h2 className="text-xl font-bold">Crear galería privada</h2><input value={galleryClient} onChange={(e) => setGalleryClient(e.target.value)} placeholder="Nombre del cliente" className="w-full px-4 py-3 rounded-xl bg-[#0B0F17] border border-white/10" /><input value={galleryTitle} onChange={(e) => setGalleryTitle(e.target.value)} placeholder="Nombre de la galería" className="w-full px-4 py-3 rounded-xl bg-[#0B0F17] border border-white/10" /><button onClick={createPrivateGallery} disabled={!galleryClient.trim() || !galleryTitle.trim() || busy} className="px-5 py-3 rounded-xl bg-[#D4AF37] text-black font-bold disabled:opacity-40"><FolderLock className="inline w-4 h-4 mr-2" />Crear galería</button></div><div className="rounded-2xl bg-[#161C28] border border-white/10 p-5 space-y-3"><h2 className="text-xl font-bold">Galerías creadas</h2><div className="space-y-2 max-h-72 overflow-auto">{privateGalleries.map((gallery) => <button key={gallery.galleryId} onClick={() => setSelectedGalleryId(gallery.galleryId)} className={`w-full text-left p-3 rounded-xl border ${selectedGalleryId === gallery.galleryId ? 'border-[#D4AF37] bg-[#D4AF37]/5' : 'border-white/10 bg-[#0B0F17]'}`}><div className="font-semibold">{gallery.title}</div><div className="text-xs text-gray-400">{gallery.clientName} · {gallery.mediaCount} archivos</div></button>)}</div></div></div>
-            {selectedGallery && <div className="rounded-2xl bg-[#161C28] border border-white/10 p-5 space-y-5"><div className="flex flex-col md:flex-row md:items-center justify-between gap-3"><div><h2 className="text-xl font-bold">{selectedGallery.title}</h2><p className="text-xs text-gray-400">{selectedGallery.clientName} · fotos y videos descargables</p></div><button onClick={() => navigator.clipboard.writeText(privateLink(selectedGallery)).then(() => notify('Liga privada copiada.'))} className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm"><Clipboard className="inline w-4 h-4 mr-2" />Copiar liga privada</button></div><div className="grid lg:grid-cols-2 gap-5"><div className="space-y-3"><h3 className="font-semibold">Subir fotografías</h3><input type="file" accept="image/*" multiple onChange={(e) => setPrivateFiles(Array.from(e.target.files || []))} /><button onClick={uploadPrivateImages} disabled={!privateFiles.length || busy} className="px-4 py-2.5 rounded-xl bg-[#D4AF37] text-black font-bold text-sm disabled:opacity-40"><Upload className="inline w-4 h-4 mr-2" />Agregar {privateFiles.length || ''} fotos</button></div><div className="space-y-3"><h3 className="font-semibold">Agregar desde Google Drive</h3><p className="text-xs leading-5 text-gray-400">Acepta la liga de una carpeta completa o de un archivo individual. La carpeta debe ser accesible por la cuenta de XPH.</p><select value={driveMediaType} onChange={(e) => setDriveMediaType(e.target.value as 'image' | 'video')} className="w-full px-3 py-2.5 rounded-xl bg-[#0B0F17] border border-white/10"><option value="video">Video individual</option><option value="image">Fotografía individual</option></select><input value={driveMediaUrl} onChange={(e) => setDriveMediaUrl(e.target.value)} placeholder="Liga de carpeta, fotografía o video de Google Drive" className="w-full px-3 py-2.5 rounded-xl bg-[#0B0F17] border border-white/10" /><input value={driveMediaTitle} onChange={(e) => setDriveMediaTitle(e.target.value)} placeholder="Título (solo para archivo individual)" className="w-full px-3 py-2.5 rounded-xl bg-[#0B0F17] border border-white/10" /><button onClick={registerPrivateDriveFile} disabled={!driveMediaUrl || busy} className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm"><FileVideo2 className="inline w-4 h-4 mr-2" />Importar desde Drive</button></div></div><div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">{selectedGalleryMedia.map((item) => <div key={`${item.id}-${item.mediaType}`} className="rounded-xl overflow-hidden border border-white/10 bg-[#0B0F17]">{item.mediaType === 'video' ? <div className="aspect-square flex items-center justify-center"><FileVideo2 className="w-10 h-10 text-[#D4AF37]" /></div> : <img src={item.url} alt={item.title} className="w-full aspect-square object-cover" />}<div className="p-2 text-[10px] truncate">{item.title}</div></div>)}</div></div>}
+            {selectedGallery && (
+              <div className="rounded-2xl bg-[#161C28] border border-white/10 p-5 space-y-5">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                  <div><h2 className="text-xl font-bold">{selectedGallery.title}</h2><p className="text-xs text-gray-400">{selectedGallery.clientName} · fotos y videos descargables</p></div>
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => navigator.clipboard.writeText(privateLink(selectedGallery)).then(() => notify('Liga privada copiada.'))} className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm"><Clipboard className="inline w-4 h-4 mr-2" />Copiar liga privada</button>
+                    <button onClick={removePrivateGallery} disabled={busy} className="px-4 py-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-sm disabled:opacity-40"><Trash2 className="inline w-4 h-4 mr-2" />Eliminar galería</button>
+                  </div>
+                </div>
+                <div className="grid lg:grid-cols-2 gap-5">
+                  <div className="space-y-3"><h3 className="font-semibold">Subir fotografías</h3><input type="file" accept="image/*" multiple onChange={(e) => setPrivateFiles(Array.from(e.target.files || []))} /><button onClick={uploadPrivateImages} disabled={!privateFiles.length || busy} className="px-4 py-2.5 rounded-xl bg-[#D4AF37] text-black font-bold text-sm disabled:opacity-40"><Upload className="inline w-4 h-4 mr-2" />Agregar {privateFiles.length || ''} fotos</button></div>
+                  <div className="space-y-3"><h3 className="font-semibold">Agregar desde Google Drive</h3><p className="text-xs leading-5 text-gray-400">Acepta la liga de una carpeta completa o de un archivo individual. La carpeta debe ser accesible por la cuenta de XPH.</p><select value={driveMediaType} onChange={(e) => setDriveMediaType(e.target.value as 'image' | 'video')} className="w-full px-3 py-2.5 rounded-xl bg-[#0B0F17] border border-white/10"><option value="video">Video individual</option><option value="image">Fotografía individual</option></select><input value={driveMediaUrl} onChange={(e) => setDriveMediaUrl(e.target.value)} placeholder="Liga de carpeta, fotografía o video de Google Drive" className="w-full px-3 py-2.5 rounded-xl bg-[#0B0F17] border border-white/10" /><input value={driveMediaTitle} onChange={(e) => setDriveMediaTitle(e.target.value)} placeholder="Título (solo para archivo individual)" className="w-full px-3 py-2.5 rounded-xl bg-[#0B0F17] border border-white/10" /><button onClick={registerPrivateDriveFile} disabled={!driveMediaUrl || busy} className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm"><FileVideo2 className="inline w-4 h-4 mr-2" />Importar desde Drive</button></div>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+                  {selectedGalleryMedia.map((item) => (
+                    <div key={`${item.id}-${item.mediaType}`} className="relative rounded-xl overflow-hidden border border-white/10 bg-[#0B0F17]">
+                      {item.mediaType === 'video' ? <div className="aspect-square flex items-center justify-center"><FileVideo2 className="w-10 h-10 text-[#D4AF37]" /></div> : <img src={item.url} alt={item.title} className="w-full aspect-square object-cover" />}
+                      <button type="button" onClick={() => removePrivateMedia(item)} disabled={busy} aria-label={`Eliminar ${item.title}`} className="absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-full border border-rose-400/40 bg-black/80 text-rose-300 shadow-lg transition hover:bg-rose-500 hover:text-white disabled:opacity-40"><Trash2 className="h-4 w-4" /></button>
+                      <div className="p-2"><div className="text-[10px] truncate">{item.title}</div><div className="mt-1 text-[9px] text-gray-500">{item.storageSource === 'managed-upload' ? 'Copia administrada' : 'Original de Drive protegido'}</div></div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </section>
         )}
       </div>
