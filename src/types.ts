@@ -45,6 +45,7 @@ export interface GalleryImage {
   clientId?: string;
   eventId?: string;
   driveFolderId?: string;
+  storageSource?: 'managed-upload' | 'drive-link';
   downloadUrl?: string;
   previewUrl?: string;
   createdAt?: string;
