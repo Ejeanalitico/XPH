@@ -628,6 +628,20 @@ export async function importPrivateDriveFolder(folderId: string): Promise<Array<
   return Array.isArray(data.files) ? data.files : [];
 }
 
+export async function deleteManagedDriveMedia(fileIds: string[]): Promise<{ deleted: string[]; retained: string[] }> {
+  const uniqueIds = Array.from(new Set(fileIds.map((id) => String(id || '').trim()).filter(Boolean)));
+  if (!uniqueIds.length) return { deleted: [], retained: [] };
+  const res = await fetch('/api/proxy?action=adminManagedMediaDelete', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+    body: JSON.stringify({ fileIds: uniqueIds }),
+  });
+  const data = await parseResponse(res);
+  return {
+    deleted: Array.isArray(data.deleted) ? data.deleted : [],
+    retained: Array.isArray(data.retained) ? data.retained : [],
+  };
+}
+
 export function driveDownloadUrl(fileId: string) {
   return `https://drive.usercontent.google.com/download?id=${encodeURIComponent(fileId)}&export=download&confirm=t`;
 }
