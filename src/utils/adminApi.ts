@@ -610,6 +610,24 @@ export function extractDriveFileId(value: string): string {
   return '';
 }
 
+export function extractDriveFolderId(value: string): string {
+  const trimmed = String(value || '').trim();
+  const byPath = trimmed.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  if (byPath?.[1]) return byPath[1];
+  const byId = trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (byId?.[1]) return byId[1];
+  return '';
+}
+
+export async function importPrivateDriveFolder(folderId: string): Promise<Array<{ id: string; name: string; mimeType: string }>> {
+  const res = await fetch('/api/proxy?action=adminDriveFolderImport', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+    body: JSON.stringify({ folderId }),
+  });
+  const data = await parseResponse(res);
+  return Array.isArray(data.files) ? data.files : [];
+}
+
 export function driveDownloadUrl(fileId: string) {
   return `https://drive.usercontent.google.com/download?id=${encodeURIComponent(fileId)}&export=download&confirm=t`;
 }
