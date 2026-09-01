@@ -1010,6 +1010,7 @@ export default async function handler(req, res) {
       'adminUploadInit',
       'adminUploadFinalize',
       'adminDriveFolderImport',
+      'adminManagedMediaDelete',
       'adminCrmUpsert',
       'adminFollowUpCreate',
       'adminProspectConvert',
@@ -1059,7 +1060,7 @@ export default async function handler(req, res) {
         adminExpenseUpsert: 'FINANCE', adminPaymentUpsert: 'FINANCE', adminAdjustmentUpsert: 'FINANCE',
         adminClientPackageAssign: 'CLIENTS_WRITE', adminServiceUpsert: 'CLIENTS_WRITE', adminAddonUpsert: 'CLIENTS_WRITE',
         adminContractUpload: 'CONTRACTS', adminContractUploadInit: 'CONTRACTS', adminDriveUploadBody: uploadPermissionByKind[uploadKind] || 'SUPER_ADMIN', adminContractUploadFinalize: 'CONTRACTS', adminContractCreateLink: 'CONTRACTS', adminOwnerSignatureSave: 'CONTRACTS', adminContractFinalize: 'CONTRACTS',
-        adminUploadInit: 'GALLERIES', adminUploadFinalize: 'GALLERIES', adminDriveFolderImport: 'GALLERIES',
+        adminUploadInit: 'GALLERIES', adminUploadFinalize: 'GALLERIES', adminDriveFolderImport: 'GALLERIES', adminManagedMediaDelete: 'GALLERIES',
         adminTeamFunctionUpsert: 'USERS_ADMIN', adminTeamUserUpsert: 'USERS_ADMIN', adminTeamInviteCreate: 'USERS_ADMIN',
         adminTeamAssignmentUpsert: 'USERS_ADMIN',
         adminGmailConfigUpsert: 'GMAIL_ADMIN', adminGmailTest: 'GMAIL_ADMIN', adminEmailTemplateUpsert: 'GMAIL_ADMIN',
@@ -1184,6 +1185,14 @@ export default async function handler(req, res) {
         if (!/^[a-zA-Z0-9_-]{10,}$/.test(folderId)) return res.status(400).json({ status: 'error', message: 'La carpeta de Google Drive no es válida.' });
         const result = await forwardBusinessAction('driveFolderImport', { folderId });
         return res.status(200).json({ status: 'success', files: Array.isArray(result.files) ? result.files : [] });
+      }
+      if (action === 'adminManagedMediaDelete') {
+        const fileIds = Array.from(new Set((Array.isArray(submitted.fileIds) ? submitted.fileIds : [])
+          .map((id) => String(id || '').trim().slice(0, 200))
+          .filter((id) => /^[a-zA-Z0-9_-]{10,}$/.test(id)))).slice(0, 500);
+        if (!fileIds.length) return res.status(400).json({ status: 'error', message: 'No se recibieron archivos válidos para eliminar.' });
+        const result = await forwardBusinessAction('driveManagedMediaDelete', { fileIds });
+        return res.status(200).json({ status: 'success', deleted: result.deleted || [], retained: result.retained || [] });
       }
       if (action === 'adminCrmUpsert') {
         const client = submitted.client || {};
