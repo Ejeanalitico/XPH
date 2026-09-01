@@ -1009,6 +1009,7 @@ export default async function handler(req, res) {
       'adminBusinessSnapshot',
       'adminUploadInit',
       'adminUploadFinalize',
+      'adminDriveFolderImport',
       'adminCrmUpsert',
       'adminFollowUpCreate',
       'adminProspectConvert',
@@ -1058,7 +1059,7 @@ export default async function handler(req, res) {
         adminExpenseUpsert: 'FINANCE', adminPaymentUpsert: 'FINANCE', adminAdjustmentUpsert: 'FINANCE',
         adminClientPackageAssign: 'CLIENTS_WRITE', adminServiceUpsert: 'CLIENTS_WRITE', adminAddonUpsert: 'CLIENTS_WRITE',
         adminContractUpload: 'CONTRACTS', adminContractUploadInit: 'CONTRACTS', adminDriveUploadBody: uploadPermissionByKind[uploadKind] || 'SUPER_ADMIN', adminContractUploadFinalize: 'CONTRACTS', adminContractCreateLink: 'CONTRACTS', adminOwnerSignatureSave: 'CONTRACTS', adminContractFinalize: 'CONTRACTS',
-        adminUploadInit: 'GALLERIES', adminUploadFinalize: 'GALLERIES',
+        adminUploadInit: 'GALLERIES', adminUploadFinalize: 'GALLERIES', adminDriveFolderImport: 'GALLERIES',
         adminTeamFunctionUpsert: 'USERS_ADMIN', adminTeamUserUpsert: 'USERS_ADMIN', adminTeamInviteCreate: 'USERS_ADMIN',
         adminTeamAssignmentUpsert: 'USERS_ADMIN',
         adminGmailConfigUpsert: 'GMAIL_ADMIN', adminGmailTest: 'GMAIL_ADMIN', adminEmailTemplateUpsert: 'GMAIL_ADMIN',
@@ -1177,6 +1178,12 @@ export default async function handler(req, res) {
           await forwardSaveConfig({ galleryImages }, 'ADMIN_RECURSO_OCULTO', `Imagen ${result.fileId || fileId} reservada para pop-up`);
         }
         return res.status(200).json({ status: 'success', fileId: result.fileId, url: result.url, driveUrl: result.driveUrl });
+      }
+      if (action === 'adminDriveFolderImport') {
+        const folderId = String(submitted.folderId || '').trim().slice(0, 200);
+        if (!/^[a-zA-Z0-9_-]{10,}$/.test(folderId)) return res.status(400).json({ status: 'error', message: 'La carpeta de Google Drive no es válida.' });
+        const result = await forwardBusinessAction('driveFolderImport', { folderId });
+        return res.status(200).json({ status: 'success', files: Array.isArray(result.files) ? result.files : [] });
       }
       if (action === 'adminCrmUpsert') {
         const client = submitted.client || {};
