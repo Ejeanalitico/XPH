@@ -1953,6 +1953,29 @@ function handleBusinessAction(ss, action, payload) {
     if (!importedFiles.length) throw new Error('La carpeta no contiene fotografías o videos compatibles en su nivel principal.');
     return { status: 'success', files: importedFiles };
   }
+  if (action === 'driveManagedMediaDelete') {
+    var managedFolderId = driveUploadFolder().getId();
+    var requestedFileIds = Array.isArray(payload.fileIds) ? payload.fileIds.slice(0, 500) : [];
+    var deletedFileIds = [];
+    var retainedFileIds = [];
+    requestedFileIds.forEach(function(rawFileId) {
+      var managedFileId = cleanBusinessText(rawFileId, 200);
+      if (!managedFileId) return;
+      try {
+        var managedFile = DriveApp.getFileById(managedFileId);
+        var managedParents = managedFile.getParents();
+        var belongsToManagedFolder = false;
+        while (managedParents.hasNext()) {
+          if (managedParents.next().getId() === managedFolderId) { belongsToManagedFolder = true; break; }
+        }
+        if (!belongsToManagedFolder) { retainedFileIds.push(managedFileId); return; }
+        managedFile.setTrashed(true);
+        deletedFileIds.push(managedFileId);
+      } catch (_) { retainedFileIds.push(managedFileId); }
+    });
+    logAudit(ss, 'GALERIA_ARCHIVOS_ALMACENADOS_ELIMINADOS', { deleted: deletedFileIds, retained: retainedFileIds }, deletedFileIds.join(','), 'Admin XPH');
+    return { status: 'success', deleted: deletedFileIds, retained: retainedFileIds };
+  }
   if (action === 'businessClients') {
     return {
       status: 'success',
@@ -2770,7 +2793,7 @@ function doPost(e) {
     var ss = getDatabaseSpreadsheet();
 
     var businessActions = [
-      'businessClients', 'businessSnapshot', 'uploadInit', 'uploadFinalize', 'driveFolderImport', 'contractUploadInit', 'contractUploadFinalize', 'gmailLogoUploadInit', 'gmailLogoUploadFinalize', 'galleryUploadInit', 'galleryUploadFinalize', 'galleryCreate', 'galleryStatusUpdate', 'internalEventUpsert', 'crmUpsert', 'followUpCreate', 'prospectConvert', 'calendarSync', 'calendarSyncAll', 'expenseUpsert', 'paymentUpsert', 'adjustmentUpsert', 'clientPackageAssign', 'serviceUpsert', 'addonUpsert', 'teamFunctionUpsert', 'teamUserUpsert', 'teamInviteCreate', 'teamInviteResolve', 'teamGoogleConnect', 'teamAssignmentUpsert', 'gmailConfigUpsert', 'gmailTest', 'emailTemplateUpsert', 'emailSend', 'notificationRead', 'remindersRun', 'remindersInstall', 'contractUpload', 'contractCreateLink',
+      'businessClients', 'businessSnapshot', 'uploadInit', 'uploadFinalize', 'driveFolderImport', 'driveManagedMediaDelete', 'contractUploadInit', 'contractUploadFinalize', 'gmailLogoUploadInit', 'gmailLogoUploadFinalize', 'galleryUploadInit', 'galleryUploadFinalize', 'galleryCreate', 'galleryStatusUpdate', 'internalEventUpsert', 'crmUpsert', 'followUpCreate', 'prospectConvert', 'calendarSync', 'calendarSyncAll', 'expenseUpsert', 'paymentUpsert', 'adjustmentUpsert', 'clientPackageAssign', 'serviceUpsert', 'addonUpsert', 'teamFunctionUpsert', 'teamUserUpsert', 'teamInviteCreate', 'teamInviteResolve', 'teamGoogleConnect', 'teamAssignmentUpsert', 'gmailConfigUpsert', 'gmailTest', 'emailTemplateUpsert', 'emailSend', 'notificationRead', 'remindersRun', 'remindersInstall', 'contractUpload', 'contractCreateLink',
       'contractInvalidate', 'contractResolve', 'contractCompleteSignature', 'ownerSignatureSave',
       'contractAdminPdfData', 'contractFinalizeData', 'contractFinalize'
     ];
