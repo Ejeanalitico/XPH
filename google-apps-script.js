@@ -1937,6 +1937,22 @@ function handleBusinessAction(ss, action, payload) {
   if (action === 'uploadFinalize') return finalizeDrivePhotoUpload(ss, payload);
   if (action === 'gmailLogoUploadFinalize') return finalizeEmailLogoUpload(ss, payload);
   if (action === 'galleryUploadFinalize') return finalizeClientGalleryUpload(ss, payload);
+  if (action === 'driveFolderImport') {
+    var importedFolder;
+    try { importedFolder = DriveApp.getFolderById(cleanBusinessText(payload.folderId, 200)); }
+    catch (_) { throw new Error('No se pudo abrir la carpeta. Compártela con la cuenta propietaria del CRM o verifica la liga.'); }
+    var importedFiles = [];
+    var folderFiles = importedFolder.getFiles();
+    while (folderFiles.hasNext() && importedFiles.length < 1000) {
+      var importedFile = folderFiles.next();
+      var importedMime = String(importedFile.getMimeType() || '').toLowerCase();
+      if (importedMime.indexOf('image/') !== 0 && importedMime.indexOf('video/') !== 0) continue;
+      try { importedFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (_) {}
+      importedFiles.push({ id: importedFile.getId(), name: importedFile.getName(), mimeType: importedMime });
+    }
+    if (!importedFiles.length) throw new Error('La carpeta no contiene fotografías o videos compatibles en su nivel principal.');
+    return { status: 'success', files: importedFiles };
+  }
   if (action === 'businessClients') {
     return {
       status: 'success',
@@ -2754,7 +2770,7 @@ function doPost(e) {
     var ss = getDatabaseSpreadsheet();
 
     var businessActions = [
-      'businessClients', 'businessSnapshot', 'uploadInit', 'uploadFinalize', 'contractUploadInit', 'contractUploadFinalize', 'gmailLogoUploadInit', 'gmailLogoUploadFinalize', 'galleryUploadInit', 'galleryUploadFinalize', 'galleryCreate', 'galleryStatusUpdate', 'internalEventUpsert', 'crmUpsert', 'followUpCreate', 'prospectConvert', 'calendarSync', 'calendarSyncAll', 'expenseUpsert', 'paymentUpsert', 'adjustmentUpsert', 'clientPackageAssign', 'serviceUpsert', 'addonUpsert', 'teamFunctionUpsert', 'teamUserUpsert', 'teamInviteCreate', 'teamInviteResolve', 'teamGoogleConnect', 'teamAssignmentUpsert', 'gmailConfigUpsert', 'gmailTest', 'emailTemplateUpsert', 'emailSend', 'notificationRead', 'remindersRun', 'remindersInstall', 'contractUpload', 'contractCreateLink',
+      'businessClients', 'businessSnapshot', 'uploadInit', 'uploadFinalize', 'driveFolderImport', 'contractUploadInit', 'contractUploadFinalize', 'gmailLogoUploadInit', 'gmailLogoUploadFinalize', 'galleryUploadInit', 'galleryUploadFinalize', 'galleryCreate', 'galleryStatusUpdate', 'internalEventUpsert', 'crmUpsert', 'followUpCreate', 'prospectConvert', 'calendarSync', 'calendarSyncAll', 'expenseUpsert', 'paymentUpsert', 'adjustmentUpsert', 'clientPackageAssign', 'serviceUpsert', 'addonUpsert', 'teamFunctionUpsert', 'teamUserUpsert', 'teamInviteCreate', 'teamInviteResolve', 'teamGoogleConnect', 'teamAssignmentUpsert', 'gmailConfigUpsert', 'gmailTest', 'emailTemplateUpsert', 'emailSend', 'notificationRead', 'remindersRun', 'remindersInstall', 'contractUpload', 'contractCreateLink',
       'contractInvalidate', 'contractResolve', 'contractCompleteSignature', 'ownerSignatureSave',
       'contractAdminPdfData', 'contractFinalizeData', 'contractFinalize'
     ];
