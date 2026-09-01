@@ -46,7 +46,9 @@ export const collectedForClient = (client, payments = [], transactions = []) => 
 };
 
 export const calculateFinancialSummary = ({ clients = [], payments = [], transactions = [], expenses = [], adjustments = [] }) => {
-  const contractedClients = clients.filter((client) => client.recordType === 'Cliente' || client.status === 'Contratado');
+  // Historical imports can retain a prospect marked "Contratado" after its
+  // canonical client record exists. Counting by status duplicates that sale.
+  const contractedClients = clients.filter((client) => client.recordType === 'Cliente' && client.status !== 'Archivado');
   const contracted = contractedClients.reduce((sum, client) => sum + amount(client.totalAmount), 0);
   const collected = contractedClients.reduce((sum, client) => {
     const clientCollected = collectedForClient(client, payments, transactions);
