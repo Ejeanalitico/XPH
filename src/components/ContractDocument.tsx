@@ -44,7 +44,7 @@ export const ContractDocument = ({ snapshot, folio }: { snapshot: ContractDocume
     <header className="border-b-[3px] border-black px-8 pb-5 pt-7 sm:px-12">
       <div className="flex items-start justify-between gap-8">
         <div className="w-[44%] max-w-[285px]">
-          <img src="/xph-mark.svg" alt="XPH Fotografía y Video" className="h-auto w-[190px] max-w-full" />
+          <img src="/xph-logo.png" alt="XPH Fotografía y Video" className="h-auto w-[190px] max-w-full" />
           <p className="mt-2 border-t border-black pt-2 text-[10px] font-semibold uppercase tracking-[.18em]">Fotografía &amp; producción audiovisual</p>
         </div>
         <div className="text-right"><h1 className="font-serif text-[25px] font-bold uppercase leading-[1.05] sm:text-[31px]">{isQuote ? 'Cotización de servicios' : 'Contrato de servicios'}</h1><p className="mt-3 text-[12px] font-semibold uppercase tracking-[.1em]">{snapshot.event.type || 'Evento'}</p><p className="mt-1 text-[11px]">Folio {folio}</p></div>
@@ -52,7 +52,7 @@ export const ContractDocument = ({ snapshot, folio }: { snapshot: ContractDocume
     </header>
 
     <div className="relative px-8 py-7 text-[12px] leading-[1.48] sm:px-12">
-      <img aria-hidden="true" src="/xph-mark.svg" className="pointer-events-none absolute left-1/2 top-[330px] w-[76%] -translate-x-1/2 opacity-[.035]" />
+      <img aria-hidden="true" src="/xph-logo.png" className="pointer-events-none absolute left-1/2 top-[330px] w-[76%] -translate-x-1/2 opacity-[.035]" />
       {!isQuote && <p className="relative mb-6 text-justify">Conste por el presente documento el <strong>CONTRATO DE PRESTACIÓN DE SERVICIOS FOTOGRÁFICOS Y AUDIOVISUALES</strong> que celebran, por una parte, <strong>XAVI.PH</strong> (en lo sucesivo “EL PRESTADOR DEL SERVICIO”), y por otra parte <strong>{snapshot.client.name}</strong> (en lo sucesivo “EL CLIENTE”). Domicilio de EL CLIENTE: {snapshot.client.address || 'no proporcionado'}.</p>}
 
       <Section number="1" title="Datos del cliente y del evento"><div className="grid grid-cols-2 border border-black sm:grid-cols-3">
