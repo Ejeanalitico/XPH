@@ -229,9 +229,41 @@ function normalizeBusinessSnapshot(snapshot?: Partial<BusinessSnapshot> | null):
   };
 }
 
+async function loadDeletedBusinessContractIds(): Promise<string[]> {
+  try {
+    const config = await loadAdminConfig(activeAdminSession);
+    return Array.isArray(config?.deletedContractIds)
+      ? config.deletedContractIds.map((id: unknown) => String(id || '').trim()).filter(Boolean)
+      : [];
+  } catch (_) {
+    return [];
+  }
+}
+
 export async function loadBusinessSnapshot(force = false): Promise<BusinessSnapshot> {
-  const data = await adminBusinessRequest<{ snapshot: BusinessSnapshot }>('adminBusinessSnapshot', { force });
-  return normalizeBusinessSnapshot(data.snapshot);
+  const [data, deletedContractIds] = await Promise.all([
+    adminBusinessRequest<{ snapshot: BusinessSnapshot }>('adminBusinessSnapshot', { force }),
+    loadDeletedBusinessContractIds(),
+  ]);
+  const snapshot = normalizeBusinessSnapshot(data.snapshot);
+  if (!deletedContractIds.length) return snapshot;
+  const deleted = new Set(deletedContractIds);
+  return { ...snapshot, contracts: snapshot.contracts.filter((contract) => !deleted.has(String(contract.id))) };
+}
+
+export async function deleteBusinessContract(contractId: string): Promise<void> {
+  const id = String(contractId || '').trim();
+  if (!id) throw new Error('Contrato no identificado.');
+  const deletedContractIds = await loadDeletedBusinessContractIds();
+  if (!deletedContractIds.includes(id)) {
+    await saveAdminConfig(
+      activeAdminSession,
+      { deletedContractIds: [...deletedContractIds, id] },
+      'CONTRATO_ELIMINADO_PANEL',
+      'Contrato ' + id + ' eliminado del panel administrativo',
+    );
+  }
+  businessSnapshotCache = null;
 }
 
 export function readCachedBusinessSnapshot(scope: string): BusinessSnapshot | null {

@@ -21,6 +21,7 @@ import {
   Save,
   Send,
   TrendingUp,
+  Trash2,
   Users,
   UserCog,
   UserCircle,
@@ -29,6 +30,7 @@ import {
 import {
   createContractSigningLink,
   createGeneratedBusinessContract,
+  deleteBusinessContract,
   cacheBusinessClients,
   cacheBusinessSnapshot,
   convertProspectToClient,
@@ -838,6 +840,24 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
     finally { setBusy(false); }
   };
 
+  const removeContract = async (contract: BusinessContract) => {
+  const label = contract.documentType === 'COTIZACION' ? 'la cotización' : 'el contrato';
+  const confirmed = window.confirm('¿Eliminar ' + label + ' ' + (contract.folio || contract.id) + ' de ' + contract.clientName + '?\n\nSe quitará del panel y dejará de aparecer en la lista. El PDF original permanecerá resguardado en Drive.');
+  if (!confirmed) return;
+  setBusy(true);
+  try {
+    await deleteBusinessContract(contract.id);
+    setSnapshot((prev) => ({ ...prev, contracts: prev.contracts.filter((item) => item.id !== contract.id) }));
+    if (contractPreview?.id === contract.id) setContractPreview(null);
+    setLatestLink('');
+    setModalNotice('Contrato eliminado del panel. El archivo original permanece resguardado en Drive.');
+  } catch (error: any) {
+    setModalNotice(error?.message || 'No se pudo eliminar el contrato.');
+  } finally {
+    setBusy(false);
+  }
+};
+
   const persistOwnerSignature = async () => {
     if (!ownerSignature) return setModalNotice('Firma dentro del recuadro antes de guardar.');
     setBusy(true);
@@ -1064,7 +1084,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
           {latestLink && <div className="flex flex-col gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 sm:flex-row sm:items-center"><input readOnly value={latestLink} className="min-w-0 flex-1 rounded-xl border border-white/10 bg-[#0B0F17] px-3 py-2 text-xs" /><button onClick={() => navigator.clipboard.writeText(latestLink)} className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black"><ClipboardCopy className="h-4 w-4" />Copiar</button></div>}
 
           <div className="grid gap-4 lg:grid-cols-[1.35fr_.65fr]">
-            <div className="space-y-3">{snapshot.contracts.map((contract) => <article key={contract.id} className="rounded-2xl border border-white/10 bg-[#161C28] p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><div className="font-semibold">{contract.clientName}</div><div className="text-xs text-gray-400">{contract.folio} · {contract.eventType} · {contract.eventDate}</div><div className="mt-2 flex flex-wrap gap-2 text-xs"><span className="text-[#F5D76E]">{contract.status}</span>{contract.documentSnapshot && <span className="rounded-full bg-sky-400/10 px-2 py-0.5 text-sky-300">{contract.documentType === 'COTIZACION' ? 'Cotización HTML' : 'Contrato HTML'}</span>}{contract.documentSnapshot && <span className="text-gray-500">Cliente: {contract.clientOpenCount || 0}/{contract.maxClientOpens || 2} accesos</span>}</div>{contract.clientSignedAt && <div className="mt-1 text-[11px] text-emerald-300">Firma del cliente: {dateTimeDisplay(contract.clientSignedAt)}</div>}{contract.ownerAuthorizedAt && <div className="mt-1 text-[11px] text-emerald-300">Firma de Javier: {dateTimeDisplay(contract.ownerAuthorizedAt)}</div>}</div><div className="flex flex-wrap gap-2">{contract.documentSnapshot ? <button onClick={() => previewContractDocument(contract)} disabled={busy} className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-xs"><Eye className="h-4 w-4" />Revisar documento</button> : <a href={adminContractPdfUrl(contract.id, 'latest', contractPdfRevision(contract))} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-xs"><Eye className="h-4 w-4" />{contractViewLabel(contract)}</a>}<button onClick={() => createLink(contract)} disabled={busy || contract.status === 'Finalizado' || contract.documentType === 'COTIZACION'} className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-xs disabled:opacity-40"><Send className="h-4 w-4" />Crear liga privada</button>{contract.status === 'Firmado por cliente' && <button onClick={() => finalize(contract)} disabled={busy || !snapshot.ownerSignatureConfigured} className="inline-flex items-center gap-2 rounded-xl bg-[#D4AF37] px-3 py-2 text-xs font-bold text-black disabled:opacity-40"><CheckCircle2 className="h-4 w-4" />Autorizar y finalizar</button>}</div></div></article>)}{!snapshot.contracts.length && <div className="rounded-2xl border border-white/10 bg-[#161C28] p-10 text-center text-gray-500">Aún no hay contratos ni cotizaciones.</div>}</div>
+            <div className="space-y-3">{snapshot.contracts.map((contract) => <article key={contract.id} className="rounded-2xl border border-white/10 bg-[#161C28] p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><div className="font-semibold">{contract.clientName}</div><div className="text-xs text-gray-400">{contract.folio} · {contract.eventType} · {contract.eventDate}</div><div className="mt-2 flex flex-wrap gap-2 text-xs"><span className="text-[#F5D76E]">{contract.status}</span>{contract.documentSnapshot && <span className="rounded-full bg-sky-400/10 px-2 py-0.5 text-sky-300">{contract.documentType === 'COTIZACION' ? 'Cotización HTML' : 'Contrato HTML'}</span>}{contract.documentSnapshot && <span className="text-gray-500">Cliente: {contract.clientOpenCount || 0}/{contract.maxClientOpens || 2} accesos</span>}</div>{contract.clientSignedAt && <div className="mt-1 text-[11px] text-emerald-300">Firma del cliente: {dateTimeDisplay(contract.clientSignedAt)}</div>}{contract.ownerAuthorizedAt && <div className="mt-1 text-[11px] text-emerald-300">Firma de Javier: {dateTimeDisplay(contract.ownerAuthorizedAt)}</div>}</div><div className="flex flex-wrap gap-2">{contract.documentSnapshot ? <button onClick={() => previewContractDocument(contract)} disabled={busy} className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-xs"><Eye className="h-4 w-4" />Revisar documento</button> : <a href={adminContractPdfUrl(contract.id, 'latest', contractPdfRevision(contract))} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-xs"><Eye className="h-4 w-4" />{contractViewLabel(contract)}</a>}<button onClick={() => createLink(contract)} disabled={busy || contract.status === 'Finalizado' || contract.documentType === 'COTIZACION'} className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-xs disabled:opacity-40"><Send className="h-4 w-4" />Crear liga privada</button>{contract.status === 'Firmado por cliente' && <button onClick={() => finalize(contract)} disabled={busy || !snapshot.ownerSignatureConfigured} className="inline-flex items-center gap-2 rounded-xl bg-[#D4AF37] px-3 py-2 text-xs font-bold text-black disabled:opacity-40"><CheckCircle2 className="h-4 w-4" />Autorizar y finalizar</button>}{session.role === 'SUPER_ADMIN' && <button onClick={() => removeContract(contract)} disabled={busy} className="inline-flex items-center gap-2 rounded-xl border border-red-400/30 bg-red-500/5 px-3 py-2 text-xs font-semibold text-red-300 hover:bg-red-500/10 disabled:opacity-40"><Trash2 className="h-4 w-4" />Eliminar</button>}</div></div></article>)}{!snapshot.contracts.length && <div className="rounded-2xl border border-white/10 bg-[#161C28] p-10 text-center text-gray-500">Aún no hay contratos ni cotizaciones.</div>}</div>
             <aside className="rounded-2xl border border-white/10 bg-[#161C28] p-5 space-y-4"><div><div className="flex items-center gap-2 font-semibold"><PenLine className="h-4 w-4 text-[#D4AF37]" />Firma de Javier</div><p className="mt-1 text-xs text-gray-400">Se guarda privada y nunca se aplica automáticamente.</p></div><SignaturePad onChange={setOwnerSignature} label="Firma de autorización" /><button onClick={persistOwnerSignature} disabled={busy || !ownerSignature} className="w-full rounded-xl bg-white px-4 py-3 text-sm font-bold text-black disabled:opacity-40">{snapshot.ownerSignatureConfigured ? 'Reemplazar firma guardada' : 'Guardar firma'}</button>{snapshot.ownerSignatureConfigured && <p className="text-xs text-emerald-300">Firma privada configurada.</p>}</aside>
           </div>
         </div>
