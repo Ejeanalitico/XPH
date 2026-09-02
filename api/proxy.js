@@ -672,6 +672,75 @@ async function appendClientSignature(pdfBase64, signatureDataUrl, contract, audi
   return Buffer.from(await pdf.save()).toString('base64');
 }
 
+async function renderContractSnapshotPdf(snapshot, contract) {
+  const pdf = await PDFDocument.create();
+  const regular = await pdf.embedFont(StandardFonts.Helvetica);
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const gold = rgb(0.83, 0.68, 0.22);
+  const dark = rgb(0.07, 0.09, 0.13);
+  let page;
+  let y;
+  const addPage = () => {
+    page = pdf.addPage([595.28, 841.89]);
+    page.drawRectangle({ x: 0, y: 775, width: 595.28, height: 66.89, color: dark });
+    page.drawRectangle({ x: 0, y: 770, width: 595.28, height: 5, color: gold });
+    page.drawText('XAVI.PH', { x: 42, y: 810, size: 13, font: bold, color: gold });
+    page.drawText('FOTOGRAFIA & PRODUCCION AUDIOVISUAL', { x: 42, y: 792, size: 8, font: regular, color: rgb(.85, .85, .85) });
+    page.drawText(snapshot.documentType === 'COTIZACION' ? 'COTIZACION' : 'CONTRATO DE SERVICIOS', { x: 334, y: 806, size: 16, font: bold, color: rgb(1, 1, 1) });
+    page.drawText(`Folio ${String(contract.folio || '')}`, { x: 430, y: 787, size: 9, font: regular, color: rgb(.85, .85, .85) });
+    y = 742;
+  };
+  const ensure = (height = 40) => { if (y - height < 52) addPage(); };
+  const lines = (text, maxChars = 88) => {
+    const words = String(text || '').replace(/\s+/g, ' ').trim().split(' ');
+    const output = [];
+    let current = '';
+    words.forEach((word) => {
+      const next = current ? `${current} ${word}` : word;
+      if (next.length > maxChars && current) { output.push(current); current = word; } else current = next;
+    });
+    if (current) output.push(current);
+    return output.length ? output : [''];
+  };
+  const heading = (label) => { ensure(36); page.drawText(label.toUpperCase(), { x: 42, y, size: 13, font: bold, color: dark }); page.drawLine({ start: { x: 42, y: y - 7 }, end: { x: 553, y: y - 7 }, thickness: 1.5, color: gold }); y -= 30; };
+  const row = (label, value) => { ensure(32); page.drawText(String(label), { x: 42, y, size: 9, font: bold, color: rgb(.35, .35, .35) }); const wrapped = lines(value, 70); wrapped.forEach((line, index) => page.drawText(line, { x: 168, y: y - index * 13, size: 10, font: regular, color: dark })); y -= Math.max(23, wrapped.length * 13 + 7); };
+  const bullet = (value) => { const wrapped = lines(value, 84); ensure(wrapped.length * 14 + 8); page.drawText('•', { x: 48, y, size: 12, font: bold, color: gold }); wrapped.forEach((line, index) => page.drawText(line, { x: 62, y: y - index * 14, size: 10, font: regular, color: dark })); y -= wrapped.length * 14 + 5; };
+  const money = (value) => `$${Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN`;
+
+  addPage();
+  heading('Datos del cliente');
+  row('Cliente', snapshot.client?.name || contract.clientName);
+  row('Telefono / correo', `${snapshot.client?.phone || 'No registrado'} · ${snapshot.client?.email || 'No registrado'}`);
+  if (snapshot.client?.honoreeName) row('Festejado(s)', snapshot.client.honoreeName);
+  heading('Informacion del evento');
+  row('Evento', snapshot.event?.type || contract.eventType);
+  row('Fecha y hora', `${snapshot.event?.date || 'Por confirmar'} · ${snapshot.event?.time || 'Por confirmar'}`);
+  row('Lugar', snapshot.event?.location || 'Por confirmar');
+  heading('Servicio contratado');
+  row('Paquete', `${snapshot.commercial?.packageName || 'Servicio personalizado'} · ${money(snapshot.commercial?.packageBase)}`);
+  (snapshot.services || []).forEach((item) => bullet(`${item.concept}${Number(item.quantity || 0) > 1 ? ` · ${item.quantity}` : ''}${item.notes ? ` — ${item.notes}` : ''}`));
+  if ((snapshot.addons || []).length) {
+    heading('Adicionales');
+    snapshot.addons.forEach((item) => row(`${item.concept} · ${item.quantity}`, money(item.total)));
+  }
+  heading('Inversion');
+  row('Paquete', money(snapshot.commercial?.packageBase));
+  row('Adicionales', money(snapshot.commercial?.additions));
+  if (Number(snapshot.commercial?.discount || 0)) row('Descuento', `-${money(snapshot.commercial.discount)}`);
+  row('Total contratado', money(snapshot.commercial?.total));
+  heading(`Plan de pagos · ${snapshot.paymentPolicy === '40-30-30' ? '40 / 30 / 30' : 'personalizado'}`);
+  (snapshot.payments || []).forEach((item) => row(`${item.concept}${item.percentage ? ` · ${item.percentage}%` : ''}`, `${money(item.amount)} · ${item.dueDate || 'Fecha por acordar'}`));
+  if (snapshot.documentType === 'CONTRATO') {
+    heading('Terminos y condiciones');
+    (snapshot.terms || []).forEach((term, index) => bullet(`${index + 1}. ${term}`));
+  }
+  ensure(50);
+  y -= 12;
+  page.drawLine({ start: { x: 42, y }, end: { x: 553, y }, thickness: 1, color: rgb(.82, .82, .82) });
+  page.drawText('XPH Fotografia & Video · Version congelada al momento de su emision', { x: 42, y: y - 20, size: 8, font: regular, color: rgb(.4, .4, .4) });
+  return Buffer.from(await pdf.save()).toString('base64');
+}
+
 async function applyOwnerSignature(pdfBase64, signatureDataUrl, authorizedAt) {
   const pdf = await PDFDocument.load(Buffer.from(cleanBase64(pdfBase64), 'base64'));
   const pages = pdf.getPages();
@@ -703,6 +772,30 @@ function quoteCreatedAt(quote) {
   const raw = String(quote?.createdAt || '');
   const timestamp = Date.parse(raw.length <= 10 ? `${raw}T00:00:00.000Z` : raw);
   return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function normalizeContractDocumentSnapshot(input, documentType = 'CONTRATO') {
+  const source = input && typeof input === 'object' ? input : {};
+  const client = source.client && typeof source.client === 'object' ? source.client : {};
+  const event = source.event && typeof source.event === 'object' ? source.event : {};
+  const commercial = source.commercial && typeof source.commercial === 'object' ? source.commercial : {};
+  const text = (value, max = 500) => String(value || '').trim().slice(0, max);
+  const amount = (value) => Math.max(0, Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100);
+  const snapshot = {
+    documentType: documentType === 'COTIZACION' ? 'COTIZACION' : 'CONTRATO',
+    templateVersion: 'canva-xph-v1',
+    issuedAt: text(source.issuedAt || new Date().toISOString(), 40),
+    client: { name: text(client.name, 180), phone: text(client.phone, 40), email: text(client.email, 180), address: text(client.address, 600), honoreeName: text(client.honoreeName, 240) },
+    event: { type: text(event.type, 120), date: text(event.date, 40), time: text(event.time, 20), location: text(event.location, 600), serviceHours: Math.max(0, Number(event.serviceHours || 0)) },
+    commercial: { packageName: text(commercial.packageName, 180), packageBase: amount(commercial.packageBase), additions: amount(commercial.additions), discount: amount(commercial.discount), total: amount(commercial.total), promotion: text(commercial.promotion, 500) },
+    services: (Array.isArray(source.services) ? source.services : []).slice(0, 100).map((item) => ({ concept: text(item?.concept, 240), quantity: Math.max(0, Number(item?.quantity || 0)), notes: text(item?.notes, 500) })).filter((item) => item.concept),
+    addons: (Array.isArray(source.addons) ? source.addons : []).slice(0, 100).map((item) => ({ concept: text(item?.concept, 240), quantity: Math.max(0, Number(item?.quantity || 0)), unitPrice: amount(item?.unitPrice), total: amount(item?.total), notes: text(item?.notes, 500) })).filter((item) => item.concept),
+    payments: (Array.isArray(source.payments) ? source.payments : []).slice(0, 20).map((item) => ({ concept: text(item?.concept, 180), percentage: Math.max(0, Number(item?.percentage || 0)), amount: amount(item?.amount), dueDate: text(item?.dueDate, 40), status: text(item?.status || 'Pendiente', 40) })).filter((item) => item.concept),
+    paymentPolicy: source.paymentPolicy === 'PERSONALIZADA' ? 'PERSONALIZADA' : '40-30-30',
+    terms: (Array.isArray(source.terms) ? source.terms : []).slice(0, 30).map((item) => text(item, 2000)).filter(Boolean),
+  };
+  if (!snapshot.client.name || !snapshot.event.type || !snapshot.commercial.total) throw new Error('El documento requiere cliente, tipo de evento y total contratado.');
+  return snapshot;
 }
 
 function leadSummary(quotes, since, until) {
@@ -1044,6 +1137,8 @@ export default async function handler(req, res) {
       'adminContractUploadInit',
       'adminDriveUploadBody',
       'adminContractUploadFinalize',
+      'adminContractGenerate',
+      'adminContractDocument',
       'adminContractCreateLink',
       'adminOwnerSignatureSave',
       'adminContractFinalize',
@@ -1059,7 +1154,7 @@ export default async function handler(req, res) {
         adminCalendarSync: 'CALENDAR', adminCalendarSyncAll: 'CALENDAR',
         adminExpenseUpsert: 'FINANCE', adminPaymentUpsert: 'FINANCE', adminAdjustmentUpsert: 'FINANCE',
         adminClientPackageAssign: 'CLIENTS_WRITE', adminServiceUpsert: 'CLIENTS_WRITE', adminAddonUpsert: 'CLIENTS_WRITE',
-        adminContractUpload: 'CONTRACTS', adminContractUploadInit: 'CONTRACTS', adminDriveUploadBody: uploadPermissionByKind[uploadKind] || 'SUPER_ADMIN', adminContractUploadFinalize: 'CONTRACTS', adminContractCreateLink: 'CONTRACTS', adminOwnerSignatureSave: 'CONTRACTS', adminContractFinalize: 'CONTRACTS',
+        adminContractUpload: 'CONTRACTS', adminContractUploadInit: 'CONTRACTS', adminDriveUploadBody: uploadPermissionByKind[uploadKind] || 'SUPER_ADMIN', adminContractUploadFinalize: 'CONTRACTS', adminContractGenerate: 'CONTRACTS', adminContractDocument: 'CONTRACTS', adminContractCreateLink: 'CONTRACTS', adminOwnerSignatureSave: 'CONTRACTS', adminContractFinalize: 'CONTRACTS',
         adminUploadInit: 'GALLERIES', adminUploadFinalize: 'GALLERIES', adminDriveFolderImport: 'GALLERIES', adminManagedMediaDelete: 'GALLERIES',
         adminTeamFunctionUpsert: 'USERS_ADMIN', adminTeamUserUpsert: 'USERS_ADMIN', adminTeamInviteCreate: 'USERS_ADMIN',
         adminTeamAssignmentUpsert: 'USERS_ADMIN',
@@ -1534,6 +1629,23 @@ export default async function handler(req, res) {
         } });
         return res.status(200).json({ status: 'success', contract: result.contract });
       }
+      if (action === 'adminContractGenerate') {
+        const clientId = String(submitted.clientId || '').trim().slice(0, 120);
+        const folio = String(submitted.folio || '').trim().slice(0, 100);
+        const documentType = String(submitted.documentType || '') === 'COTIZACION' ? 'COTIZACION' : 'CONTRATO';
+        const paymentPolicy = String(submitted.paymentPolicy || '') === 'PERSONALIZADA' ? 'PERSONALIZADA' : '40-30-30';
+        if (!clientId || !folio) return res.status(400).json({ status: 'error', message: 'Selecciona un prospecto o cliente y registra el folio.' });
+        const snapshot = normalizeContractDocumentSnapshot(submitted.snapshot, documentType);
+        snapshot.paymentPolicy = paymentPolicy;
+        const result = await forwardBusinessAction('contractGenerate', { contract: { clientId, folio, documentType, paymentPolicy, templateVersion: snapshot.templateVersion, documentJson: JSON.stringify(snapshot) } });
+        return res.status(200).json({ status: 'success', contract: result.contract });
+      }
+      if (action === 'adminContractDocument') {
+        const contractId = String(submitted.contractId || '').trim().slice(0, 120);
+        if (!contractId) return res.status(400).json({ status: 'error', message: 'Documento no identificado.' });
+        const result = await forwardBusinessAction('contractDocument', { contractId });
+        return res.status(200).json({ status: 'success', contract: result.contract });
+      }
       if (action === 'adminContractCreateLink') {
         const contractId = String(submitted.contractId || '');
         if (!contractId) return res.status(400).json({ status: 'error', message: 'Contrato no identificado.' });
@@ -1579,13 +1691,11 @@ export default async function handler(req, res) {
     if (req.method === 'GET' && (action === 'contractView' || action === 'contractPdf')) {
       const token = String(req.query?.token || '').trim();
       if (!token) return res.status(400).json({ status: 'error', message: 'Liga incompleta.' });
-      if (!isMobileSigningRequest(req)) {
-        await forwardBusinessAction('contractInvalidate', { token }).catch(() => null);
-        return res.status(410).json({ status: 'error', message: 'Esta liga solo funciona en un teléfono. Se canceló por seguridad; solicita una nueva a Javier.' });
-      }
-      const result = await forwardBusinessAction('contractResolve', { token, includePdf: action === 'contractPdf', markViewed: true });
+      const sessionId = String(req.query?.sessionId || '').trim().slice(0, 120);
+      const result = await forwardBusinessAction('contractResolve', { token, sessionId, includePdf: action === 'contractPdf', markViewed: action === 'contractView' });
       if (action === 'contractPdf') {
-        const pdf = Buffer.from(cleanBase64(result.pdfBase64), 'base64');
+        const pdfBase64 = result.pdfBase64 || (result.contract?.documentSnapshot ? await renderContractSnapshotPdf(result.contract.documentSnapshot, result.contract) : '');
+        const pdf = Buffer.from(cleanBase64(pdfBase64), 'base64');
         setPrivatePdfHeaders(res, `contrato-${String(result.contract?.folio || 'xaviph').replace(/[^a-z0-9-]/gi, '_')}.pdf`);
         return res.status(200).send(pdf);
       }
@@ -1593,7 +1703,6 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'POST' && action === 'contractSign') {
-      if (!isMobileSigningRequest(req)) return res.status(403).json({ status: 'error', message: 'La firma solo está permitida desde un teléfono.' });
       const attempt = rateLimit(req, 'contract-sign', 5, 30 * 60 * 1000);
       if (!attempt.allowed) return res.status(429).json({ status: 'error', message: 'Demasiados intentos. Solicita una liga nueva.' });
       const raw = await readBody(req);
@@ -1605,10 +1714,12 @@ export default async function handler(req, res) {
         return res.status(400).json({ status: 'error', message: 'Aceptación o firma incompleta.' });
       }
       if (Buffer.byteLength(signatureDataUrl, 'utf8') > 900_000) return res.status(413).json({ status: 'error', message: 'La firma excede el tamaño permitido.' });
-      const material = await forwardBusinessAction('contractResolve', { token, includePdf: true, markViewed: true });
+      const material = await forwardBusinessAction('contractResolve', { token, includePdf: true, markViewed: false });
       const audit = signingAudit(req);
-      const signedPdfBase64 = await appendClientSignature(material.pdfBase64, signatureDataUrl, material.contract, audit);
-      const originalDocumentHash = createHash('sha256').update(Buffer.from(cleanBase64(material.pdfBase64), 'base64')).digest('hex');
+      const originalPdfBase64 = material.pdfBase64 || (material.contract?.documentSnapshot ? await renderContractSnapshotPdf(material.contract.documentSnapshot, material.contract) : '');
+      if (!originalPdfBase64) throw new Error('El documento original no está disponible.');
+      const signedPdfBase64 = await appendClientSignature(originalPdfBase64, signatureDataUrl, material.contract, audit);
+      const originalDocumentHash = createHash('sha256').update(Buffer.from(cleanBase64(originalPdfBase64), 'base64')).digest('hex');
       const signedDocumentHash = createHash('sha256').update(Buffer.from(signedPdfBase64, 'base64')).digest('hex');
       await forwardBusinessAction('contractCompleteSignature', {
         token,
