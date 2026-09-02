@@ -62,5 +62,9 @@ assert.match(appsScript, /sessionIds\.indexOf\(safeSessionId\) < 0/);
 assert.match(appsScript, /sessionIds\.length >= maxOpens/);
 assert.match(contractDocument, /CONTRATO DE SERVICIOS/);
 assert.match(contractDocument, /Política 40% \/ 30% \/ 30%/);
+assert.match(businessPanel, /Datos necesarios para generar/);
+assert.match(businessPanel, /missingContractData\.length/);
+assert.match(businessPanel, /Completar ficha/);
+assert.match(proxy, /Completa antes de generar/);
 
 console.log('Invariantes CRM verificadas: conversión, paquete aislado, calendario, contratos, recordatorios y permisos.');
