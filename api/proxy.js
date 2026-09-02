@@ -540,6 +540,21 @@ async function forwardBusinessActionWithLockRetry(action, payload = {}, attempts
   throw lastError;
 }
 
+async function forwardTransientBusinessAction(action, payload = {}, attempts = 3) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await forwardBusinessAction(action, payload);
+    } catch (error) {
+      lastError = error;
+      const message = String(error?.message || error);
+      if (!/respuesta no válida|fetch failed|bad gateway|temporarily unavailable/i.test(message) || attempt >= attempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 450 * attempt));
+    }
+  }
+  throw lastError;
+}
+
 function isGoogleDriveResumableUploadUrl(value) {
   try {
     const url = new URL(String(value || ''));
@@ -1207,7 +1222,7 @@ export default async function handler(req, res) {
       try { submitted = JSON.parse(raw || '{}'); } catch (_) {}
 
       if (action === 'adminBusinessSnapshot') {
-        const result = await forwardBusinessAction('businessSnapshot');
+        const result = await forwardTransientBusinessAction('businessSnapshot');
         if (session.role !== 'SUPER_ADMIN') {
           const assignments = (result.snapshot?.assignments || []).filter((item) => String(item.userId) === String(session.userId) && item.status !== 'CANCELADA');
           const allowedClientIds = new Set(assignments.map((item) => String(item.clientId)));
@@ -1241,7 +1256,7 @@ export default async function handler(req, res) {
       if (action === 'adminBusinessClients') {
         const result = await forwardBusinessAction('businessClients');
         if (session.role === 'SUPER_ADMIN') return res.status(200).json({ status: 'success', clients: Array.isArray(result.clients) ? result.clients : [] });
-        const snapshotResult = await forwardBusinessAction('businessSnapshot');
+        const snapshotResult = await forwardTransientBusinessAction('businessSnapshot');
         const assignedIds = new Set((snapshotResult.snapshot?.assignments || []).filter((item) => String(item.userId) === String(session.userId) && item.status !== 'CANCELADA').map((item) => String(item.clientId)));
         const canReadProspects = hasPermission(session, 'CRM_READ');
         const visible = (result.clients || []).filter((item) => (item.recordType === 'Prospecto' && canReadProspects) || (item.recordType === 'Cliente' && assignedIds.has(String(item.id))));
@@ -1305,7 +1320,7 @@ export default async function handler(req, res) {
           return res.status(400).json({ status: 'error', message: 'Lo pagado no puede ser mayor al total contratado.' });
         }
         if (session.role !== 'SUPER_ADMIN') {
-          const snapshotResult = await forwardBusinessAction('businessSnapshot');
+          const snapshotResult = await forwardTransientBusinessAction('businessSnapshot');
           const existing = (snapshotResult.snapshot?.clients || []).find((item) => String(item.id) === String(client.id || ''));
           const isClientRecord = String(client.recordType || existing?.recordType || 'Prospecto') === 'Cliente';
           if (isClientRecord) {
@@ -1323,7 +1338,7 @@ export default async function handler(req, res) {
           return res.status(400).json({ status: 'error', message: 'Selecciona un registro y captura la conversación o el resultado.' });
         }
         if (session.role !== 'SUPER_ADMIN') {
-          const snapshotResult = await forwardBusinessAction('businessSnapshot');
+          const snapshotResult = await forwardTransientBusinessAction('businessSnapshot');
           const record = (snapshotResult.snapshot?.clients || []).find((item) => String(item.id) === String(followUp.recordId));
           const assigned = (snapshotResult.snapshot?.assignments || []).some((item) => String(item.userId) === String(session.userId) && String(item.clientId) === String(followUp.recordId) && item.status !== 'CANCELADA');
           if (!record || (record.recordType === 'Cliente' && !assigned)) return res.status(403).json({ status: 'error', message: 'No puedes registrar seguimiento en ese expediente.' });
@@ -1341,7 +1356,7 @@ export default async function handler(req, res) {
         const clientId = String(submitted.clientId || '').trim();
         if (!clientId) return res.status(400).json({ status: 'error', message: 'Cliente no identificado.' });
         if (session.role !== 'SUPER_ADMIN') {
-          const snapshotResult = await forwardBusinessAction('businessSnapshot');
+          const snapshotResult = await forwardTransientBusinessAction('businessSnapshot');
           const assigned = (snapshotResult.snapshot?.assignments || []).some((item) => String(item.userId) === String(session.userId) && String(item.clientId) === clientId && item.status !== 'CANCELADA');
           if (!assigned || !hasPermission(session, 'CLIENTS_WRITE')) return res.status(403).json({ status: 'error', message: 'No puedes sincronizar un cliente que no tienes autorizado para editar.' });
         }
@@ -1406,7 +1421,7 @@ export default async function handler(req, res) {
           return res.status(400).json({ status: 'error', message: 'Selecciona un cliente y un paquete válido.' });
         }
         if (session.role !== 'SUPER_ADMIN') {
-          const snapshotResult = await forwardBusinessAction('businessSnapshot');
+          const snapshotResult = await forwardTransientBusinessAction('businessSnapshot');
           const assigned = (snapshotResult.snapshot?.assignments || []).some((item) => String(item.userId) === String(session.userId) && String(item.clientId) === clientId && item.status !== 'CANCELADA');
           if (!assigned) return res.status(403).json({ status: 'error', message: 'No puedes modificar el paquete de un cliente no asignado.' });
         }
@@ -1433,7 +1448,7 @@ export default async function handler(req, res) {
           return res.status(400).json({ status: 'error', message: 'El servicio requiere cliente, concepto, cantidad y origen válidos.' });
         }
         if (session.role !== 'SUPER_ADMIN') {
-          const snapshotResult = await forwardBusinessAction('businessSnapshot');
+          const snapshotResult = await forwardTransientBusinessAction('businessSnapshot');
           const assigned = (snapshotResult.snapshot?.assignments || []).some((item) => String(item.userId) === String(session.userId) && String(item.clientId) === String(service.clientId) && item.status !== 'CANCELADA');
           if (!assigned) return res.status(403).json({ status: 'error', message: 'No puedes modificar servicios de un cliente no asignado.' });
         }
@@ -1446,7 +1461,7 @@ export default async function handler(req, res) {
           return res.status(400).json({ status: 'error', message: 'El adicional requiere cliente, concepto, cantidad y estado válidos.' });
         }
         if (session.role !== 'SUPER_ADMIN') {
-          const snapshotResult = await forwardBusinessAction('businessSnapshot');
+          const snapshotResult = await forwardTransientBusinessAction('businessSnapshot');
           const assigned = (snapshotResult.snapshot?.assignments || []).some((item) => String(item.userId) === String(session.userId) && String(item.clientId) === String(addon.clientId) && item.status !== 'CANCELADA');
           if (!assigned) return res.status(403).json({ status: 'error', message: 'No puedes modificar adicionales de un cliente no asignado.' });
         }
@@ -1513,7 +1528,7 @@ export default async function handler(req, res) {
         const templateId = String(submitted.templateId || '').trim();
         if (!clientId || !templateId) return res.status(400).json({ status: 'error', message: 'Selecciona un cliente/prospecto y una plantilla.' });
         if (session.role !== 'SUPER_ADMIN') {
-          const snapshotResult = await forwardBusinessAction('businessSnapshot');
+          const snapshotResult = await forwardTransientBusinessAction('businessSnapshot');
           const related = (snapshotResult.snapshot?.clients || []).find((item) => String(item.id) === clientId);
           const allowed = (snapshotResult.snapshot?.assignments || []).some((item) => String(item.userId) === String(session.userId) && String(item.clientId) === clientId && item.status !== 'CANCELADA');
           const prospectAllowed = related?.recordType === 'Prospecto' && (hasPermission(session, 'CRM_READ') || hasPermission(session, 'CRM_WRITE'));
@@ -1540,7 +1555,7 @@ export default async function handler(req, res) {
         const notificationId = String(submitted.notificationId || '').trim();
         if (!notificationId) return res.status(400).json({ status: 'error', message: 'Notificación no identificada.' });
         if (session.role !== 'SUPER_ADMIN') {
-          const snapshotResult = await forwardBusinessAction('businessSnapshot');
+          const snapshotResult = await forwardTransientBusinessAction('businessSnapshot');
           const ownsNotification = (snapshotResult.snapshot?.notifications || []).some((item) => String(item.id) === notificationId && String(item.userId) === String(session.userId));
           if (!ownsNotification) return res.status(403).json({ status: 'error', message: 'No puedes modificar esa notificación.' });
         }
@@ -1560,7 +1575,7 @@ export default async function handler(req, res) {
         const clientId = String(submitted.clientId || '').trim().slice(0, 120);
         if (!clientId) return res.status(400).json({ status: 'error', message: 'Selecciona un cliente para crear la galería.' });
         if (session.role !== 'SUPER_ADMIN') {
-          const snapshotResult = await forwardBusinessAction('businessSnapshot');
+          const snapshotResult = await forwardTransientBusinessAction('businessSnapshot');
           const allowed = (snapshotResult.snapshot?.assignments || []).some((item) => String(item.userId) === String(session.userId) && String(item.clientId) === clientId && item.status !== 'CANCELADA');
           if (!allowed) return res.status(403).json({ status: 'error', message: 'No puedes administrar una galería de un cliente que no tienes asignado.' });
         }
@@ -1621,7 +1636,7 @@ export default async function handler(req, res) {
         const mimeType = String(submitted.mimeType || '').trim().toLowerCase();
         const size = Number(submitted.size || 0);
         if (!filename || mimeType !== 'application/pdf' || size <= 0 || size > 5_000_000) return res.status(400).json({ status: 'error', message: 'El contrato debe ser PDF y pesar máximo 5 MB.' });
-        const result = await forwardBusinessAction('contractUploadInit', { filename, mimeType, size });
+        const result = await forwardTransientBusinessAction('contractUploadInit', { filename, mimeType, size });
         return res.status(200).json({ status: 'success', uploadUrl: result.uploadUrl });
       }
       if (action === 'adminContractUploadFinalize') {
@@ -1647,7 +1662,7 @@ export default async function handler(req, res) {
       if (action === 'adminContractDocument') {
         const contractId = String(submitted.contractId || '').trim().slice(0, 120);
         if (!contractId) return res.status(400).json({ status: 'error', message: 'Documento no identificado.' });
-        const result = await forwardBusinessAction('contractDocument', { contractId });
+        const result = await forwardTransientBusinessAction('contractDocument', { contractId });
         return res.status(200).json({ status: 'success', contract: result.contract });
       }
       if (action === 'adminContractCreateLink') {
