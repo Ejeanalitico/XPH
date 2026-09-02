@@ -719,6 +719,21 @@ function isPdfDataUrl(value) {
   }
 }
 
+function formatContractDateTime(value) {
+  const parsed = new Date(String(value || ''));
+  if (Number.isNaN(parsed.getTime())) return String(value || '');
+  return new Intl.DateTimeFormat('es-MX', {
+    timeZone: 'America/Mexico_City',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  }).format(parsed);
+}
+
 async function appendClientSignature(pdfBase64, signatureDataUrl, contract, audit) {
   const pdfBytes = Buffer.from(cleanBase64(pdfBase64), 'base64');
   const signatureBytes = Buffer.from(cleanBase64(signatureDataUrl), 'base64');
@@ -735,7 +750,7 @@ async function appendClientSignature(pdfBase64, signatureDataUrl, contract, audi
   page.drawText(`Fecha del evento: ${String(contract.eventDate || 'Por confirmar').slice(0, 40)}`, { x: 54, y: 649, size: 10, font });
   page.drawText('El cliente confirma que leyó el contrato completo y aceptó sus términos', { x: 54, y: 610, size: 9, font });
   page.drawText('antes de realizar la firma manuscrita electrónica que aparece abajo.', { x: 54, y: 596, size: 9, font });
-  page.drawText(`Aceptado: ${audit.acceptedAt}`, { x: 54, y: 566, size: 8, font, color: rgb(0.3, 0.32, 0.36) });
+  page.drawText(`Fecha y hora de firma: ${formatContractDateTime(audit.acceptedAt)}`, { x: 54, y: 566, size: 8, font, color: rgb(0.3, 0.32, 0.36) });
   page.drawText(`IP: ${audit.ip || 'No disponible'}`, { x: 54, y: 552, size: 8, font, color: rgb(0.3, 0.32, 0.36) });
   page.drawText('FIRMAS', { x: 54, y: 485, size: 13, font: bold, color: rgb(0.12, 0.14, 0.18) });
   page.drawText('PRESTADOR DEL SERVICIO', { x: 54, y: 452, size: 10, font: bold });
@@ -832,7 +847,7 @@ async function applyOwnerSignature(pdfBase64, signatureDataUrl, authorizedAt) {
   const scaled = signature.scaleToFit(220, 92);
   page.drawRectangle({ x: 50, y: 332, width: 228, height: 105, color: rgb(1, 1, 1) });
   page.drawImage(signature, { x: 54, y: 335, width: scaled.width, height: scaled.height });
-  page.drawText(`Autorizado: ${authorizedAt}`, { x: 54, y: 274, size: 7, font, color: rgb(0.35, 0.37, 0.42) });
+  page.drawText(`Fecha y hora de autorización: ${formatContractDateTime(authorizedAt)}`, { x: 54, y: 274, size: 7, font, color: rgb(0.35, 0.37, 0.42) });
   return Buffer.from(await pdf.save()).toString('base64');
 }
 
