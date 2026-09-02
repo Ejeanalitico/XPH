@@ -11,6 +11,7 @@ import {
   ChevronRight,
   ClipboardCopy,
   CreditCard,
+  Download,
   Eye,
   FileSignature,
   Loader2,
@@ -22,6 +23,7 @@ import {
   Send,
   TrendingUp,
   Trash2,
+  Upload,
   Users,
   UserCog,
   UserCircle,
@@ -133,6 +135,175 @@ const monthKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth()
 const localDateKey = (date: Date) => `${monthKey(date)}-${String(date.getDate()).padStart(2, '0')}`;
 const monthLabel = (date: Date) => new Intl.DateTimeFormat('es-MX', { month: 'long', year: 'numeric' }).format(date);
 const money = (value: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(Number(value) || 0);
+const clientCsvColumns: Array<[keyof CrmClient, string]> = [
+  ['id', 'ID'],
+  ['recordType', 'Tipo_registro'],
+  ['name', 'Nombre'],
+  ['phone', 'Telefono'],
+  ['email', 'Correo'],
+  ['eventType', 'Tipo_evento'],
+  ['eventDate', 'Fecha_evento'],
+  ['eventTime', 'Hora_evento'],
+  ['eventLocation', 'Lugar_evento'],
+  ['address', 'Domicilio'],
+  ['honoreeName', 'Festejado'],
+  ['packageName', 'Paquete'],
+  ['totalAmount', 'Total_contratado'],
+  ['paidAmount', 'Pagado_registrado'],
+  ['status', 'Estado'],
+  ['source', 'Fuente'],
+  ['campaign', 'Campana'],
+  ['firstContactAt', 'Primer_contacto'],
+  ['lastContactAt', 'Ultimo_contacto'],
+  ['nextAction', 'Proxima_accion'],
+  ['nextActionAt', 'Proxima_accion_fecha'],
+  ['notes', 'Notas'],
+  ['internalNotes', 'Notas_internas'],
+  ['providerNotes', 'Notas_proveedores'],
+  ['contractId', 'Contrato_ID'],
+  ['serviceHours', 'Horas_servicio'],
+  ['objection', 'Objecion'],
+  ['followUpAttempts', 'Intentos_seguimiento'],
+  ['suggestedMessage', 'Mensaje_sugerido'],
+  ['lossReason', 'Motivo_perdida'],
+  ['estimatedCost', 'Costo_estimado'],
+  ['allocatedAdCost', 'Costo_publicidad_asignado'],
+  ['preSessionApplies', 'Sesion_previa_aplica'],
+  ['preSessionType', 'Sesion_previa_tipo'],
+  ['preSessionDate', 'Sesion_previa_fecha'],
+  ['preSessionTime', 'Sesion_previa_hora'],
+  ['preSessionEndTime', 'Sesion_previa_fin'],
+  ['preSessionLocation', 'Sesion_previa_lugar'],
+  ['preSessionAddress', 'Sesion_previa_direccion'],
+  ['preSessionStatus', 'Sesion_previa_estado'],
+  ['preSessionNotes', 'Sesion_previa_notas'],
+  ['inviteClientToCalendar', 'Invitar_cliente_calendar'],
+  ['calendarEventId', 'Calendar_event_ID'],
+  ['preSessionCalendarEventId', 'Sesion_calendar_event_ID'],
+  ['eventId', 'Evento_ID'],
+  ['calendarSyncStatus', 'Calendar_estado'],
+  ['calendarSyncedAt', 'Calendar_ultima_sync'],
+  ['calendarSyncError', 'Calendar_error'],
+  ['reminder7DaysSent', 'Recordatorio_7_dias'],
+  ['reminder1DaySent', 'Recordatorio_1_dia'],
+  ['createdAt', 'Creado'],
+  ['updatedAt', 'Actualizado'],
+];
+
+const clientCsvRelationHeaders = [
+  'Cobrado_calculado',
+  'Saldo_pendiente',
+  'Pagos_JSON',
+  'Transacciones_JSON',
+  'Seguimientos_JSON',
+  'Paquetes_JSON',
+  'Servicios_JSON',
+  'Adicionales_JSON',
+  'Contratos_JSON',
+  'Galerias_JSON',
+  'Personal_asignado_JSON',
+  'Correos_JSON',
+  'Notificaciones_JSON',
+  'Gastos_relacionados_JSON',
+];
+
+const csvEscape = (value: unknown) => {
+  const raw = value === null || value === undefined ? '' : typeof value === 'string' ? value : typeof value === 'object' ? JSON.stringify(value) : String(value);
+  return `"${raw.replace(/"/g, '""')}"`;
+};
+
+const normalizeCsvHeader = (value: string) => String(value || '')
+  .replace(/^\uFEFF/, '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, '');
+
+const parseCsvText = (input: string): string[][] => {
+  const text = String(input || '').replace(/^\uFEFF/, '');
+  const firstLine = text.split(/\r?\n/, 1)[0] || '';
+  const delimiter = (firstLine.match(/;/g) || []).length > (firstLine.match(/,/g) || []).length ? ';' : ',';
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = '';
+  let quoted = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (quoted) {
+      if (char === '"' && text[index + 1] === '"') { field += '"'; index += 1; }
+      else if (char === '"') quoted = false;
+      else field += char;
+      continue;
+    }
+    if (char === '"') { quoted = true; continue; }
+    if (char === delimiter) { row.push(field); field = ''; continue; }
+    if (char === '\n') {
+      row.push(field.replace(/\r$/, ''));
+      if (row.some((cell) => cell.trim() !== '')) rows.push(row);
+      row = [];
+      field = '';
+      continue;
+    }
+    field += char;
+  }
+  row.push(field.replace(/\r$/, ''));
+  if (row.some((cell) => cell.trim() !== '')) rows.push(row);
+  return rows;
+};
+
+const csvNumber = (value: string, fallback = 0) => {
+  const raw = String(value || '').trim();
+  if (!raw) return fallback;
+  const parsed = Number(raw.replace(/[$\s]/g, '').replace(/,/g, ''));
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const csvBoolean = (value: string, fallback = false) => {
+  const raw = normalizeCsvHeader(value);
+  if (!raw) return fallback;
+  if (['1', 'true', 'si', 'yes', 's'].includes(raw)) return true;
+  if (['0', 'false', 'no', 'n'].includes(raw)) return false;
+  return fallback;
+};
+
+const csvPhoneKey = (value: string) => String(value || '').replace(/\D/g, '').slice(-10);
+
+const downloadClientCsv = (clients: CrmClient[], snapshot: BusinessSnapshot) => {
+  const headers = [...clientCsvColumns.map(([, label]) => label), ...clientCsvRelationHeaders];
+  const rows = clients.map((client) => {
+    const paid = collectedForClient(client, snapshot.payments, snapshot.transactions);
+    const values = clientCsvColumns.map(([key]) => client[key]);
+    const relations = [
+      paid,
+      Math.max(0, Number(client.totalAmount || 0) - paid),
+      snapshot.payments.filter((item) => item.clientId === client.id),
+      snapshot.transactions.filter((item) => item.clientId === client.id),
+      snapshot.followUps.filter((item) => item.clientId === client.id || item.prospectId === client.id),
+      snapshot.packageSnapshots.filter((item) => item.clientId === client.id),
+      snapshot.services.filter((item) => item.clientId === client.id),
+      snapshot.addons.filter((item) => item.clientId === client.id),
+      snapshot.contracts.filter((item) => item.clientId === client.id),
+      snapshot.galleries.filter((item) => item.clientId === client.id),
+      snapshot.assignments.filter((item) => item.clientId === client.id),
+      snapshot.emailHistory.filter((item) => item.clientId === client.id || item.prospectId === client.id),
+      snapshot.notifications.filter((item) => item.relatedId === client.id),
+      snapshot.expenses.filter((item) => item.relatedClientId === client.id),
+    ];
+    return [...values, ...relations].map(csvEscape).join(',');
+  });
+  const csv = `\uFEFF${headers.map(csvEscape).join(',')}\n${rows.join('\n')}`;
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = clients.length === 1
+    ? `xph-cliente-${String(clients[0].name || clients[0].id).replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase()}-${today()}.csv`
+    : `xph-clientes-completo-${today()}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+};
 const contractPdfRevision = (contract: BusinessContract) => contract.updatedAt || contract.finalDocumentHash || contract.status;
 const contractViewLabel = (contract: BusinessContract) => contract.status === 'Finalizado'
   ? 'Ver contrato final con firmas'
@@ -349,6 +520,117 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
       setModalNotice('Registro guardado en el CRM.');
     } catch (error: any) { setModalNotice(error?.message || 'No se pudo guardar el registro.'); }
     finally { setBusy(false); }
+  };
+
+  const importClientsCsv = async (file: File) => {
+    if (session.role !== 'SUPER_ADMIN') return setModalNotice('Solo el Super Admin puede importar clientes.');
+    if (!file.name.toLowerCase().endsWith('.csv')) return setModalNotice('Selecciona un archivo CSV.');
+    if (file.size > 5_000_000) return setModalNotice('El CSV debe pesar máximo 5 MB.');
+    setBusy(true);
+    try {
+      const rows = parseCsvText(await file.text());
+      if (rows.length < 2) throw new Error('El CSV no contiene registros para importar.');
+      if (rows.length > 501) throw new Error('Por seguridad, importa máximo 500 clientes por archivo.');
+      const headers = rows[0].map(normalizeCsvHeader);
+      if (!headers.includes('nombre') && !headers.includes('name')) throw new Error('Falta la columna Nombre. Usa un CSV exportado desde este panel o agrega esa columna.');
+
+      let known = [...snapshot.clients];
+      let created = 0;
+      let updated = 0;
+      let skipped = 0;
+      const errors: string[] = [];
+
+      for (let rowIndex = 1; rowIndex < rows.length; rowIndex += 1) {
+        const cells = rows[rowIndex];
+        if (!cells.some((cell) => String(cell || '').trim())) continue;
+        const values = new Map<string, string>();
+        headers.forEach((header, index) => values.set(header, String(cells[index] || '').trim()));
+        const get = (...names: string[]) => {
+          for (const name of names) {
+            const value = values.get(normalizeCsvHeader(name));
+            if (value !== undefined) return value;
+          }
+          return '';
+        };
+        const name = get('Nombre', 'name').trim();
+        if (!name) { skipped += 1; errors.push(`Fila ${rowIndex + 1}: sin nombre.`); continue; }
+        const csvId = get('ID', 'id');
+        const email = get('Correo', 'email').trim();
+        const phone = get('Telefono', 'phone').trim();
+        const phoneKey = csvPhoneKey(phone);
+        const existing = (csvId ? known.find((item) => item.id === csvId) : undefined)
+          || (email ? known.find((item) => String(item.email || '').trim().toLowerCase() === email.toLowerCase()) : undefined)
+          || (phoneKey ? known.find((item) => csvPhoneKey(item.phone) === phoneKey) : undefined);
+        const base: Partial<CrmClient> = existing ? { ...existing } : { ...blankClient(), recordType: 'Cliente', status: 'Contratado' };
+        const textValue = (label: string, key: keyof CrmClient, ...aliases: string[]) => {
+          const value = get(label, String(key), ...aliases);
+          return value === '' ? String(base[key] ?? '') : value;
+        };
+
+        const candidate: Partial<CrmClient> = {
+          ...base,
+          ...(existing ? { id: existing.id } : {}),
+          recordType: 'Cliente',
+          name,
+          phone: phone || String(base.phone || ''),
+          email: email || String(base.email || ''),
+          eventType: textValue('Tipo_evento', 'eventType'),
+          eventDate: textValue('Fecha_evento', 'eventDate'),
+          eventTime: textValue('Hora_evento', 'eventTime'),
+          eventLocation: textValue('Lugar_evento', 'eventLocation'),
+          address: textValue('Domicilio', 'address'),
+          honoreeName: textValue('Festejado', 'honoreeName'),
+          packageName: textValue('Paquete', 'packageName'),
+          totalAmount: csvNumber(get('Total_contratado', 'totalAmount'), Number(base.totalAmount || 0)),
+          paidAmount: csvNumber(get('Pagado_registrado', 'paidAmount'), Number(base.paidAmount || 0)),
+          status: (get('Estado', 'status') || base.status || 'Contratado') as CrmClient['status'],
+          source: textValue('Fuente', 'source'),
+          campaign: textValue('Campana', 'campaign'),
+          firstContactAt: textValue('Primer_contacto', 'firstContactAt'),
+          lastContactAt: textValue('Ultimo_contacto', 'lastContactAt'),
+          nextAction: textValue('Proxima_accion', 'nextAction'),
+          nextActionAt: textValue('Proxima_accion_fecha', 'nextActionAt'),
+          notes: textValue('Notas', 'notes'),
+          internalNotes: textValue('Notas_internas', 'internalNotes'),
+          providerNotes: textValue('Notas_proveedores', 'providerNotes'),
+          serviceHours: csvNumber(get('Horas_servicio', 'serviceHours'), Number(base.serviceHours || 0)),
+          objection: textValue('Objecion', 'objection'),
+          followUpAttempts: csvNumber(get('Intentos_seguimiento', 'followUpAttempts'), Number(base.followUpAttempts || 0)),
+          suggestedMessage: textValue('Mensaje_sugerido', 'suggestedMessage'),
+          lossReason: textValue('Motivo_perdida', 'lossReason'),
+          estimatedCost: csvNumber(get('Costo_estimado', 'estimatedCost'), Number(base.estimatedCost || 0)),
+          allocatedAdCost: csvNumber(get('Costo_publicidad_asignado', 'allocatedAdCost'), Number(base.allocatedAdCost || 0)),
+          preSessionApplies: csvBoolean(get('Sesion_previa_aplica', 'preSessionApplies'), Boolean(base.preSessionApplies)),
+          preSessionType: textValue('Sesion_previa_tipo', 'preSessionType'),
+          preSessionDate: textValue('Sesion_previa_fecha', 'preSessionDate'),
+          preSessionTime: textValue('Sesion_previa_hora', 'preSessionTime'),
+          preSessionEndTime: textValue('Sesion_previa_fin', 'preSessionEndTime'),
+          preSessionLocation: textValue('Sesion_previa_lugar', 'preSessionLocation'),
+          preSessionAddress: textValue('Sesion_previa_direccion', 'preSessionAddress'),
+          preSessionStatus: textValue('Sesion_previa_estado', 'preSessionStatus'),
+          preSessionNotes: textValue('Sesion_previa_notas', 'preSessionNotes'),
+          inviteClientToCalendar: csvBoolean(get('Invitar_cliente_calendar', 'inviteClientToCalendar'), Boolean(base.inviteClientToCalendar)),
+        };
+
+        try {
+          const saved = await saveCrmClient(candidate);
+          known = [saved, ...known.filter((item) => item.id !== saved.id)];
+          if (existing) updated += 1; else created += 1;
+        } catch (error: any) {
+          skipped += 1;
+          errors.push(`Fila ${rowIndex + 1} (${name}): ${error?.message || 'error al guardar'}`);
+        }
+      }
+
+      cacheBusinessClients(known);
+      setSnapshot((previous) => ({ ...previous, clients: known }));
+      const detail = errors.length ? ` Detalles: ${errors.slice(0, 4).join(' | ')}${errors.length > 4 ? '…' : ''}` : '';
+      setModalNotice(`CSV procesado: ${created} cliente(s) nuevos, ${updated} actualizado(s), ${skipped} omitido(s).${detail}`);
+    } catch (error: any) {
+      setModalNotice(error?.message || 'No se pudo importar el CSV.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const saveExpense = async (event: React.FormEvent) => {
@@ -962,7 +1244,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
             <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111722] shadow-2xl shadow-black/20">
               <div className="flex flex-col gap-3 border-b border-white/10 bg-[#161C28] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-3"><button onClick={closeClientDetails} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-gray-200 hover:bg-white/5">← {returnLabel}</button><span className="inline-flex items-center gap-2 rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-3 py-2 text-xs text-emerald-200"><CheckCircle2 className="h-4 w-4" />{selectedClient.status}</span></div>
-                <div className="flex flex-wrap gap-2">{canEditSelected && selectedClient.recordType === 'Prospecto' && <button onClick={convertSelectedProspect} disabled={busy} className="rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100">Convertir en cliente</button>}{canManageFinance && selectedClient.recordType === 'Cliente' && <button onClick={() => prepareNextPayment(selectedClient)} className="rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100">Agregar pago al plan</button>}{canManageFinance && selectedClientContract && <a href={adminContractPdfUrl(selectedClientContract.id, 'latest', contractPdfRevision(selectedClientContract))} target="_blank" rel="noreferrer" className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm text-white">{contractViewLabel(selectedClientContract)}</a>}{canEditSelected && <button onClick={() => { setClientDraft(selectedClient); setShowClientForm(true); }} className="rounded-lg bg-[#D4AF37] px-4 py-2 text-sm font-bold text-black">Editar seguimiento</button>}{canEditSelected && selectedClient.recordType === 'Cliente' && <button onClick={() => syncCalendar(selectedClient)} disabled={Boolean(syncingClientId)} className="inline-flex items-center gap-2 rounded-lg border border-sky-300/30 bg-sky-400/10 px-4 py-2 text-sm text-sky-100 disabled:border-white/10 disabled:bg-transparent disabled:text-gray-600">{syncingClientId === selectedClient.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}{syncingClientId === selectedClient.id ? 'Rectificando…' : 'Actualizar Calendar'}</button>}</div>
+                <div className="flex flex-wrap gap-2">{session.role === 'SUPER_ADMIN' && selectedClient.recordType === 'Cliente' && <button type="button" onClick={() => downloadClientCsv([selectedClient], snapshot)} className="inline-flex items-center gap-2 rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100"><Download className="h-4 w-4" />Descargar CSV</button>}{canEditSelected && selectedClient.recordType === 'Prospecto' && <button onClick={convertSelectedProspect} disabled={busy} className="rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100">Convertir en cliente</button>}{canManageFinance && selectedClient.recordType === 'Cliente' && <button onClick={() => prepareNextPayment(selectedClient)} className="rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100">Agregar pago al plan</button>}{canManageFinance && selectedClientContract && <a href={adminContractPdfUrl(selectedClientContract.id, 'latest', contractPdfRevision(selectedClientContract))} target="_blank" rel="noreferrer" className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm text-white">{contractViewLabel(selectedClientContract)}</a>}{canEditSelected && <button onClick={() => { setClientDraft(selectedClient); setShowClientForm(true); }} className="rounded-lg bg-[#D4AF37] px-4 py-2 text-sm font-bold text-black">Editar seguimiento</button>}{canEditSelected && selectedClient.recordType === 'Cliente' && <button onClick={() => syncCalendar(selectedClient)} disabled={Boolean(syncingClientId)} className="inline-flex items-center gap-2 rounded-lg border border-sky-300/30 bg-sky-400/10 px-4 py-2 text-sm text-sky-100 disabled:border-white/10 disabled:bg-transparent disabled:text-gray-600">{syncingClientId === selectedClient.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}{syncingClientId === selectedClient.id ? 'Rectificando…' : 'Actualizar Calendar'}</button>}</div>
               </div>
               {showInlinePayment && <div className="border-b border-white/10 p-5"><div className="mb-3 flex items-center justify-between"><h3 className="font-semibold text-white">{paymentDraft.id ? `Editar pago de ${selectedClient.name}` : `Registrar siguiente pago de ${selectedClient.name}`}</h3><button onClick={() => { setPaymentDraft(blankPayment()); setPaymentReceipt(null); setShowInlinePayment(false); }} className="text-xs text-gray-400">Cerrar</button></div><PaymentForm draft={paymentDraft} receipt={paymentReceipt} clients={snapshot.clients} contracts={snapshot.contracts} onChange={setPaymentDraft} onReceipt={setPaymentReceipt} onSubmit={savePayment} onCancel={() => { setPaymentDraft(blankPayment()); setPaymentReceipt(null); setShowInlinePayment(false); }} busy={busy} /></div>}
               {canManageFinance && selectedClient.recordType === 'Cliente' && <section className="border-b border-white/10 p-5">
@@ -978,7 +1260,10 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
           ) : <>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Buscar ${tab === 'prospects' ? 'prospectos' : 'clientes'} por nombre, teléfono, evento o estado`} className="w-full max-w-xl rounded-xl border border-white/10 bg-[#161C28] px-4 py-3 text-sm" />
-            {canCreateCurrentType && <button onClick={() => { setSelectedClientId(''); setClientDraft({ ...blankClient(), recordType: tab === 'clients' ? 'Cliente' : 'Prospecto' }); setShowClientForm(true); }} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#D4AF37] px-4 py-3 text-sm font-bold text-black"><Plus className="h-4 w-4" />{tab === 'prospects' ? 'Nuevo prospecto' : 'Nuevo cliente'}</button>}
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {tab === 'clients' && session.role === 'SUPER_ADMIN' && <><button type="button" onClick={() => downloadClientCsv(snapshot.clients.filter((item) => item.recordType === 'Cliente'), snapshot)} disabled={busy || !snapshot.clients.some((item) => item.recordType === 'Cliente')} className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-300/30 bg-emerald-400/10 px-4 py-3 text-sm font-semibold text-emerald-100 disabled:opacity-40"><Download className="h-4 w-4" />Descargar CSV completo</button><label className={`inline-flex items-center justify-center gap-2 rounded-xl border border-sky-300/30 bg-sky-400/10 px-4 py-3 text-sm font-semibold text-sky-100 ${busy ? 'pointer-events-none opacity-40' : 'cursor-pointer'}`}><Upload className="h-4 w-4" />Cargar CSV<input type="file" accept=".csv,text/csv,application/vnd.ms-excel" className="hidden" disabled={busy} onChange={(event) => { const file = event.currentTarget.files?.[0] || null; event.currentTarget.value = ''; if (file) void importClientsCsv(file); }} /></label></>}
+              {canCreateCurrentType && <button onClick={() => { setSelectedClientId(''); setClientDraft({ ...blankClient(), recordType: tab === 'clients' ? 'Cliente' : 'Prospecto' }); setShowClientForm(true); }} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#D4AF37] px-4 py-3 text-sm font-bold text-black"><Plus className="h-4 w-4" />{tab === 'prospects' ? 'Nuevo prospecto' : 'Nuevo cliente'}</button>}
+            </div>
           </div>
           {showClientForm && canCreateCurrentType && <ClientForm draft={clientDraft} onChange={setClientDraft} onSubmit={saveClient} onCancel={() => setShowClientForm(false)} busy={busy} />}
           <div className="overflow-x-auto rounded-2xl border border-white/10 bg-[#161C28]">
