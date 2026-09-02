@@ -1,5 +1,5 @@
 import { GalleryImage, PackageOption } from '../types';
-import { BusinessContract, BusinessExpense, BusinessPayment, BusinessSnapshot, ClientAddon, ClientGalleryRecord, ClientPackageSnapshot, ContractedService, CrmClient, CrmFollowUp, CrmNotification, EmailHistory, EmailTemplate, FinancialAdjustment, FinancialTransaction, GmailConfig, InternalCalendarEvent, TeamAssignment, TeamFunction, TeamUser } from '../types/business';
+import { BusinessContract, BusinessExpense, BusinessPayment, BusinessSnapshot, ClientAddon, ClientGalleryRecord, ClientPackageSnapshot, ContractDocumentSnapshot, ContractedService, CrmClient, CrmFollowUp, CrmNotification, EmailHistory, EmailTemplate, FinancialAdjustment, FinancialTransaction, GmailConfig, InternalCalendarEvent, TeamAssignment, TeamFunction, TeamUser } from '../types/business';
 import { CURRENT_CATALOG_VERSION, resolvePublishedAddons, resolvePublishedPackages } from './catalogMerge';
 
 export type AdminSession = {
@@ -492,6 +492,22 @@ export async function uploadBusinessContract(input: {
   return finalized.contract;
 }
 
+export async function createGeneratedBusinessContract(input: {
+  clientId: string;
+  folio: string;
+  documentType: 'CONTRATO' | 'COTIZACION';
+  paymentPolicy: '40-30-30' | 'PERSONALIZADA';
+  snapshot: ContractDocumentSnapshot;
+}): Promise<BusinessContract> {
+  const data = await adminBusinessRequest<{ contract: BusinessContract }>('adminContractGenerate', input);
+  return data.contract;
+}
+
+export async function loadAdminContractDocument(contractId: string): Promise<BusinessContract> {
+  const data = await adminBusinessRequest<{ contract: BusinessContract }>('adminContractDocument', { contractId });
+  return data.contract;
+}
+
 export async function createContractSigningLink(contractId: string): Promise<{ url: string; expiresAt: string }> {
   return await adminBusinessRequest<{ url: string; expiresAt: string }>('adminContractCreateLink', { contractId });
 }
@@ -515,10 +531,11 @@ export async function finalizeBusinessContract(contractId: string): Promise<Busi
   return data.contract;
 }
 
-export async function loadPublicContract(token: string): Promise<{
-  contract: Pick<BusinessContract, 'id' | 'clientName' | 'folio' | 'eventType' | 'eventDate' | 'status' | 'expiresAt'>;
+export async function loadPublicContract(token: string, sessionId = ''): Promise<{
+  contract: Pick<BusinessContract, 'id' | 'clientName' | 'folio' | 'eventType' | 'eventDate' | 'status' | 'expiresAt' | 'documentType' | 'documentSnapshot' | 'identificationFileName' | 'identificationUploadedAt'>;
 }> {
   const params = new URLSearchParams({ action: 'contractView', token });
+  if (sessionId) params.set('sessionId', sessionId);
   const res = await fetch(`/api/proxy?${params.toString()}`, { cache: 'no-store' });
   return await parseResponse(res);
 }
