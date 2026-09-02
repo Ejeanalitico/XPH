@@ -229,36 +229,45 @@ function normalizeBusinessSnapshot(snapshot?: Partial<BusinessSnapshot> | null):
   };
 }
 
-async function loadDeletedBusinessContractIds(): Promise<string[]> {
+type DeletedBusinessContractState = {
+  seoSettings: Record<string, any>;
+  ids: string[];
+};
+
+async function loadDeletedBusinessContractState(): Promise<DeletedBusinessContractState> {
   try {
     const config = await loadAdminConfig(activeAdminSession);
-    return Array.isArray(config?.deletedContractIds)
-      ? config.deletedContractIds.map((id: unknown) => String(id || '').trim()).filter(Boolean)
+    const seoSettings = config?.seoSettings && typeof config.seoSettings === 'object' && !Array.isArray(config.seoSettings)
+      ? { ...config.seoSettings }
+      : {};
+    const ids = Array.isArray(seoSettings.deletedContractIds)
+      ? seoSettings.deletedContractIds.map((id: unknown) => String(id || '').trim()).filter(Boolean)
       : [];
+    return { seoSettings, ids };
   } catch (_) {
-    return [];
+    return { seoSettings: {}, ids: [] };
   }
 }
 
 export async function loadBusinessSnapshot(force = false): Promise<BusinessSnapshot> {
-  const [data, deletedContractIds] = await Promise.all([
+  const [data, deletedState] = await Promise.all([
     adminBusinessRequest<{ snapshot: BusinessSnapshot }>('adminBusinessSnapshot', { force }),
-    loadDeletedBusinessContractIds(),
+    loadDeletedBusinessContractState(),
   ]);
   const snapshot = normalizeBusinessSnapshot(data.snapshot);
-  if (!deletedContractIds.length) return snapshot;
-  const deleted = new Set(deletedContractIds);
+  if (!deletedState.ids.length) return snapshot;
+  const deleted = new Set(deletedState.ids);
   return { ...snapshot, contracts: snapshot.contracts.filter((contract) => !deleted.has(String(contract.id))) };
 }
 
 export async function deleteBusinessContract(contractId: string): Promise<void> {
   const id = String(contractId || '').trim();
   if (!id) throw new Error('Contrato no identificado.');
-  const deletedContractIds = await loadDeletedBusinessContractIds();
-  if (!deletedContractIds.includes(id)) {
+  const deletedState = await loadDeletedBusinessContractState();
+  if (!deletedState.ids.includes(id)) {
     await saveAdminConfig(
       activeAdminSession,
-      { deletedContractIds: [...deletedContractIds, id] },
+      { seoSettings: { ...deletedState.seoSettings, deletedContractIds: [...deletedState.ids, id] } },
       'CONTRATO_ELIMINADO_PANEL',
       'Contrato ' + id + ' eliminado del panel administrativo',
     );
