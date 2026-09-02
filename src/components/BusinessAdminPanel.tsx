@@ -703,6 +703,28 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
     finally { setBusy(false); }
   };
 
+  const getContractDataChecklist = (client?: CrmClient) => {
+    if (!client) return [];
+    const activePackage = snapshot.packageSnapshots.find((item) => item.clientId === client.id && item.status === 'ACTIVO');
+    const activeServices = snapshot.services.filter((item) => item.clientId === client.id && item.included && item.status !== 'Anulado');
+    const activePayments = snapshot.payments.filter((item) => item.clientId === client.id && item.status !== 'Anulado');
+    const isContract = contractDraft.documentType === 'CONTRATO';
+    return [
+      { key: 'name', label: 'Nombre completo del contratante', complete: Boolean(String(client.name || '').trim()), required: true },
+      { key: 'phone', label: 'Teléfono', complete: Boolean(String(client.phone || '').trim()), required: true },
+      { key: 'email', label: 'Correo electrónico', complete: Boolean(String(client.email || '').trim()), required: true },
+      { key: 'address', label: 'Domicilio del contratante', complete: Boolean(String(client.address || '').trim()), required: isContract },
+      { key: 'eventType', label: 'Tipo de evento', complete: Boolean(String(contractDraft.eventType || client.eventType || '').trim()), required: true },
+      { key: 'eventDate', label: 'Fecha del evento', complete: Boolean(dateValue(contractDraft.eventDate || client.eventDate)), required: true },
+      { key: 'eventTime', label: 'Horario del evento', complete: Boolean(timeValue(client.eventTime)), required: isContract },
+      { key: 'eventLocation', label: 'Lugar o dirección del evento', complete: Boolean(String(client.eventLocation || '').trim()), required: isContract },
+      { key: 'packageName', label: 'Paquete contratado', complete: Boolean(String(activePackage?.packageName || client.packageName || '').trim()), required: true },
+      { key: 'totalAmount', label: 'Total contratado', complete: Number(client.totalAmount || 0) > 0, required: true },
+      { key: 'services', label: 'Servicios incluidos', complete: activeServices.length > 0, required: true },
+      { key: 'payments', label: contractDraft.paymentPolicy === 'PERSONALIZADA' ? 'Plan de pagos personalizado' : 'Plan 40% / 30% / 30%', complete: contractDraft.paymentPolicy === '40-30-30' || activePayments.length > 0, required: true },
+    ];
+  };
+
   const buildContractSnapshot = (client: CrmClient): ContractDocumentSnapshot => {
     const packageSnapshot = snapshot.packageSnapshots.find((item) => item.clientId === client.id && item.status === 'ACTIVO');
     const services = snapshot.services.filter((item) => item.clientId === client.id && item.included && item.status !== 'Anulado');
@@ -743,7 +765,8 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
     event.preventDefault();
     const client = snapshot.clients.find((item) => item.id === contractDraft.clientId);
     if (!client || !contractDraft.folio) return setModalNotice('Selecciona un prospecto o cliente y registra el folio.');
-    if (Number(client.totalAmount || 0) <= 0) return setModalNotice('Registra primero el total del servicio en la ficha del prospecto o cliente.');
+    const missingFields = getContractDataChecklist(client).filter((item) => item.required && !item.complete);
+    if (missingFields.length) return setModalNotice(`Completa antes de generar: ${missingFields.map((item) => item.label).join(', ')}.`);
     setBusy(true);
     try {
       const documentSnapshot = buildContractSnapshot(client);
@@ -816,6 +839,10 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
     } catch (error: any) { setModalNotice(error?.message || 'No se pudo guardar la firma.'); }
     finally { setBusy(false); }
   };
+
+  const selectedContractClient = snapshot.clients.find((client) => client.id === contractDraft.clientId);
+  const contractDataChecklist = getContractDataChecklist(selectedContractClient);
+  const missingContractData = contractDataChecklist.filter((item) => item.required && !item.complete);
 
   return (
     <section className="space-y-5">
@@ -1008,7 +1035,11 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
               <input type="date" value={contractDraft.eventDate} onChange={(event) => setContractDraft((prev) => ({ ...prev, eventDate: event.target.value }))} className={inputClass} required />
               <select value={contractDraft.paymentPolicy} onChange={(event) => setContractDraft((prev) => ({ ...prev, paymentPolicy: event.target.value as '40-30-30' | 'PERSONALIZADA' }))} className={inputClass}><option value="40-30-30">Política normal 40% / 30% / 30%</option><option value="PERSONALIZADA">Excepción / plan personalizado registrado</option></select>
             </div>
-            <button type="submit" disabled={busy} className="mt-4 w-full rounded-xl bg-[#D4AF37] px-4 py-3 text-sm font-bold text-black disabled:opacity-40"><FileSignature className="mr-2 inline h-4 w-4" />Generar y revisar</button>
+            {selectedContractClient ? <section className={`mt-4 rounded-xl border p-4 ${missingContractData.length ? 'border-amber-400/30 bg-amber-400/[.06]' : 'border-emerald-400/30 bg-emerald-400/[.06]'}`} aria-live="polite">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h4 className="text-sm font-bold text-white">Datos necesarios para generar</h4><p className={`mt-1 text-xs ${missingContractData.length ? 'text-amber-200' : 'text-emerald-200'}`}>{missingContractData.length ? `Faltan ${missingContractData.length} ${missingContractData.length === 1 ? 'dato' : 'datos'}. Completa la ficha antes de continuar.` : 'La información obligatoria está completa.'}</p></div>{missingContractData.length > 0 && <button type="button" onClick={() => openClientDetails(selectedContractClient)} className="shrink-0 rounded-lg bg-white px-3 py-2 text-xs font-bold text-black">Completar ficha</button>}</div>
+              <ul className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{contractDataChecklist.filter((item) => item.required).map((item) => <li key={item.key} className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ${item.complete ? 'border-emerald-400/15 bg-emerald-400/[.04] text-emerald-200' : 'border-red-400/20 bg-red-400/[.05] text-red-200'}`}>{item.complete ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <AlertTriangle className="h-4 w-4 shrink-0" />}<span>{item.label}</span></li>)}</ul>
+            </section> : <div className="mt-4 rounded-xl border border-dashed border-white/10 p-4 text-sm text-gray-400">Selecciona un prospecto o cliente para revisar automáticamente qué información falta.</div>}
+            <button type="submit" disabled={busy || !selectedContractClient || missingContractData.length > 0} className="mt-4 w-full rounded-xl bg-[#D4AF37] px-4 py-3 text-sm font-bold text-black disabled:cursor-not-allowed disabled:opacity-35"><FileSignature className="mr-2 inline h-4 w-4" />{missingContractData.length ? `Faltan ${missingContractData.length} datos` : 'Generar y revisar'}</button>
           </form>
 
           <details className="rounded-2xl border border-white/10 bg-[#161C28]"><summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-gray-300">Compatibilidad: cargar un contrato PDF anterior</summary><form onSubmit={uploadContract} className="grid gap-3 border-t border-white/10 p-5 lg:grid-cols-5">
