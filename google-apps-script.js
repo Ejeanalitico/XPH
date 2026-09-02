@@ -2348,7 +2348,7 @@ function handleBusinessAction(ss, action, payload) {
   if (action === 'clientPackageAssign') {
     var packageInput = payload.package || {};
     var packageClient = findBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, payload.clientId);
-    if (!packageClient || String(packageClient.recordType) !== 'Cliente') throw new Error('Selecciona un cliente válido para asignar el paquete.');
+    if (!packageClient || ['Prospecto', 'Cliente'].indexOf(String(packageClient.recordType)) < 0) throw new Error('Selecciona un prospecto o cliente válido para asignar el paquete.');
     packageClient.eventId = packageClient.eventId || businessId('evento');
     var packageTimestamp = businessNow();
     var currentSnapshots = readBusinessRecords(ss, 'Paquetes_Cliente', BUSINESS_HEADERS.packageSnapshots)
