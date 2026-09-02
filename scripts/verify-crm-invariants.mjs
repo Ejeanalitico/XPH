@@ -67,8 +67,10 @@ assert.match(businessPanel, /Datos necesarios para generar/);
 assert.match(businessPanel, /missingContractData\.length/);
 assert.match(businessPanel, /Completar ficha/);
 assert.match(businessPanel, /preContractMode=\{selectedClient\.recordType === 'Prospecto'\}/);
-assert.match(businessPanel, /Editar paquete y adicionales/);
+assert.match(businessPanel, /Los adicionales son opcionales/);
+assert.match(businessPanel, /Puedes generar el documento sin adicionales/);
 assert.match(clientOperationsPanel, /Preparación comercial del prospecto/);
+assert.match(clientOperationsPanel, /deja esa sección vacía y continúa/);
 assert.match(clientOperationsPanel, /Actualizar adicional/);
 assert.match(proxy, /Completa antes de generar/);
 
