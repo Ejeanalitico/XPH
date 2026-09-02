@@ -138,7 +138,7 @@ function initSpreadsheetSheets(ss) {
       'Notificaciones_CRM': ['id', 'type', 'title', 'message', 'relatedId', 'userId', 'status', 'dueAt', 'dedupeKey', 'createdAt', 'updatedAt'],
       'Galerias_Clientes': ['id', 'clientId', 'eventId', 'title', 'slug', 'accessToken', 'rootFolderId', 'photosFolderId', 'folderUrl', 'galleryUrl', 'status', 'createdAt', 'updatedAt'],
       'Eventos_Internos': ['id', 'title', 'activityType', 'startDate', 'startTime', 'endDate', 'endTime', 'location', 'notes', 'visibility', 'userIdsJson', 'status', 'calendarEventId', 'syncStatus', 'createdAt', 'updatedAt'],
-      'Contratos': ['id', 'clientId', 'clientName', 'folio', 'eventType', 'eventDate', 'status', 'originalFileName', 'originalFileId', 'clientSignedFileId', 'finalFileId', 'signatureFileId', 'tokenHash', 'tokenExpiresAt', 'tokenStatus', 'sentAt', 'viewedAt', 'acceptedAt', 'clientSignedAt', 'ownerAuthorizedAt', 'documentHash', 'signedDocumentHash', 'finalDocumentHash', 'signerIp', 'signerUserAgent', 'consentText', 'createdAt', 'updatedAt'],
+      'Contratos': ['id', 'clientId', 'clientName', 'folio', 'eventType', 'eventDate', 'status', 'originalFileName', 'originalFileId', 'clientSignedFileId', 'finalFileId', 'signatureFileId', 'tokenHash', 'tokenExpiresAt', 'tokenStatus', 'sentAt', 'viewedAt', 'acceptedAt', 'clientSignedAt', 'ownerAuthorizedAt', 'documentHash', 'signedDocumentHash', 'finalDocumentHash', 'signerIp', 'signerUserAgent', 'consentText', 'createdAt', 'updatedAt', 'documentType', 'templateVersion', 'documentJson', 'paymentPolicy', 'adminReviewUsed', 'clientOpenCount', 'maxClientOpens', 'clientSessionIdsJson', 'identificationFileId', 'identificationFileName', 'identificationUploadedAt'],
       'Firma_Administrador': ['id', 'fileId', 'updatedAt']
     };
 
@@ -491,11 +491,11 @@ var BUSINESS_HEADERS = {
   notifications: ['id', 'type', 'title', 'message', 'relatedId', 'userId', 'status', 'dueAt', 'dedupeKey', 'createdAt', 'updatedAt'],
   galleries: ['id', 'clientId', 'eventId', 'title', 'slug', 'accessToken', 'rootFolderId', 'photosFolderId', 'folderUrl', 'galleryUrl', 'status', 'createdAt', 'updatedAt'],
   internalEvents: ['id', 'title', 'activityType', 'startDate', 'startTime', 'endDate', 'endTime', 'location', 'notes', 'visibility', 'userIdsJson', 'status', 'calendarEventId', 'syncStatus', 'createdAt', 'updatedAt'],
-  contracts: ['id', 'clientId', 'clientName', 'folio', 'eventType', 'eventDate', 'status', 'originalFileName', 'originalFileId', 'clientSignedFileId', 'finalFileId', 'signatureFileId', 'tokenHash', 'tokenExpiresAt', 'tokenStatus', 'sentAt', 'viewedAt', 'acceptedAt', 'clientSignedAt', 'ownerAuthorizedAt', 'documentHash', 'signedDocumentHash', 'finalDocumentHash', 'signerIp', 'signerUserAgent', 'consentText', 'createdAt', 'updatedAt'],
+  contracts: ['id', 'clientId', 'clientName', 'folio', 'eventType', 'eventDate', 'status', 'originalFileName', 'originalFileId', 'clientSignedFileId', 'finalFileId', 'signatureFileId', 'tokenHash', 'tokenExpiresAt', 'tokenStatus', 'sentAt', 'viewedAt', 'acceptedAt', 'clientSignedAt', 'ownerAuthorizedAt', 'documentHash', 'signedDocumentHash', 'finalDocumentHash', 'signerIp', 'signerUserAgent', 'consentText', 'createdAt', 'updatedAt', 'documentType', 'templateVersion', 'documentJson', 'paymentPolicy', 'adminReviewUsed', 'clientOpenCount', 'maxClientOpens', 'clientSessionIdsJson', 'identificationFileId', 'identificationFileName', 'identificationUploadedAt'],
   ownerSignature: ['id', 'fileId', 'updatedAt']
 };
 
-var BUSINESS_SCHEMA_VERSION = '2026-08-28-calendar-performance-v1';
+var BUSINESS_SCHEMA_VERSION = '2026-09-02-contract-document-v1';
 var BUSINESS_RECORD_CACHE_TTL_SECONDS = 21600;
 
 function businessSchemaPropertyKey(ss) {
@@ -1001,6 +1001,8 @@ function tokenHashFromRaw(token) {
 }
 
 function publicContractRecord(record) {
+  var documentSnapshot = null;
+  try { documentSnapshot = record.documentJson ? JSON.parse(String(record.documentJson)) : null; } catch (_) {}
   return {
     id: record.id || '',
     clientId: record.clientId || '',
@@ -1018,12 +1020,21 @@ function publicContractRecord(record) {
     ownerAuthorizedAt: record.ownerAuthorizedAt || '',
     documentHash: record.documentHash || '',
     finalDocumentHash: record.finalDocumentHash || '',
+    documentType: record.documentType || (documentSnapshot && documentSnapshot.documentType) || 'CONTRATO',
+    templateVersion: record.templateVersion || '',
+    documentSnapshot: documentSnapshot,
+    paymentPolicy: record.paymentPolicy || '40-30-30',
+    adminReviewUsed: businessBoolean(record.adminReviewUsed),
+    clientOpenCount: Number(record.clientOpenCount || 0),
+    maxClientOpens: Number(record.maxClientOpens || 2),
+    identificationFileName: record.identificationFileName || '',
+    identificationUploadedAt: record.identificationUploadedAt || '',
     createdAt: record.createdAt || '',
     updatedAt: record.updatedAt || ''
   };
 }
 
-function resolveSigningContract(ss, token) {
+function resolveSigningContract(ss, token, sessionId, countOpen) {
   var hash = tokenHashFromRaw(token);
   var contracts = readBusinessRecords(ss, 'Contratos', BUSINESS_HEADERS.contracts);
   for (var i = 0; i < contracts.length; i++) {
@@ -1032,6 +1043,22 @@ function resolveSigningContract(ss, token) {
     if (String(contract.tokenStatus || '') !== 'ACTIVO') throw new Error('La liga ya no está activa.');
     if (!contract.tokenExpiresAt || new Date(contract.tokenExpiresAt).getTime() <= Date.now()) throw new Error('La liga de firma ha caducado.');
     if (['Firmado por cliente', 'Finalizado', 'Cancelado'].indexOf(String(contract.status || '')) >= 0) throw new Error('El contrato ya no admite esta firma.');
+    if (countOpen && contract.documentJson) {
+      var safeSessionId = cleanBusinessText(sessionId, 120);
+      if (!safeSessionId) throw new Error('No se pudo validar esta sesión. Vuelve a abrir la liga.');
+      var sessionIds = [];
+      try { sessionIds = JSON.parse(String(contract.clientSessionIdsJson || '[]')); } catch (_) {}
+      if (sessionIds.indexOf(safeSessionId) < 0) {
+        var maxOpens = Math.max(1, Number(contract.maxClientOpens || 2));
+        if (sessionIds.length >= maxOpens) throw new Error('Esta liga ya no está disponible. Solicita una nueva a Javier.');
+        sessionIds.push(safeSessionId);
+        contract.clientSessionIdsJson = JSON.stringify(sessionIds);
+        contract.clientOpenCount = sessionIds.length;
+        contract.updatedAt = businessNow();
+        upsertBusinessRecord(ss, 'Contratos', BUSINESS_HEADERS.contracts, contract);
+        logAudit(ss, 'CONTRATO_ABIERTO_CLIENTE', contract.folio + ' | acceso ' + sessionIds.length, contract.id, contract.clientName);
+      }
+    }
     return contract;
   }
   throw new Error('Liga de firma inválida.');
@@ -2563,6 +2590,55 @@ function handleBusinessAction(ss, action, payload) {
     return { status: 'success', contract: publicContractRecord(contract) };
   }
 
+  if (action === 'contractGenerate') {
+    var generatedInput = payload.contract || {};
+    var generatedClient = findBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, generatedInput.clientId);
+    if (!generatedClient) throw new Error('Prospecto o cliente no encontrado.');
+    var generatedJson = cleanBusinessText(generatedInput.documentJson, 100000);
+    var generatedSnapshot = null;
+    try { generatedSnapshot = JSON.parse(generatedJson); } catch (_) { throw new Error('Los datos del documento no son válidos.'); }
+    if (!generatedSnapshot || !generatedSnapshot.client || !generatedSnapshot.event || !generatedSnapshot.commercial) throw new Error('El documento está incompleto.');
+    var generatedType = String(generatedInput.documentType || 'CONTRATO') === 'COTIZACION' ? 'COTIZACION' : 'CONTRATO';
+    var generatedAt = businessNow();
+    var generatedContract = {
+      id: businessId(generatedType === 'COTIZACION' ? 'cotizacion' : 'contrato'),
+      clientId: generatedClient.id,
+      clientName: cleanBusinessText(generatedClient.name, 180),
+      folio: cleanBusinessText(generatedInput.folio, 100),
+      eventType: cleanBusinessText(generatedClient.eventType, 120),
+      eventDate: cleanBusinessText(generatedClient.eventDate, 40),
+      status: 'Preparado', originalFileName: '', originalFileId: '', clientSignedFileId: '', finalFileId: '', signatureFileId: '',
+      tokenHash: '', tokenExpiresAt: '', tokenStatus: '', sentAt: '', viewedAt: '', acceptedAt: '', clientSignedAt: '', ownerAuthorizedAt: '',
+      documentHash: '', signedDocumentHash: '', finalDocumentHash: '', signerIp: '', signerUserAgent: '', consentText: '',
+      createdAt: generatedAt, updatedAt: generatedAt,
+      documentType: generatedType,
+      templateVersion: cleanBusinessText(generatedInput.templateVersion || 'canva-xph-v1', 80),
+      documentJson: generatedJson,
+      paymentPolicy: String(generatedInput.paymentPolicy || '40-30-30') === 'PERSONALIZADA' ? 'PERSONALIZADA' : '40-30-30',
+      adminReviewUsed: false, clientOpenCount: 0, maxClientOpens: 2, clientSessionIdsJson: '[]',
+      identificationFileId: '', identificationFileName: '', identificationUploadedAt: ''
+    };
+    upsertBusinessRecord(ss, 'Contratos', BUSINESS_HEADERS.contracts, generatedContract);
+    generatedClient.contractId = generatedType === 'CONTRATO' ? generatedContract.id : generatedClient.contractId;
+    generatedClient.updatedAt = generatedAt;
+    upsertBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, generatedClient);
+    logAudit(ss, generatedType + '_HTML_GENERADO', generatedContract.folio + ' | versión congelada ' + generatedContract.templateVersion, generatedContract.id, 'Admin XPH');
+    return { status: 'success', contract: publicContractRecord(generatedContract) };
+  }
+
+  if (action === 'contractDocument') {
+    var documentContract = findBusinessRecord(ss, 'Contratos', BUSINESS_HEADERS.contracts, payload.contractId);
+    if (!documentContract) throw new Error('Documento no encontrado.');
+    if (!documentContract.documentJson) throw new Error('Este contrato histórico utiliza PDF. Ábrelo con el visor anterior.');
+    if (!businessBoolean(documentContract.adminReviewUsed)) {
+      documentContract.adminReviewUsed = true;
+      documentContract.updatedAt = businessNow();
+      upsertBusinessRecord(ss, 'Contratos', BUSINESS_HEADERS.contracts, documentContract);
+      logAudit(ss, 'CONTRATO_REVISADO_ADMIN', documentContract.folio, documentContract.id, 'Admin XPH');
+    }
+    return { status: 'success', contract: publicContractRecord(documentContract) };
+  }
+
   if (action === 'contractUploadFinalize') {
     var finalUpload = payload.contract || {};
     var uploadedFileId = cleanBusinessText(finalUpload.fileId, 200);
@@ -2601,6 +2677,9 @@ function handleBusinessAction(ss, action, payload) {
     linkContract.tokenHash = cleanBusinessText(payload.tokenHash, 180);
     linkContract.tokenExpiresAt = cleanBusinessText(payload.expiresAt, 50);
     linkContract.tokenStatus = 'ACTIVO';
+    linkContract.clientOpenCount = 0;
+    linkContract.clientSessionIdsJson = '[]';
+    linkContract.maxClientOpens = Number(linkContract.maxClientOpens || 2);
     linkContract.status = 'Enviado';
     linkContract.sentAt = businessNow();
     linkContract.updatedAt = linkContract.sentAt;
@@ -2626,7 +2705,7 @@ function handleBusinessAction(ss, action, payload) {
   }
 
   if (action === 'contractResolve') {
-    var resolved = resolveSigningContract(ss, payload.token);
+    var resolved = resolveSigningContract(ss, payload.token, payload.sessionId, Boolean(payload.markViewed));
     if (payload.markViewed) {
       resolved.viewedAt = resolved.viewedAt || businessNow();
       resolved.status = 'Visto';
@@ -2634,12 +2713,12 @@ function handleBusinessAction(ss, action, payload) {
       upsertBusinessRecord(ss, 'Contratos', BUSINESS_HEADERS.contracts, resolved);
     }
     var resolvedOutput = { status: 'success', contract: publicContractRecord(resolved) };
-    if (payload.includePdf) resolvedOutput.pdfBase64 = fileBase64(resolved.originalFileId);
+    if (payload.includePdf && resolved.originalFileId) resolvedOutput.pdfBase64 = fileBase64(resolved.originalFileId);
     return resolvedOutput;
   }
 
   if (action === 'contractCompleteSignature') {
-    var signedContract = resolveSigningContract(ss, payload.token);
+    var signedContract = resolveSigningContract(ss, payload.token, '', false);
     var folder = getContractsFolder();
     var signedName = 'Firmado-cliente-' + (signedContract.folio || signedContract.id) + '.pdf';
     var signedFile = folder.createFile(base64Blob(payload.signedPdfBase64, 'application/pdf', signedName));
