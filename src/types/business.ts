@@ -377,6 +377,39 @@ export type ContractStatus =
   | 'Finalizado'
   | 'Cancelado';
 
+export interface ContractDocumentSnapshot {
+  documentType: 'CONTRATO' | 'COTIZACION';
+  templateVersion: string;
+  issuedAt: string;
+  client: {
+    name: string;
+    phone: string;
+    email: string;
+    address: string;
+    honoreeName: string;
+  };
+  event: {
+    type: string;
+    date: string;
+    time: string;
+    location: string;
+    serviceHours: number;
+  };
+  commercial: {
+    packageName: string;
+    packageBase: number;
+    additions: number;
+    discount: number;
+    total: number;
+    promotion: string;
+  };
+  services: Array<{ concept: string; quantity: number; notes: string }>;
+  addons: Array<{ concept: string; quantity: number; unitPrice: number; total: number; notes: string }>;
+  payments: Array<{ concept: string; percentage: number; amount: number; dueDate: string; status: string }>;
+  paymentPolicy: '40-30-30' | 'PERSONALIZADA';
+  terms: string[];
+};
+
 export interface BusinessContract {
   id: string;
   clientId: string;
@@ -394,6 +427,15 @@ export interface BusinessContract {
   ownerAuthorizedAt: string;
   documentHash: string;
   finalDocumentHash: string;
+  documentType?: 'CONTRATO' | 'COTIZACION';
+  templateVersion?: string;
+  documentSnapshot?: ContractDocumentSnapshot | null;
+  paymentPolicy?: '40-30-30' | 'PERSONALIZADA';
+  adminReviewUsed?: boolean;
+  clientOpenCount?: number;
+  maxClientOpens?: number;
+  identificationFileName?: string;
+  identificationUploadedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
