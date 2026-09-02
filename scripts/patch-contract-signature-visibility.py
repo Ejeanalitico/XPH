@@ -37,8 +37,8 @@ if old_owner not in proxy:
     raise SystemExit('No se encontró la etiqueta de autorización del prestador')
 proxy = proxy.replace(old_owner, new_owner, 1)
 
-# Invariantes de seguridad/flujo: la vista previa no muestra el nombre del cliente en el área de firmas,
-# y el PDF firmado conserva firma, IP y sello temporal; la firma del prestador sigue aplicándose sólo al finalizar.
+# Invariantes: la revisión no muestra identidad en el área de firmas y el PDF firmado conserva
+# firma manuscrita, IP, sello temporal y aplicación posterior de la firma del prestador.
 if 'Signature label="EL CLIENTE" name={snapshot.client.name}' in component:
     raise SystemExit('El nombre del cliente sigue apareciendo en la línea de firma previa')
 required_proxy_markers = [
@@ -47,7 +47,7 @@ required_proxy_markers = [
     'Fecha y hora de firma:',
     'async function applyOwnerSignature',
     'Fecha y hora de autorización:',
-    "String(finalSource.status || '') !== 'Firmado por cliente'",
+    "action === 'adminContractFinalize'",
 ]
 for marker in required_proxy_markers:
     if marker not in proxy:
