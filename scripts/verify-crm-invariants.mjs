@@ -61,6 +61,7 @@ assert.match(businessPanel, /percentage: 40, amount: total \* \.4/);
 assert.match(businessPanel, /percentage: 30, amount: total \* \.3/);
 assert.match(proxy, /normalizeContractDocumentSnapshot/);
 assert.match(appsScript, /documentJson/);
+assert.match(appsScript, /'contractUpload', 'contractGenerate', 'contractDocument', 'contractCreateLink'/);
 assert.match(appsScript, /clientSessionIdsJson/);
 assert.match(appsScript, /sessionIds\.indexOf\(safeSessionId\) < 0/);
 assert.match(appsScript, /sessionIds\.length >= maxOpens/);
