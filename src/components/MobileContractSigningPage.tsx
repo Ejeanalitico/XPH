@@ -3,12 +3,13 @@ import { AlertTriangle, CheckCircle2, FileText, Loader2, ShieldCheck } from 'luc
 import { loadPublicContract, publicContractPdfUrl, signPublicContract } from '../utils/adminApi';
 import { BusinessContract } from '../types/business';
 import { SignaturePad } from './SignaturePad';
+import { ContractDocument } from './ContractDocument';
 
 interface Props {
   token: string;
 }
 
-type PublicContract = Pick<BusinessContract, 'id' | 'clientName' | 'folio' | 'eventType' | 'eventDate' | 'status' | 'expiresAt'>;
+type PublicContract = Pick<BusinessContract, 'id' | 'clientName' | 'folio' | 'eventType' | 'eventDate' | 'status' | 'expiresAt' | 'documentType' | 'documentSnapshot' | 'identificationFileName' | 'identificationUploadedAt'>;
 
 const safeContractPdfUrl = (token: string) => publicContractPdfUrl(token).replace(/^\/api\/proxy(?=\?|$)/, '/api/proxy-safe');
 
@@ -20,13 +21,23 @@ export const MobileContractSigningPage: React.FC<Props> = ({ token }) => {
   const [step, setStep] = useState<'read' | 'sign' | 'done'>('read');
   const [signature, setSignature] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [sessionId] = useState(() => {
+    const key = `xph-contract-session:${token}`;
+    try {
+      const current = sessionStorage.getItem(key);
+      if (current) return current;
+      const created = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      sessionStorage.setItem(key, created);
+      return created;
+    } catch (_) { return `${Date.now()}-${Math.random().toString(36).slice(2)}`; }
+  });
 
   useEffect(() => {
-    loadPublicContract(token)
+    loadPublicContract(token, sessionId)
       .then((result) => setContract(result.contract))
       .catch((reason: any) => setError(reason?.message || 'La liga no está disponible.'))
       .finally(() => setLoading(false));
-  }, [token]);
+  }, [token, sessionId]);
 
   const submit = async () => {
     if (!signature || !accepted) return;
@@ -47,17 +58,15 @@ export const MobileContractSigningPage: React.FC<Props> = ({ token }) => {
   if (step === 'done') return <MobileShell><CheckCircle2 className="h-12 w-12 text-emerald-400" /><h1 className="text-2xl font-bold">Firma recibida</h1><p className="max-w-sm text-center text-sm leading-6 text-gray-300">Gracias, {contract.clientName}. Javier revisará y autorizará el documento para finalizarlo.</p><div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-200">Folio {contract.folio}</div></MobileShell>;
 
   return (
-    <main className="min-h-screen bg-[#0B0F17] px-3 py-4 text-white sm:hidden">
-      <div className="mx-auto max-w-md space-y-4">
+    <main className="min-h-screen bg-[#0B0F17] px-3 py-4 text-white sm:px-6 sm:py-8">
+      <div className="mx-auto max-w-[900px] space-y-4">
         <header className="rounded-2xl border border-white/10 bg-[#161C28] p-4">
           <div className="flex items-center gap-3"><div className="rounded-xl bg-[#D4AF37]/10 p-2 text-[#D4AF37]"><FileText className="h-5 w-5" /></div><div><p className="text-[10px] uppercase tracking-[.2em] text-[#D4AF37]">Xavi.ph · firma privada</p><h1 className="font-semibold">Contrato {contract.folio}</h1></div></div>
           <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-400"><span>{contract.clientName}</span><span className="text-right">{contract.eventDate || 'Fecha por confirmar'}</span><span>{contract.eventType}</span><span className="text-right">Liga protegida</span></div>
         </header>
 
         {step === 'read' && <>
-          <section className="overflow-hidden rounded-2xl border border-white/10 bg-white">
-            <iframe title={`Contrato ${contract.folio}`} src={safeContractPdfUrl(token)} className="h-[66vh] w-full bg-white" />
-          </section>
+          <section className="overflow-hidden rounded-2xl border border-white/10 bg-white">{contract.documentSnapshot ? <ContractDocument snapshot={contract.documentSnapshot} folio={contract.folio} /> : <iframe title={`Contrato ${contract.folio}`} src={safeContractPdfUrl(token)} className="h-[66vh] w-full bg-white" />}</section>
           <section className="space-y-4 rounded-2xl border border-white/10 bg-[#161C28] p-4">
             <div className="flex gap-3 text-xs leading-5 text-gray-300"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[#D4AF37]" /><p>Lee el documento completo. Tu aceptación y firma se guardarán con fecha, hora y datos técnicos de esta sesión como evidencia.</p></div>
             <label className="flex items-start gap-3 rounded-xl border border-white/10 bg-black/20 p-3 text-sm"><input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} className="mt-1 h-4 w-4 accent-[#D4AF37]" /><span>He leído el contrato completo, comprendo su contenido y acepto sus términos.</span></label>
