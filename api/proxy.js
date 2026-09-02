@@ -794,7 +794,11 @@ function normalizeContractDocumentSnapshot(input, documentType = 'CONTRATO') {
     paymentPolicy: source.paymentPolicy === 'PERSONALIZADA' ? 'PERSONALIZADA' : '40-30-30',
     terms: (Array.isArray(source.terms) ? source.terms : []).slice(0, 30).map((item) => text(item, 2000)).filter(Boolean),
   };
-  if (!snapshot.client.name || !snapshot.event.type || !snapshot.commercial.total) throw new Error('El documento requiere cliente, tipo de evento y total contratado.');
+  const missing = [];
+  if (!snapshot.client.name) missing.push('nombre completo del contratante');
+  if (!snapshot.event.type) missing.push('tipo de evento');
+  if (!snapshot.commercial.total) missing.push('total contratado');
+  if (missing.length) throw new Error(`Completa antes de generar: ${missing.join(', ')}.`);
   return snapshot;
 }
 
