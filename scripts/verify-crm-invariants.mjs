@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 const appsScript = readFileSync(new URL('../google-apps-script.js', import.meta.url), 'utf8');
 const proxy = readFileSync(new URL('../api/proxy.js', import.meta.url), 'utf8');
 const businessPanel = readFileSync(new URL('../src/components/BusinessAdminPanel.tsx', import.meta.url), 'utf8');
+const clientOperationsPanel = readFileSync(new URL('../src/components/ClientOperationsPanel.tsx', import.meta.url), 'utf8');
 const adminApi = readFileSync(new URL('../src/utils/adminApi.ts', import.meta.url), 'utf8');
 const contractDocument = readFileSync(new URL('../src/components/ContractDocument.tsx', import.meta.url), 'utf8');
 
@@ -65,6 +66,10 @@ assert.match(contractDocument, /Política 40% \/ 30% \/ 30%/);
 assert.match(businessPanel, /Datos necesarios para generar/);
 assert.match(businessPanel, /missingContractData\.length/);
 assert.match(businessPanel, /Completar ficha/);
+assert.match(businessPanel, /preContractMode=\{selectedClient\.recordType === 'Prospecto'\}/);
+assert.match(businessPanel, /Editar paquete y adicionales/);
+assert.match(clientOperationsPanel, /Preparación comercial del prospecto/);
+assert.match(clientOperationsPanel, /Actualizar adicional/);
 assert.match(proxy, /Completa antes de generar/);
 
 console.log('Invariantes CRM verificadas: conversión, paquete aislado, calendario, contratos, recordatorios y permisos.');
