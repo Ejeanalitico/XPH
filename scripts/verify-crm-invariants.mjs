@@ -5,6 +5,7 @@ const appsScript = readFileSync(new URL('../google-apps-script.js', import.meta.
 const proxy = readFileSync(new URL('../api/proxy.js', import.meta.url), 'utf8');
 const businessPanel = readFileSync(new URL('../src/components/BusinessAdminPanel.tsx', import.meta.url), 'utf8');
 const adminApi = readFileSync(new URL('../src/utils/adminApi.ts', import.meta.url), 'utf8');
+const contractDocument = readFileSync(new URL('../src/components/ContractDocument.tsx', import.meta.url), 'utf8');
 
 // Conversión compatible: conserva el mismo ID y enlaza el historial existente.
 const prospect = { id: 'prospecto-1', recordType: 'Prospecto', nextActionAt: '2026-09-01T11:00' };
@@ -50,5 +51,16 @@ assert.match(businessPanel, /border-yellow-300 bg-yellow-300\/15/);
 assert.match(businessPanel, /border-emerald-400 bg-emerald-500\/15/);
 assert.match(businessPanel, /border-red-400 bg-red-500\/15/);
 assert.match(businessPanel, /Solo la fecha del próximo contacto/);
+
+// El nuevo documento conserva una instantánea, usa 40-30-30 por defecto y limita sesiones sin contar recargas.
+assert.match(businessPanel, /percentage: 40, amount: total \* \.4/);
+assert.match(businessPanel, /percentage: 30, amount: total \* \.3/);
+assert.match(proxy, /normalizeContractDocumentSnapshot/);
+assert.match(appsScript, /documentJson/);
+assert.match(appsScript, /clientSessionIdsJson/);
+assert.match(appsScript, /sessionIds\.indexOf\(safeSessionId\) < 0/);
+assert.match(appsScript, /sessionIds\.length >= maxOpens/);
+assert.match(contractDocument, /CONTRATO DE SERVICIOS/);
+assert.match(contractDocument, /Política 40% \/ 30% \/ 30%/);
 
 console.log('Invariantes CRM verificadas: conversión, paquete aislado, calendario, contratos, recordatorios y permisos.');
