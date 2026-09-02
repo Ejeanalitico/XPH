@@ -2,47 +2,47 @@ name: Install contract delete feature
 
 on:
   push:
-    branches: [master]
+    branches:
+      - master
     paths:
       - .github/workflows/install-contract-delete.yml
 
-permissions:
-  contents: write
-
 jobs:
   patch:
-    if: github.event.head_commit.message == 'chore: install contract delete patch'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
           ref: master
           fetch-depth: 0
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+
       - name: Patch contract deletion
         shell: bash
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
+          node <<'NODE'
+          const fs = require('fs');
 
-          def replace_once(path, old, new, label):
-              p = Path(path)
-              text = p.read_text(encoding='utf-8')
-              if old not in text:
-                  raise SystemExit(f'Patch target not found: {label}')
-              p.write_text(text.replace(old, new, 1), encoding='utf-8')
+          function replaceOnce(path, oldText, newText, label) {
+            const text = fs.readFileSync(path, 'utf8');
+            if (!text.includes(oldText)) throw new Error(`Patch target not found: ${label}`);
+            fs.writeFileSync(path, text.replace(oldText, newText), 'utf8');
+          }
 
-          replace_once(
-              'src/utils/adminApi.ts',
-              """export async function loadBusinessSnapshot(force = false): Promise<BusinessSnapshot> {
+          replaceOnce(
+            'src/utils/adminApi.ts',
+            `export async function loadBusinessSnapshot(force = false): Promise<BusinessSnapshot> {
             const data = await adminBusinessRequest<{ snapshot: BusinessSnapshot }>('adminBusinessSnapshot', { force });
             return normalizeBusinessSnapshot(data.snapshot);
           }
-          """,
-              """async function loadDeletedBusinessContractIds(): Promise<string[]> {
+          `,
+            `async function loadDeletedBusinessContractIds(): Promise<string[]> {
             try {
               const config = await loadAdminConfig(activeAdminSession);
               return Array.isArray(config?.deletedContractIds)
@@ -73,45 +73,46 @@ jobs:
                 activeAdminSession,
                 { deletedContractIds: [...deletedContractIds, id] },
                 'CONTRATO_ELIMINADO_PANEL',
-                `Contrato ${id} eliminado del panel administrativo`,
+                'Contrato ' + id + ' eliminado del panel administrativo',
               );
             }
             businessSnapshotCache = null;
           }
-          """,
-              'adminApi load/delete contracts',
-          )
+          `,
+            'adminApi load/delete contracts',
+          );
 
-          replace_once(
-              'src/components/BusinessAdminPanel.tsx',
-              """  TrendingUp,
+          replaceOnce(
+            'src/components/BusinessAdminPanel.tsx',
+            `  TrendingUp,
             Users,
-          """,
-              """  TrendingUp,
+          `,
+            `  TrendingUp,
             Trash2,
             Users,
-          """,
-              'Trash2 import',
-          )
+          `,
+            'Trash2 import',
+          );
 
-          replace_once(
-              'src/components/BusinessAdminPanel.tsx',
-              """  createGeneratedBusinessContract,
+          replaceOnce(
+            'src/components/BusinessAdminPanel.tsx',
+            `  createGeneratedBusinessContract,
             cacheBusinessClients,
-          """,
-              """  createGeneratedBusinessContract,
+          `,
+            `  createGeneratedBusinessContract,
             deleteBusinessContract,
             cacheBusinessClients,
-          """,
-              'deleteBusinessContract import',
-          )
+          `,
+            'deleteBusinessContract import',
+          );
 
-          replace_once(
-              'src/components/BusinessAdminPanel.tsx',
-              """  const persistOwnerSignature = async () => {
-          """,
-              """  const removeContract = async (contract: BusinessContract) => {
-            const confirmed = window.confirm(`¿Eliminar ${contract.documentType === 'COTIZACION' ? 'la cotización' : 'el contrato'} ${contract.folio || contract.id} de ${contract.clientName}?\\n\\nSe quitará del panel y dejará de aparecer en la lista. El PDF original permanecerá resguardado en Drive.`);
+          replaceOnce(
+            'src/components/BusinessAdminPanel.tsx',
+            `  const persistOwnerSignature = async () => {
+          `,
+            `  const removeContract = async (contract: BusinessContract) => {
+            const label = contract.documentType === 'COTIZACION' ? 'la cotización' : 'el contrato';
+            const confirmed = window.confirm('¿Eliminar ' + label + ' ' + (contract.folio || contract.id) + ' de ' + contract.clientName + '?\\n\\nSe quitará del panel y dejará de aparecer en la lista. El PDF original permanecerá resguardado en Drive.');
             if (!confirmed) return;
             setBusy(true);
             try {
@@ -128,17 +129,22 @@ jobs:
           };
 
             const persistOwnerSignature = async () => {
-          """,
-              'remove contract handler',
-          )
+          `,
+            'remove contract handler',
+          );
 
-          old = """{contract.status === 'Firmado por cliente' && <button onClick={() => finalize(contract)} disabled={busy || !snapshot.ownerSignatureConfigured} className=\"inline-flex items-center gap-2 rounded-xl bg-[#D4AF37] px-3 py-2 text-xs font-bold text-black disabled:opacity-40\"><CheckCircle2 className=\"h-4 w-4\" />Autorizar y finalizar</button>}</div></div></article>"""
-          new = """{contract.status === 'Firmado por cliente' && <button onClick={() => finalize(contract)} disabled={busy || !snapshot.ownerSignatureConfigured} className=\"inline-flex items-center gap-2 rounded-xl bg-[#D4AF37] px-3 py-2 text-xs font-bold text-black disabled:opacity-40\"><CheckCircle2 className=\"h-4 w-4\" />Autorizar y finalizar</button>}{session.role === 'SUPER_ADMIN' && <button onClick={() => removeContract(contract)} disabled={busy} className=\"inline-flex items-center gap-2 rounded-xl border border-red-400/30 bg-red-500/5 px-3 py-2 text-xs font-semibold text-red-300 hover:bg-red-500/10 disabled:opacity-40\"><Trash2 className=\"h-4 w-4\" />Eliminar</button>}</div></div></article>"""
-          replace_once('src/components/BusinessAdminPanel.tsx', old, new, 'delete button')
-          PY
+          replaceOnce(
+            'src/components/BusinessAdminPanel.tsx',
+            `{contract.status === 'Firmado por cliente' && <button onClick={() => finalize(contract)} disabled={busy || !snapshot.ownerSignatureConfigured} className="inline-flex items-center gap-2 rounded-xl bg-[#D4AF37] px-3 py-2 text-xs font-bold text-black disabled:opacity-40"><CheckCircle2 className="h-4 w-4" />Autorizar y finalizar</button>}</div></div></article>`,
+            `{contract.status === 'Firmado por cliente' && <button onClick={() => finalize(contract)} disabled={busy || !snapshot.ownerSignatureConfigured} className="inline-flex items-center gap-2 rounded-xl bg-[#D4AF37] px-3 py-2 text-xs font-bold text-black disabled:opacity-40"><CheckCircle2 className="h-4 w-4" />Autorizar y finalizar</button>}{session.role === 'SUPER_ADMIN' && <button onClick={() => removeContract(contract)} disabled={busy} className="inline-flex items-center gap-2 rounded-xl border border-red-400/30 bg-red-500/5 px-3 py-2 text-xs font-semibold text-red-300 hover:bg-red-500/10 disabled:opacity-40"><Trash2 className="h-4 w-4" />Eliminar</button>}</div></div></article>`,
+            'delete button',
+          );
+          NODE
+
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
+
       - name: Commit feature
         shell: bash
         run: |
