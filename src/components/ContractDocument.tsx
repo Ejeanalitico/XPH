@@ -13,57 +13,63 @@ const time = (value: string) => {
   return `${hour % 12 || 12}:${match[2]} ${hour >= 12 ? 'p. m.' : 'a. m.'}`;
 };
 
-export const ContractDocument = ({ snapshot, folio }: { snapshot: ContractDocumentSnapshot; folio: string }) => (
-  <article className="mx-auto w-full max-w-[850px] overflow-hidden bg-white text-[#171717] shadow-2xl print:max-w-none print:shadow-none">
-    <header className="border-b-[5px] border-[#D4AF37] bg-[#11151d] px-6 py-7 text-white sm:px-10">
-      <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
-        <div><p className="text-xs font-semibold uppercase tracking-[.28em] text-[#D4AF37]">Xavi.ph</p><p className="mt-1 text-sm uppercase tracking-[.12em] text-gray-300">Fotografía &amp; producción audiovisual</p></div>
-        <div className="sm:text-right"><h1 className="font-serif text-3xl font-bold tracking-wide">{snapshot.documentType === 'COTIZACION' ? 'COTIZACIÓN' : 'CONTRATO DE SERVICIOS'}</h1><p className="mt-1 text-sm text-gray-300">Folio {folio}</p></div>
+const standardTerms = [
+  ['Reserva de fecha', 'La fecha quedará reservada exclusivamente con la confirmación del primer pago. Mientras no se refleje el apartado, la disponibilidad podrá ofrecerse a otro cliente.'],
+  ['Entregables', 'La selección, edición y entrega corresponden únicamente a los servicios descritos en este documento. Los archivos originales sin edición no forman parte de la entrega, salvo acuerdo escrito.'],
+  ['Puntualidad y cobertura', 'La cobertura inicia y termina en el horario contratado. Los retrasos ajenos a XPH no amplían automáticamente el tiempo de servicio; toda hora adicional requiere disponibilidad y autorización.'],
+  ['Cancelación y fuerza mayor', 'Los pagos de reserva cubren el bloqueo de fecha y gastos operativos. Reprogramaciones, cancelaciones o causas de fuerza mayor se resolverán por escrito conforme a la disponibilidad y a los gastos ya realizados.'],
+];
+
+export const ContractDocument = ({ snapshot, folio }: { snapshot: ContractDocumentSnapshot; folio: string }) => {
+  const isQuote = snapshot.documentType === 'COTIZACION';
+  const clauses = snapshot.terms.length ? snapshot.terms.map((term, index) => {
+    const separator = term.indexOf(':');
+    return separator > 0 ? [term.slice(0, separator), term.slice(separator + 1).trim()] : [`Cláusula ${index + 1}`, term];
+  }) : standardTerms;
+  const section = (base: number) => String(base + (snapshot.addons.length ? 1 : 0));
+
+  return <article className="xph-contract mx-auto w-full max-w-[794px] overflow-hidden bg-[#fffefb] text-[#171717] shadow-2xl print:max-w-none print:shadow-none">
+    <header className="border-b-[3px] border-black px-8 pb-5 pt-7 sm:px-12">
+      <div className="flex items-start justify-between gap-8">
+        <div className="w-[44%] max-w-[285px]">
+          <img src="/xph-logo.svg" alt="XPH Fotografía y Video" className="h-auto w-[190px] max-w-full" />
+          <p className="mt-2 border-t border-black pt-2 text-[10px] font-semibold uppercase tracking-[.18em]">Fotografía &amp; producción audiovisual</p>
+        </div>
+        <div className="text-right"><h1 className="font-serif text-[25px] font-bold uppercase leading-[1.05] sm:text-[31px]">{isQuote ? 'Cotización de servicios' : 'Contrato de servicios'}</h1><p className="mt-3 text-[12px] font-semibold uppercase tracking-[.1em]">{snapshot.event.type || 'Evento'}</p><p className="mt-1 text-[11px]">Folio {folio}</p></div>
       </div>
     </header>
 
-    <div className="space-y-8 px-6 py-8 text-[15px] leading-6 sm:px-10">
-      <section className="grid gap-4 border-b border-gray-200 pb-7 sm:grid-cols-3">
-        <Info label="Cliente" value={snapshot.client.name} />
-        <Info label="Tipo de evento" value={snapshot.event.type} />
-        <Info label="Fecha de emisión" value={date(snapshot.issuedAt)} />
-        <Info label="Teléfono" value={snapshot.client.phone || 'No registrado'} />
-        <Info label="Correo" value={snapshot.client.email || 'No registrado'} />
-        <Info label="Festejado(s)" value={snapshot.client.honoreeName || 'No aplica'} />
-      </section>
+    <div className="relative px-8 py-7 text-[12px] leading-[1.48] sm:px-12">
+      <img aria-hidden="true" src="/xph-logo.svg" className="pointer-events-none absolute left-1/2 top-[330px] w-[76%] -translate-x-1/2 opacity-[.035]" />
+      {!isQuote && <p className="relative mb-6 text-justify">Conste por el presente documento el <strong>CONTRATO DE PRESTACIÓN DE SERVICIOS FOTOGRÁFICOS Y AUDIOVISUALES</strong> que celebran, por una parte, <strong>XAVI.PH</strong> (en lo sucesivo “EL PRESTADOR DEL SERVICIO”), y por otra parte <strong>{snapshot.client.name}</strong> (en lo sucesivo “EL CLIENTE”). Domicilio de EL CLIENTE: {snapshot.client.address || 'no proporcionado'}.</p>}
 
-      <Section title="Información del evento">
-        <div className="grid gap-4 rounded-xl bg-[#f5f2e9] p-5 sm:grid-cols-2">
-          <Info label="Fecha y hora" value={`${date(snapshot.event.date)} · ${time(snapshot.event.time)}`} />
-          <Info label="Cobertura" value={snapshot.event.serviceHours ? `${snapshot.event.serviceHours} horas` : 'Por confirmar'} />
-          <div className="sm:col-span-2"><Info label="Lugar" value={snapshot.event.location || 'Por confirmar'} /></div>
-        </div>
+      <Section number="1" title="Datos del cliente y del evento"><div className="grid grid-cols-2 border border-black sm:grid-cols-3">
+        <Info label="Cliente" value={snapshot.client.name} /><Info label="Teléfono" value={snapshot.client.phone || 'No registrado'} /><Info label="Correo" value={snapshot.client.email || 'No registrado'} />
+        <Info label="Tipo de evento" value={snapshot.event.type} /><Info label="Festejado(s)" value={snapshot.client.honoreeName || 'No aplica'} /><Info label="Fecha de emisión" value={date(snapshot.issuedAt)} />
+        <Info label="Fecha y hora" value={`${date(snapshot.event.date)} · ${time(snapshot.event.time)}`} /><Info label="Cobertura" value={snapshot.event.serviceHours ? `${snapshot.event.serviceHours} horas continuas` : 'Por confirmar'} /><Info label="Lugar" value={snapshot.event.location || 'Por confirmar'} wide />
+        {!isQuote && snapshot.client.address && <Info label="Domicilio del cliente" value={snapshot.client.address} wide />}
+      </div></Section>
+
+      <Section number="2" title="Servicios contratados">
+        <div className="mb-3 flex items-end justify-between gap-4 border-b border-black pb-2"><strong className="uppercase">{snapshot.commercial.packageName || 'Servicio personalizado'}</strong><strong className="whitespace-nowrap">{money(snapshot.commercial.packageBase)}</strong></div>
+        <ul className="grid gap-x-7 gap-y-1.5 sm:grid-cols-2">{snapshot.services.map((service, index) => <li key={`${service.concept}-${index}`} className="flex gap-2"><b>✓</b><span>{service.concept}{service.quantity > 1 ? ` (${service.quantity})` : ''}{service.notes ? ` — ${service.notes}` : ''}</span></li>)}{!snapshot.services.length && <li>Servicios por especificar.</li>}</ul>
       </Section>
 
-      <Section title="Servicio contratado">
-        <div className="flex items-center justify-between gap-4 border-b border-gray-200 pb-3"><strong className="text-lg">{snapshot.commercial.packageName || 'Servicio personalizado'}</strong><strong>{money(snapshot.commercial.packageBase)}</strong></div>
-        <ul className="mt-4 grid gap-2 sm:grid-cols-2">{snapshot.services.map((service, index) => <li key={`${service.concept}-${index}`} className="flex gap-2"><span className="text-[#b18a08]">✓</span><span>{service.concept}{service.quantity > 1 ? ` · ${service.quantity}` : ''}{service.notes ? ` — ${service.notes}` : ''}</span></li>)}{!snapshot.services.length && <li className="text-gray-500">Servicios por especificar.</li>}</ul>
-      </Section>
+      {!!snapshot.addons.length && <Section number="3" title="Servicios adicionales"><Table><thead><tr><Th>Concepto</Th><Th>Cantidad</Th><Th>Precio unitario</Th><Th right>Importe</Th></tr></thead><tbody>{snapshot.addons.map((addon, index) => <tr key={`${addon.concept}-${index}`}><Td>{addon.concept}</Td><Td>{addon.quantity}</Td><Td>{money(addon.unitPrice)}</Td><Td right>{money(addon.total)}</Td></tr>)}</tbody></Table></Section>}
 
-      {!!snapshot.addons.length && <Section title="Adicionales">
-        <div className="overflow-x-auto"><table className="w-full min-w-[520px] text-left"><thead className="bg-[#11151d] text-xs uppercase tracking-wider text-[#f4d35e]"><tr><th className="p-3">Concepto</th><th className="p-3">Cantidad</th><th className="p-3">Unitario</th><th className="p-3 text-right">Total</th></tr></thead><tbody>{snapshot.addons.map((addon, index) => <tr key={`${addon.concept}-${index}`} className="border-b border-gray-200"><td className="p-3">{addon.concept}</td><td className="p-3">{addon.quantity}</td><td className="p-3">{money(addon.unitPrice)}</td><td className="p-3 text-right font-semibold">{money(addon.total)}</td></tr>)}</tbody></table></div>
-      </Section>}
+      <Section number={section(3)} title="Resumen financiero"><Table><tbody><tr><Td>Paquete base</Td><Td right>{money(snapshot.commercial.packageBase)}</Td></tr>{snapshot.addons.length > 0 && <tr><Td>Servicios adicionales</Td><Td right>{money(snapshot.commercial.additions)}</Td></tr>}{snapshot.commercial.discount > 0 && <tr><Td>Descuento / promoción</Td><Td right>− {money(snapshot.commercial.discount)}</Td></tr>}<tr className="font-bold"><Td>Total contratado</Td><Td right>{money(snapshot.commercial.total)}</Td></tr></tbody></Table>{snapshot.commercial.promotion && <p className="mt-2 text-[11px]">Promoción aplicada: {snapshot.commercial.promotion}</p>}</Section>
 
-      <Section title="Inversión">
-        <dl className="ml-auto max-w-md space-y-2 rounded-xl border border-[#D4AF37]/40 p-5"><Amount label="Paquete" value={snapshot.commercial.packageBase} /><Amount label="Adicionales" value={snapshot.commercial.additions} />{snapshot.commercial.discount > 0 && <Amount label="Descuento / promoción" value={-snapshot.commercial.discount} />}<div className="mt-3 flex justify-between border-t-2 border-[#11151d] pt-3 text-xl font-bold"><dt>Total contratado</dt><dd>{money(snapshot.commercial.total)}</dd></div>{snapshot.commercial.promotion && <p className="pt-2 text-sm text-gray-600">{snapshot.commercial.promotion}</p>}</dl>
-      </Section>
+      <Section number={section(4)} title="Calendario de pagos programado"><Table><thead><tr><Th>Etapa / pago</Th><Th>Porcentaje</Th><Th>Monto</Th><Th>Fecha límite de pago</Th></tr></thead><tbody>{snapshot.payments.map((payment, index) => <tr key={`${payment.concept}-${index}`}><Td>{payment.concept}</Td><Td>{payment.percentage ? `${payment.percentage}%` : '—'}</Td><Td>{money(payment.amount)} MXN</Td><Td>{payment.dueDate ? (index === 1 ? `A más tardar el ${date(payment.dueDate)}, antes de iniciar la cobertura` : date(payment.dueDate)) : index === 0 ? 'A la firma del contrato para reservar la fecha' : 'Contra entrega de los materiales y entregables contratados'}</Td></tr>)}</tbody></Table></Section>
 
-      <Section title={`Plan de pagos · ${snapshot.paymentPolicy === '40-30-30' ? 'Política 40% / 30% / 30%' : 'Plan personalizado'}`}>
-        <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-left"><thead className="bg-[#11151d] text-xs uppercase tracking-wider text-[#f4d35e]"><tr><th className="p-3">Pago</th><th className="p-3">Porcentaje</th><th className="p-3">Fecha límite</th><th className="p-3 text-right">Importe</th></tr></thead><tbody>{snapshot.payments.map((payment, index) => <tr key={`${payment.concept}-${index}`} className="border-b border-gray-200"><td className="p-3">{payment.concept}</td><td className="p-3">{payment.percentage ? `${payment.percentage}%` : '—'}</td><td className="p-3">{date(payment.dueDate)}</td><td className="p-3 text-right font-semibold">{money(payment.amount)}</td></tr>)}</tbody></table></div>
-      </Section>
-
-      {snapshot.documentType === 'CONTRATO' && <Section title="Términos y condiciones"><ol className="space-y-3 text-sm text-gray-700">{snapshot.terms.map((term, index) => <li key={index} className="flex gap-3"><strong className="text-[#9a7707]">{index + 1}.</strong><span>{term}</span></li>)}</ol></Section>}
-
-      <footer className="border-t border-gray-200 pt-6 text-sm text-gray-600"><strong className="text-[#171717]">XPH Fotografía &amp; Video</strong><p>Este documento conserva la versión de los datos aceptados al momento de su emisión.</p></footer>
+      {!isQuote && <><Section number={section(5)} title="Términos y condiciones generales"><ol className="space-y-2.5 text-justify">{clauses.map(([title, body], index) => <li key={index}><strong>{index + 1}. {title}.</strong> {body}</li>)}</ol></Section><Section number={section(6)} title="Uso comercial, licencia y derechos de imagen"><ol className="space-y-2.5 text-justify"><li><strong>1. Licencia de uso personal para EL CLIENTE.</strong> EL CLIENTE recibe una licencia personal, no exclusiva y de duración indefinida para imprimir, reproducir y compartir las fotografías y videos entregados en sus redes sociales y ámbito familiar privado. No podrá venderlos ni cederlos a terceros con fines de lucro.</li><li><strong>2. Uso promocional por XAVI.PH.</strong> Cuando EL CLIENTE lo autorice, XAVI.PH podrá utilizar fragmentos del video e imágenes del evento en su portafolio, sitio oficial, redes sociales, muestrarios impresos y material publicitario.</li><li><strong>3. Derechos de autor.</strong> EL PRESTADOR DEL SERVICIO conserva los derechos morales y de autor sobre la obra fotográfica y audiovisual conforme a la legislación aplicable.</li><li><strong>4. Privacidad exclusiva.</strong> Si EL CLIENTE requiere que el material no sea publicado en redes, portafolios o promociones, deberá indicarlo antes de la firma del contrato.</li></ol></Section><div className="mt-10 grid grid-cols-2 gap-12 text-center"><Signature label="EL CLIENTE" name={snapshot.client.name} /><Signature label="XAVI.PH" name="EL PRESTADOR DEL SERVICIO" /></div></>}
+      <footer className="mt-8 border-t border-black pt-3 text-center text-[9px] uppercase tracking-[.12em]">XPH Fotografía &amp; Video · Documento digital · Folio {folio}</footer>
     </div>
-  </article>
-);
+  </article>;
+};
 
-const Section = ({ title, children }: { title: string; children: React.ReactNode }) => <section><h2 className="mb-4 font-serif text-xl font-bold uppercase tracking-wide text-[#1b1f27]"><span className="mr-3 text-[#D4AF37]">—</span>{title}</h2>{children}</section>;
-const Info = ({ label, value }: { label: string; value: string }) => <div><p className="text-xs font-semibold uppercase tracking-wider text-gray-500">{label}</p><p className="mt-1 font-medium">{value}</p></div>;
-const Amount = ({ label, value }: { label: string; value: number }) => <div className="flex justify-between gap-4"><dt className="text-gray-600">{label}</dt><dd className="font-semibold">{money(value)}</dd></div>;
+const Section = ({ number, title, children }: { number: string; title: string; children: React.ReactNode }) => <section className="relative mb-6 break-inside-avoid"><h2 className="mb-3 border-b border-black pb-1 font-serif text-[17px] font-bold uppercase"><span className="mr-2">{number}.</span>{title}</h2>{children}</section>;
+const Info = ({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) => <div className={`min-h-[64px] border-b border-r border-black p-2.5 ${wide ? 'col-span-2 sm:col-span-3' : ''}`}><p className="text-[9px] font-bold uppercase tracking-[.08em]">{label}</p><p className="mt-1 font-medium">{value}</p></div>;
+const Table = ({ children }: { children: React.ReactNode }) => <div className="overflow-x-auto"><table className="w-full min-w-[520px] border-collapse border border-black text-left">{children}</table></div>;
+const Th = ({ children, right = false }: { children: React.ReactNode; right?: boolean }) => <th className={`border border-black bg-[#ededeb] p-2 text-[9px] uppercase tracking-[.06em] ${right ? 'text-right' : ''}`}>{children}</th>;
+const Td = ({ children, right = false }: { children: React.ReactNode; right?: boolean }) => <td className={`border border-black p-2 ${right ? 'text-right' : ''}`}>{children}</td>;
+const Signature = ({ label, name }: { label: string; name: string }) => <div className="border-t border-black pt-2"><strong className="text-[10px]">{label}</strong><p className="mt-1 text-[10px]">{name}</p></div>;

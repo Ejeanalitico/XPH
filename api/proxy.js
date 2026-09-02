@@ -783,7 +783,7 @@ function normalizeContractDocumentSnapshot(input, documentType = 'CONTRATO') {
   const amount = (value) => Math.max(0, Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100);
   const snapshot = {
     documentType: documentType === 'COTIZACION' ? 'COTIZACION' : 'CONTRATO',
-    templateVersion: 'canva-xph-v1',
+    templateVersion: text(source.templateVersion || 'contrato-xph-fiel-v2', 80),
     issuedAt: text(source.issuedAt || new Date().toISOString(), 40),
     client: { name: text(client.name, 180), phone: text(client.phone, 40), email: text(client.email, 180), address: text(client.address, 600), honoreeName: text(client.honoreeName, 240) },
     event: { type: text(event.type, 120), date: text(event.date, 40), time: text(event.time, 20), location: text(event.location, 600), serviceHours: Math.max(0, Number(event.serviceHours || 0)) },

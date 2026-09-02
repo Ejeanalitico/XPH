@@ -742,14 +742,14 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
     const discount = Number(packageSnapshot?.discount || 0);
     const total = Number(client.totalAmount || packageBase + additions - discount);
     const defaultPlan = [
-      { concept: 'Apartado y reserva de fecha', percentage: 40, amount: total * .4, dueDate: '', status: 'Pendiente' },
-      { concept: 'Segundo pago', percentage: 30, amount: total * .3, dueDate: '', status: 'Pendiente' },
-      { concept: 'Pago final', percentage: 30, amount: total * .3, dueDate: client.eventDate || '', status: 'Pendiente' },
+      { concept: '1er pago (Apartado)', percentage: 40, amount: total * .4, dueDate: '', status: 'Pendiente' },
+      { concept: '2do pago (Intermedio)', percentage: 30, amount: total * .3, dueDate: contractDraft.eventDate || client.eventDate || '', status: 'Pendiente' },
+      { concept: '3er pago (Finiquito)', percentage: 30, amount: total * .3, dueDate: '', status: 'Pendiente' },
     ];
     const payments = registeredPayments.length ? registeredPayments.map((item) => ({ concept: item.concept || `Pago ${item.installmentNumber || ''}`.trim(), percentage: Number(item.percentage || 0), amount: Number(item.plannedAmount || 0), dueDate: item.dueDate || '', status: item.status })) : defaultPlan;
     return {
       documentType: contractDraft.documentType,
-      templateVersion: 'canva-xph-v1',
+      templateVersion: 'contrato-xph-fiel-v2',
       issuedAt: now(),
       client: { name: client.name, phone: client.phone, email: client.email, address: client.address, honoreeName: client.honoreeName },
       event: { type: contractDraft.eventType || client.eventType, date: contractDraft.eventDate || client.eventDate, time: client.eventTime, location: client.eventLocation, serviceHours: Number(client.serviceHours || 0) },
@@ -759,11 +759,14 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
       payments,
       paymentPolicy: contractDraft.paymentPolicy,
       terms: [
-        'La fecha se considera reservada únicamente cuando el apartado haya sido confirmado como liquidado en el CRM.',
-        'Los pagos pendientes forman parte del plan de pagos, pero no se consideran dinero recibido hasta que sean marcados como liquidados.',
-        'Cualquier cambio de horario, ubicación, cobertura o servicio adicional deberá registrarse y aceptarse antes del evento.',
-        'La entrega y los tiempos de producción se realizarán conforme a los servicios finalmente contratados y registrados en este documento.',
-        'Las partes aceptan que las firmas electrónicas, la fecha de aceptación y la versión del documento se conservarán como evidencia del acuerdo.',
+        'Reserva y calendario de pagos: La fecha del evento queda formalmente reservada únicamente tras el pago del 40% inicial y la firma del contrato. El segundo pago del 30% deberá cubrirse, como fecha límite, antes de iniciar la cobertura el día del evento. El 30% restante se pagará contra entrega de los materiales contratados.',
+        'Entregables: Se entregarán exclusivamente las fotografías editadas, la galería digital privada, el video resumen y los demás productos expresamente incluidos en el paquete. La entrega será digital y en alta resolución, dentro del plazo acordado entre ambas partes.',
+        'Edición y colorimetría: La selección final, corrección de exposición, balance de blancos, contraste, colorimetría y estilo de edición forman parte del criterio creativo de XPH. El resultado conservará la línea visual mostrada en su portafolio. No se entregan archivos RAW ni proyectos editables. Las diferencias de color producidas por pantallas, impresoras o laboratorios externos no se consideran defectos del material.',
+        'Puntualidad y cobertura: La cobertura inicia a la hora acordada y comprende únicamente las horas continuas indicadas en el paquete. Los retrasos imputables al itinerario, ceremonia, recepción o participantes no extienden el tiempo contratado; las horas adicionales requieren disponibilidad, cotización y autorización.',
+        'Cambios al servicio: Cualquier modificación de fecha, horario, sede, itinerario, cobertura, paquete o servicio adicional deberá solicitarse y aprobarse por escrito antes del evento. Los cargos de traslado, permisos o accesos no contemplados serán cubiertos por EL CLIENTE.',
+        'Fuerza mayor, reprogramación y cancelación: En una cancelación unilateral de EL CLIENTE, el apartado inicial del 40% no será reembolsable por la reserva de fecha y gastos administrativos. Cuando exista fuerza mayor o caso fortuito comprobable, podrá reasignarse la fecha sujeto a disponibilidad y a los gastos ya realizados.',
+        'Conservación y respaldo: EL CLIENTE deberá descargar y respaldar sus entregables dentro del periodo comunicado. La galería privada y los respaldos de producción no constituyen almacenamiento indefinido.',
+        'Aceptación electrónica: La firma electrónica, la fecha y hora de aceptación, la versión congelada del documento y sus identificadores se conservarán como evidencia del acuerdo entre las partes.',
       ],
     };
   };
