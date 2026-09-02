@@ -555,6 +555,36 @@ async function forwardTransientBusinessAction(action, payload = {}, attempts = 3
   throw lastError;
 }
 
+async function forwardContractGenerateWithRecovery(contract, attempts = 3) {
+  const generationRequestId = randomBytes(18).toString('base64url');
+  const documentSnapshot = JSON.parse(String(contract.documentJson || '{}'));
+  documentSnapshot.generationRequestId = generationRequestId;
+  const requestContract = { ...contract, documentJson: JSON.stringify(documentSnapshot) };
+  let lastError;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await forwardBusinessAction('contractGenerate', { contract: requestContract });
+    } catch (error) {
+      lastError = error;
+      const message = String(error?.message || error);
+      const transient = /respuesta no válida|fetch failed|bad gateway|temporarily unavailable|solicitud no autorizada/i.test(message);
+      if (!transient || attempt >= attempts) throw error;
+
+      try {
+        const recovered = await forwardTransientBusinessAction('businessSnapshot', { force: true }, 2);
+        const existing = (recovered?.snapshot?.contracts || []).find(
+          (item) => item?.documentSnapshot?.generationRequestId === generationRequestId,
+        );
+        if (existing) return { status: 'success', contract: existing };
+      } catch (_) {}
+
+      await new Promise((resolve) => setTimeout(resolve, 600 * attempt));
+    }
+  }
+  throw lastError;
+}
+
 const CONTRACT_DELETE_STATE_ID = 'xph-system-contract-deletions';
 
 function contractDeletionIdsFromClients(clients = []) {
@@ -1747,7 +1777,7 @@ export default async function handler(req, res) {
         if (!clientId || !folio) return res.status(400).json({ status: 'error', message: 'Selecciona un prospecto o cliente y registra el folio.' });
         const snapshot = normalizeContractDocumentSnapshot(submitted.snapshot, documentType);
         snapshot.paymentPolicy = paymentPolicy;
-        const result = await forwardBusinessAction('contractGenerate', { contract: { clientId, folio, documentType, paymentPolicy, templateVersion: snapshot.templateVersion, documentJson: JSON.stringify(snapshot) } });
+        const result = await forwardContractGenerateWithRecovery({ clientId, folio, documentType, paymentPolicy, templateVersion: snapshot.templateVersion, documentJson: JSON.stringify(snapshot) });
         return res.status(200).json({ status: 'success', contract: result.contract });
       }
       if (action === 'adminContractDocument') {
