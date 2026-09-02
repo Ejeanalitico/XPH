@@ -1,0 +1,44 @@
+name: Install signed contract review routing
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - scripts/patch-contract-signed-review.py
+      - .github/workflows/install-contract-signed-review.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Route signed reviews to signed PDFs
+        run: python3 scripts/patch-contract-signed-review.py
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - name: Verify signed review routing
+        run: |
+          grep -Fq "contract.documentSnapshot && !['Firmado por cliente', 'Finalizado'].includes(contract.status)" src/components/BusinessAdminPanel.tsx
+          grep -Fq "adminContractPdfUrl(contract.id, 'latest', contractPdfRevision(contract))" src/components/BusinessAdminPanel.tsx
+      - name: Commit feature
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/components/BusinessAdminPanel.tsx
+          git commit -m "fix(contracts): show signed pdf after client signature"
+          git push origin master
