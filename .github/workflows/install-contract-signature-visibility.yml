@@ -1,0 +1,48 @@
+name: Install contract signature visibility fix
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - scripts/patch-contract-signature-visibility.py
+      - .github/workflows/install-contract-signature-visibility.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Patch contract signature visibility
+        run: python3 scripts/patch-contract-signature-visibility.py
+      - name: Syntax check proxy
+        run: node --check api/proxy.js
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - name: Verify signature invariants
+        run: |
+          ! grep -q 'Signature label="EL CLIENTE" name={snapshot.client.name}' src/components/ContractDocument.tsx
+          grep -q 'Fecha y hora de firma:' api/proxy.js
+          grep -q 'IP:' api/proxy.js
+          grep -q 'Fecha y hora de autorización:' api/proxy.js
+      - name: Commit feature
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/components/ContractDocument.tsx api/proxy.js
+          git commit -m "fix(contracts): hide signer identity until signature"
+          git push origin master
