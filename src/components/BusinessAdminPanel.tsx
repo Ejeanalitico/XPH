@@ -28,12 +28,14 @@ import {
 } from 'lucide-react';
 import {
   createContractSigningLink,
+  createGeneratedBusinessContract,
   cacheBusinessClients,
   cacheBusinessSnapshot,
   convertProspectToClient,
   createCrmFollowUp,
   finalizeBusinessContract,
   loadBusinessSnapshot,
+  loadAdminContractDocument,
   readCachedBusinessSnapshot,
   saveBusinessExpense,
   saveBusinessPayment,
@@ -59,12 +61,14 @@ import {
   FinancialAdjustment,
   FinancialAdjustmentCategory,
   InternalCalendarEvent,
+  ContractDocumentSnapshot,
 } from '../types/business';
 import { SignaturePad } from './SignaturePad';
 import { ClientOperationsPanel } from './ClientOperationsPanel';
 import { TeamAdminPanel } from './TeamAdminPanel';
 import { GmailAdminPanel } from './GmailAdminPanel';
 import { calculateFinancialSummary, collectedForClient, collectedPaymentAmount, isOverduePayment, pendingPaymentAmount } from '../utils/financialRules.js';
+import { ContractDocument } from './ContractDocument';
 
 const SalesExecutionCenter = React.lazy(() => import('./SalesExecutionCenter'));
 
@@ -239,8 +243,9 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
   const [realBalance, setRealBalance] = useState('');
   const [adjustmentCategory, setAdjustmentCategory] = useState<FinancialAdjustmentCategory>('Pendiente por identificar');
   const [adjustmentNotes, setAdjustmentNotes] = useState('');
-  const [contractDraft, setContractDraft] = useState({ clientId: '', folio: '', eventType: '', eventDate: '', file: null as File | null });
+  const [contractDraft, setContractDraft] = useState({ clientId: '', folio: '', eventType: '', eventDate: '', documentType: 'CONTRATO' as 'CONTRATO' | 'COTIZACION', paymentPolicy: '40-30-30' as '40-30-30' | 'PERSONALIZADA', file: null as File | null });
   const [latestLink, setLatestLink] = useState('');
+  const [contractPreview, setContractPreview] = useState<BusinessContract | null>(null);
   const [ownerSignature, setOwnerSignature] = useState('');
   const [query, setQuery] = useState('');
   const [selectedClientId, setSelectedClientId] = useState('');
@@ -698,6 +703,65 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
     finally { setBusy(false); }
   };
 
+  const buildContractSnapshot = (client: CrmClient): ContractDocumentSnapshot => {
+    const packageSnapshot = snapshot.packageSnapshots.find((item) => item.clientId === client.id && item.status === 'ACTIVO');
+    const services = snapshot.services.filter((item) => item.clientId === client.id && item.included && item.status !== 'Anulado');
+    const addons = snapshot.addons.filter((item) => item.clientId === client.id && item.status !== 'Anulado');
+    const registeredPayments = snapshot.payments.filter((item) => item.clientId === client.id && item.status !== 'Anulado').sort((a, b) => Number(a.installmentNumber || 0) - Number(b.installmentNumber || 0));
+    const packageBase = Number(packageSnapshot?.basePrice || Math.max(0, Number(client.totalAmount || 0) - addons.reduce((sum, item) => sum + Number(item.total || 0), 0)));
+    const additions = addons.reduce((sum, item) => sum + Number(item.total || 0), 0);
+    const discount = Number(packageSnapshot?.discount || 0);
+    const total = Number(client.totalAmount || packageBase + additions - discount);
+    const defaultPlan = [
+      { concept: 'Apartado y reserva de fecha', percentage: 40, amount: total * .4, dueDate: '', status: 'Pendiente' },
+      { concept: 'Segundo pago', percentage: 30, amount: total * .3, dueDate: '', status: 'Pendiente' },
+      { concept: 'Pago final', percentage: 30, amount: total * .3, dueDate: client.eventDate || '', status: 'Pendiente' },
+    ];
+    const payments = registeredPayments.length ? registeredPayments.map((item) => ({ concept: item.concept || `Pago ${item.installmentNumber || ''}`.trim(), percentage: Number(item.percentage || 0), amount: Number(item.plannedAmount || 0), dueDate: item.dueDate || '', status: item.status })) : defaultPlan;
+    return {
+      documentType: contractDraft.documentType,
+      templateVersion: 'canva-xph-v1',
+      issuedAt: now(),
+      client: { name: client.name, phone: client.phone, email: client.email, address: client.address, honoreeName: client.honoreeName },
+      event: { type: contractDraft.eventType || client.eventType, date: contractDraft.eventDate || client.eventDate, time: client.eventTime, location: client.eventLocation, serviceHours: Number(client.serviceHours || 0) },
+      commercial: { packageName: packageSnapshot?.packageName || client.packageName, packageBase, additions, discount, total, promotion: packageSnapshot?.promotion || '' },
+      services: services.map((item) => ({ concept: item.concept, quantity: Number(item.quantity || 0), notes: item.notes || '' })),
+      addons: addons.map((item) => ({ concept: item.concept, quantity: Number(item.quantity || 0), unitPrice: Number(item.unitPrice || 0), total: Number(item.total || 0), notes: item.notes || '' })),
+      payments,
+      paymentPolicy: contractDraft.paymentPolicy,
+      terms: [
+        'La fecha se considera reservada únicamente cuando el apartado haya sido confirmado como liquidado en el CRM.',
+        'Los pagos pendientes forman parte del plan de pagos, pero no se consideran dinero recibido hasta que sean marcados como liquidados.',
+        'Cualquier cambio de horario, ubicación, cobertura o servicio adicional deberá registrarse y aceptarse antes del evento.',
+        'La entrega y los tiempos de producción se realizarán conforme a los servicios finalmente contratados y registrados en este documento.',
+        'Las partes aceptan que las firmas electrónicas, la fecha de aceptación y la versión del documento se conservarán como evidencia del acuerdo.',
+      ],
+    };
+  };
+
+  const generateContractDocument = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const client = snapshot.clients.find((item) => item.id === contractDraft.clientId);
+    if (!client || !contractDraft.folio) return setModalNotice('Selecciona un prospecto o cliente y registra el folio.');
+    if (Number(client.totalAmount || 0) <= 0) return setModalNotice('Registra primero el total del servicio en la ficha del prospecto o cliente.');
+    setBusy(true);
+    try {
+      const documentSnapshot = buildContractSnapshot(client);
+      const saved = await createGeneratedBusinessContract({ clientId: client.id, folio: contractDraft.folio, documentType: contractDraft.documentType, paymentPolicy: contractDraft.paymentPolicy, snapshot: documentSnapshot });
+      setSnapshot((prev) => ({ ...prev, contracts: [saved, ...prev.contracts.filter((item) => item.id !== saved.id)] }));
+      setContractPreview(saved);
+      setModalNotice(`${contractDraft.documentType === 'COTIZACION' ? 'Cotización' : 'Contrato'} generado con la información congelada del CRM.`);
+    } catch (error: any) { setModalNotice(error?.message || 'No se pudo generar el documento.'); }
+    finally { setBusy(false); }
+  };
+
+  const previewContractDocument = async (contract: BusinessContract) => {
+    setBusy(true);
+    try { setContractPreview(await loadAdminContractDocument(contract.id)); }
+    catch (error: any) { setModalNotice(error?.message || 'No se pudo abrir el documento.'); }
+    finally { setBusy(false); }
+  };
+
   const uploadContract = async (event: React.FormEvent) => {
     event.preventDefault();
     const client = snapshot.clients.find((item) => item.id === contractDraft.clientId);
@@ -713,7 +777,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
         file: contractDraft.file,
       });
       setSnapshot((prev) => ({ ...prev, contracts: [saved, ...prev.contracts.filter((item) => item.id !== saved.id)] }));
-      setContractDraft({ clientId: '', folio: '', eventType: '', eventDate: '', file: null });
+      setContractDraft({ clientId: '', folio: '', eventType: '', eventDate: '', documentType: 'CONTRATO', paymentPolicy: '40-30-30', file: null });
       setModalNotice('Contrato guardado de forma privada.');
     } catch (error: any) { setModalNotice(error?.message || 'No se pudo guardar el contrato.'); }
     finally { setBusy(false); }
@@ -726,7 +790,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
       setLatestLink(result.url);
       await navigator.clipboard.writeText(result.url).catch(() => null);
       await refresh();
-      setModalNotice('Liga móvil creada y copiada. Caduca en 72 horas.');
+      setModalNotice('Liga privada creada y copiada. Funciona en computadora y celular, y caduca en 72 horas.');
     } catch (error: any) { setModalNotice(error?.message || 'No se pudo crear la liga.'); }
     finally { setBusy(false); }
   };
@@ -934,19 +998,32 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
 
       {tab === 'contracts' && (
         <div className="space-y-5">
-          <form onSubmit={uploadContract} className="grid gap-3 rounded-2xl border border-white/10 bg-[#161C28] p-5 lg:grid-cols-5">
+          <form onSubmit={generateContractDocument} className="rounded-2xl border border-[#D4AF37]/30 bg-[#161C28] p-5">
+            <div className="mb-4"><p className="text-xs font-semibold uppercase tracking-[.18em] text-[#D4AF37]">Nuevo documento digital</p><h3 className="mt-1 text-xl font-bold">Generar desde el CRM</h3><p className="mt-1 text-sm text-gray-400">Crea una versión HTML rápida y congela los datos actuales sin modificar el paquete base.</p></div>
+            <div className="grid gap-3 lg:grid-cols-3">
+              <select value={contractDraft.documentType} onChange={(event) => setContractDraft((prev) => ({ ...prev, documentType: event.target.value as 'CONTRATO' | 'COTIZACION' }))} className={inputClass}><option value="CONTRATO">Contrato</option><option value="COTIZACION">Cotización</option></select>
+              <select value={contractDraft.clientId} onChange={(event) => { const client = snapshot.clients.find((item) => item.id === event.target.value); setContractDraft((prev) => ({ ...prev, clientId: event.target.value, eventType: client?.eventType || '', eventDate: client?.eventDate || '' })); }} className={inputClass} required><option value="">Selecciona prospecto o cliente</option>{snapshot.clients.map((client) => <option key={client.id} value={client.id}>{client.name} · {client.recordType}</option>)}</select>
+              <input value={contractDraft.folio} onChange={(event) => setContractDraft((prev) => ({ ...prev, folio: event.target.value }))} placeholder="Folio" className={inputClass} required />
+              <input value={contractDraft.eventType} onChange={(event) => setContractDraft((prev) => ({ ...prev, eventType: event.target.value }))} placeholder="Tipo de evento" className={inputClass} required />
+              <input type="date" value={contractDraft.eventDate} onChange={(event) => setContractDraft((prev) => ({ ...prev, eventDate: event.target.value }))} className={inputClass} required />
+              <select value={contractDraft.paymentPolicy} onChange={(event) => setContractDraft((prev) => ({ ...prev, paymentPolicy: event.target.value as '40-30-30' | 'PERSONALIZADA' }))} className={inputClass}><option value="40-30-30">Política normal 40% / 30% / 30%</option><option value="PERSONALIZADA">Excepción / plan personalizado registrado</option></select>
+            </div>
+            <button type="submit" disabled={busy} className="mt-4 w-full rounded-xl bg-[#D4AF37] px-4 py-3 text-sm font-bold text-black disabled:opacity-40"><FileSignature className="mr-2 inline h-4 w-4" />Generar y revisar</button>
+          </form>
+
+          <details className="rounded-2xl border border-white/10 bg-[#161C28]"><summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-gray-300">Compatibilidad: cargar un contrato PDF anterior</summary><form onSubmit={uploadContract} className="grid gap-3 border-t border-white/10 p-5 lg:grid-cols-5">
             <select value={contractDraft.clientId} onChange={(event) => { const client = snapshot.clients.find((item) => item.id === event.target.value); setContractDraft((prev) => ({ ...prev, clientId: event.target.value, eventType: client?.eventType || '', eventDate: client?.eventDate || '' })); }} className="rounded-xl border border-white/10 bg-[#0B0F17] px-3 py-3 text-sm" required><option value="">Selecciona cliente</option>{snapshot.clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select>
             <input value={contractDraft.folio} onChange={(event) => setContractDraft((prev) => ({ ...prev, folio: event.target.value }))} placeholder="Folio" className="rounded-xl border border-white/10 bg-[#0B0F17] px-3 py-3 text-sm" required />
             <input value={contractDraft.eventType} onChange={(event) => setContractDraft((prev) => ({ ...prev, eventType: event.target.value }))} placeholder="Tipo de evento" className="rounded-xl border border-white/10 bg-[#0B0F17] px-3 py-3 text-sm" required />
             <input type="date" value={contractDraft.eventDate} onChange={(event) => setContractDraft((prev) => ({ ...prev, eventDate: event.target.value }))} className="rounded-xl border border-white/10 bg-[#0B0F17] px-3 py-3 text-sm" required />
             <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-[#D4AF37]/50 px-3 py-3 text-sm text-[#F5D76E]"><BriefcaseBusiness className="h-4 w-4" />{contractDraft.file?.name || 'Elegir PDF (máx. 5 MB)'}<input type="file" accept="application/pdf" className="hidden" onChange={(event) => setContractDraft((prev) => ({ ...prev, file: event.target.files?.[0] || null }))} /></label>
             <button type="submit" disabled={busy} className="rounded-xl bg-[#D4AF37] px-4 py-3 text-sm font-bold text-black lg:col-span-5"><Save className="mr-2 inline h-4 w-4" />Guardar contrato privado</button>
-          </form>
+          </form></details>
 
           {latestLink && <div className="flex flex-col gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 sm:flex-row sm:items-center"><input readOnly value={latestLink} className="min-w-0 flex-1 rounded-xl border border-white/10 bg-[#0B0F17] px-3 py-2 text-xs" /><button onClick={() => navigator.clipboard.writeText(latestLink)} className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black"><ClipboardCopy className="h-4 w-4" />Copiar</button></div>}
 
           <div className="grid gap-4 lg:grid-cols-[1.35fr_.65fr]">
-            <div className="space-y-3">{snapshot.contracts.map((contract) => <article key={contract.id} className="rounded-2xl border border-white/10 bg-[#161C28] p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><div className="font-semibold">{contract.clientName}</div><div className="text-xs text-gray-400">{contract.folio} · {contract.eventType} · {contract.eventDate}</div><div className="mt-2 text-xs text-[#F5D76E]">{contract.status}</div>{contract.clientSignedAt && <div className="mt-1 text-[11px] text-emerald-300">Firma del cliente: {dateTimeDisplay(contract.clientSignedAt)}</div>}{contract.ownerAuthorizedAt && <div className="mt-1 text-[11px] text-emerald-300">Firma de Javier: {dateTimeDisplay(contract.ownerAuthorizedAt)}</div>}</div><div className="flex flex-wrap gap-2"><a href={adminContractPdfUrl(contract.id, 'latest', contractPdfRevision(contract))} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-xs"><Eye className="h-4 w-4" />{contractViewLabel(contract)}</a><button onClick={() => createLink(contract)} disabled={busy || contract.status === 'Finalizado'} className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-xs disabled:opacity-40"><Send className="h-4 w-4" />Crear liga móvil</button>{contract.status === 'Firmado por cliente' && <button onClick={() => finalize(contract)} disabled={busy || !snapshot.ownerSignatureConfigured} className="inline-flex items-center gap-2 rounded-xl bg-[#D4AF37] px-3 py-2 text-xs font-bold text-black disabled:opacity-40"><CheckCircle2 className="h-4 w-4" />Autorizar y finalizar</button>}</div></div></article>)}{!snapshot.contracts.length && <div className="rounded-2xl border border-white/10 bg-[#161C28] p-10 text-center text-gray-500">Aún no hay contratos cargados.</div>}</div>
+            <div className="space-y-3">{snapshot.contracts.map((contract) => <article key={contract.id} className="rounded-2xl border border-white/10 bg-[#161C28] p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><div className="font-semibold">{contract.clientName}</div><div className="text-xs text-gray-400">{contract.folio} · {contract.eventType} · {contract.eventDate}</div><div className="mt-2 flex flex-wrap gap-2 text-xs"><span className="text-[#F5D76E]">{contract.status}</span>{contract.documentSnapshot && <span className="rounded-full bg-sky-400/10 px-2 py-0.5 text-sky-300">{contract.documentType === 'COTIZACION' ? 'Cotización HTML' : 'Contrato HTML'}</span>}{contract.documentSnapshot && <span className="text-gray-500">Cliente: {contract.clientOpenCount || 0}/{contract.maxClientOpens || 2} accesos</span>}</div>{contract.clientSignedAt && <div className="mt-1 text-[11px] text-emerald-300">Firma del cliente: {dateTimeDisplay(contract.clientSignedAt)}</div>}{contract.ownerAuthorizedAt && <div className="mt-1 text-[11px] text-emerald-300">Firma de Javier: {dateTimeDisplay(contract.ownerAuthorizedAt)}</div>}</div><div className="flex flex-wrap gap-2">{contract.documentSnapshot ? <button onClick={() => previewContractDocument(contract)} disabled={busy} className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-xs"><Eye className="h-4 w-4" />Revisar documento</button> : <a href={adminContractPdfUrl(contract.id, 'latest', contractPdfRevision(contract))} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-xs"><Eye className="h-4 w-4" />{contractViewLabel(contract)}</a>}<button onClick={() => createLink(contract)} disabled={busy || contract.status === 'Finalizado' || contract.documentType === 'COTIZACION'} className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-xs disabled:opacity-40"><Send className="h-4 w-4" />Crear liga privada</button>{contract.status === 'Firmado por cliente' && <button onClick={() => finalize(contract)} disabled={busy || !snapshot.ownerSignatureConfigured} className="inline-flex items-center gap-2 rounded-xl bg-[#D4AF37] px-3 py-2 text-xs font-bold text-black disabled:opacity-40"><CheckCircle2 className="h-4 w-4" />Autorizar y finalizar</button>}</div></div></article>)}{!snapshot.contracts.length && <div className="rounded-2xl border border-white/10 bg-[#161C28] p-10 text-center text-gray-500">Aún no hay contratos ni cotizaciones.</div>}</div>
             <aside className="rounded-2xl border border-white/10 bg-[#161C28] p-5 space-y-4"><div><div className="flex items-center gap-2 font-semibold"><PenLine className="h-4 w-4 text-[#D4AF37]" />Firma de Javier</div><p className="mt-1 text-xs text-gray-400">Se guarda privada y nunca se aplica automáticamente.</p></div><SignaturePad onChange={setOwnerSignature} label="Firma de autorización" /><button onClick={persistOwnerSignature} disabled={busy || !ownerSignature} className="w-full rounded-xl bg-white px-4 py-3 text-sm font-bold text-black disabled:opacity-40">{snapshot.ownerSignatureConfigured ? 'Reemplazar firma guardada' : 'Guardar firma'}</button>{snapshot.ownerSignatureConfigured && <p className="text-xs text-emerald-300">Firma privada configurada.</p>}</aside>
           </div>
         </div>
@@ -956,6 +1033,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
       {tab === 'email' && session.role === 'SUPER_ADMIN' && <GmailAdminPanel snapshot={snapshot} onSnapshotChange={setSnapshot} onRefresh={refresh} notify={notify} />}
       {tab === 'account' && <section className="mx-auto max-w-3xl rounded-2xl border border-white/10 bg-[#161C28] p-6"><div className="flex items-center gap-3"><UserCircle className="h-10 w-10 text-[#D4AF37]" /><div><h3 className="text-xl font-bold">{session.role === 'SUPER_ADMIN' ? 'Javier García' : currentTeamUser?.displayName || `${currentTeamUser?.name || ''} ${currentTeamUser?.lastName || ''}`.trim() || session.email}</h3><p className="text-sm text-gray-400">{session.role === 'SUPER_ADMIN' ? 'Super Admin' : currentTeamUser?.functionName || 'Colaborador'}</p></div></div><dl className="mt-6 grid gap-3 sm:grid-cols-2"><div className="rounded-xl border border-white/10 p-4"><dt className="text-xs text-gray-500">Correo</dt><dd className="mt-1 break-all text-sm">{session.email || currentTeamUser?.email || 'Sin correo'}</dd></div><div className="rounded-xl border border-white/10 p-4"><dt className="text-xs text-gray-500">Estado de Google Calendar</dt><dd className={`mt-1 text-sm font-semibold ${session.role === 'SUPER_ADMIN' || currentTeamUser?.calendarConnected ? 'text-emerald-300' : 'text-amber-300'}`}>{session.role === 'SUPER_ADMIN' ? 'Cuenta principal administrada' : currentTeamUser?.calendarConnected ? 'Conectado' : 'Pendiente de conectar mediante invitación'}</dd></div><div className="rounded-xl border border-white/10 p-4 sm:col-span-2"><dt className="text-xs text-gray-500">Permisos vigentes</dt><dd className="mt-2 flex flex-wrap gap-2">{session.role === 'SUPER_ADMIN' ? <span className="rounded-full bg-emerald-400/10 px-3 py-1 text-xs text-emerald-300">Acceso completo</span> : session.permissions.map((permission) => <span key={permission} className="rounded-full border border-white/10 px-3 py-1 text-xs text-gray-300">{permission}</span>)}</dd></div></dl><p className="mt-5 text-xs leading-5 text-gray-500">Los permisos solo los puede cambiar el Super Admin. La función visible del colaborador no concede privilegios administrativos.</p></section>}
       </div>
+      {contractPreview?.documentSnapshot && <div className="fixed inset-0 z-[110] overflow-y-auto bg-black/85 p-3 backdrop-blur-sm sm:p-6" role="dialog" aria-modal="true" aria-label={`Vista previa ${contractPreview.folio}`}><div className="mx-auto mb-6 flex max-w-[850px] items-center justify-between gap-3 rounded-xl border border-white/15 bg-[#161C28] p-3 text-white"><div><p className="text-xs text-[#D4AF37]">Revisión administrativa</p><p className="font-semibold">{contractPreview.folio} · versión congelada</p></div><button type="button" onClick={() => setContractPreview(null)} className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-4 py-2 text-sm"><X className="h-4 w-4" />Cerrar</button></div><ContractDocument snapshot={contractPreview.documentSnapshot} folio={contractPreview.folio} /></div>}
       {internalEventDraft && session.role === 'SUPER_ADMIN' && <div className="fixed inset-0 z-[100] grid place-items-center overflow-y-auto bg-black/75 p-4"><form onSubmit={persistInternalEvent} className="my-6 w-full max-w-2xl rounded-2xl border border-violet-400/25 bg-[#161C28] p-5 shadow-2xl"><h3 className="text-lg font-semibold text-violet-100">Evento interno</h3><div className="mt-4 grid gap-3 sm:grid-cols-2"><input value={internalEventDraft.title || ''} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, title: event.target.value })} placeholder="Título" className={`${inputClass} sm:col-span-2`} required /><select value={internalEventDraft.activityType || 'Junta'} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, activityType: event.target.value })} className={inputClass}>{['Junta','Capacitación','Mantenimiento','Compra de equipo','Bloqueo personal','Día no disponible','Otro'].map((item) => <option key={item}>{item}</option>)}</select><select value={internalEventDraft.visibility || 'SUPER_ADMIN'} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, visibility: event.target.value as InternalCalendarEvent['visibility'] })} className={inputClass}><option value="SUPER_ADMIN">Solo Super Admin</option><option value="SELECTED">Usuarios seleccionados</option></select><label className="text-xs text-gray-400">Fecha inicial<input type="date" value={dateValue(internalEventDraft.startDate)} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, startDate: event.target.value })} className={`${inputClass} mt-1`} required /></label><label className="text-xs text-gray-400">Hora inicial<input type="time" value={timeValue(internalEventDraft.startTime)} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, startTime: event.target.value })} className={`${inputClass} mt-1`} /></label><label className="text-xs text-gray-400">Fecha final<input type="date" value={dateValue(internalEventDraft.endDate)} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, endDate: event.target.value })} className={`${inputClass} mt-1`} /></label><label className="text-xs text-gray-400">Hora final<input type="time" value={timeValue(internalEventDraft.endTime)} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, endTime: event.target.value })} className={`${inputClass} mt-1`} /></label><input value={internalEventDraft.location || ''} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, location: event.target.value })} placeholder="Lugar" className={`${inputClass} sm:col-span-2`} /><textarea value={internalEventDraft.notes || ''} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, notes: event.target.value })} placeholder="Notas" className={`${inputClass} min-h-24 sm:col-span-2`} />{internalEventDraft.visibility === 'SELECTED' && <fieldset className="grid gap-2 rounded-xl border border-white/10 p-3 sm:col-span-2 sm:grid-cols-2"><legend className="px-2 text-xs text-gray-300">Usuarios con visibilidad</legend>{snapshot.users.filter((item) => item.status === 'ACTIVO').map((user) => <label key={user.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={(internalEventDraft.userIds || []).includes(user.id)} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, userIds: event.target.checked ? [...(internalEventDraft.userIds || []), user.id] : (internalEventDraft.userIds || []).filter((id) => id !== user.id) })} />{user.displayName || `${user.name} ${user.lastName}`}</label>)}</fieldset>}<select value={internalEventDraft.status || 'ACTIVO'} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, status: event.target.value as InternalCalendarEvent['status'] })} className={inputClass}><option>ACTIVO</option><option>CANCELADO</option></select></div><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setInternalEventDraft(null)} className="rounded-xl border border-white/15 px-4 py-2.5 text-sm">Cancelar</button><button disabled={busy} className="rounded-xl bg-violet-200 px-4 py-2.5 text-sm font-bold text-violet-950">Guardar y sincronizar</button></div></form></div>}
     </section>
   );
