@@ -1,0 +1,40 @@
+name: Install resilient contract delete storage
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - scripts/patch-contract-delete-storage.py
+      - .github/workflows/install-contract-delete-storage.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Patch contract delete storage
+        run: python3 scripts/patch-contract-delete-storage.py
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - name: Commit feature
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/utils/adminApi.ts api/proxy.js
+          git commit -m "fix(contracts): remove config dependency from delete"
+          git push origin master
