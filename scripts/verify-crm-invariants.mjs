@@ -37,6 +37,7 @@ assert.deepEqual(clientCalendar, ['2026-11-02', '2026-09-20']);
 // Contratos, sincronización, recordatorios y seguridad permanecen ligados a identificadores estables.
 assert.match(appsScript, /size > 5000000[\s\S]{0,120}máximo 5 MB/);
 assert.match(appsScript, /payment\.transactionId[\s\S]{0,120}existingPayment\.transactionId/);
+assert.match(appsScript, /\['Prospecto', 'Cliente'\][\s\S]{0,120}prospecto o cliente válido para asignar el paquete/);
 assert.match(appsScript, /syncClientAssignments\(ss, calendarClient, eventReady, sessionReady\)/);
 assert.match(appsScript, /reminder7DaysSent/);
 assert.match(appsScript, /reminder1DaySent/);
@@ -52,6 +53,8 @@ assert.match(businessPanel, /border-yellow-300 bg-yellow-300\/15/);
 assert.match(businessPanel, /border-emerald-400 bg-emerald-500\/15/);
 assert.match(businessPanel, /border-red-400 bg-red-500\/15/);
 assert.match(businessPanel, /Solo la fecha del próximo contacto/);
+assert.match(businessPanel, /const dateTimeLocalValue/);
+assert.match(businessPanel, /dateTimeLocalValue\(inlineDraft\.nextActionAt\)/);
 
 // El nuevo documento conserva una instantánea, usa 40-30-30 por defecto y limita sesiones sin contar recargas.
 assert.match(businessPanel, /percentage: 40, amount: total \* \.4/);
