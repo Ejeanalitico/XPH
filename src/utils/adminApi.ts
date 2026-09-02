@@ -229,49 +229,15 @@ function normalizeBusinessSnapshot(snapshot?: Partial<BusinessSnapshot> | null):
   };
 }
 
-type DeletedBusinessContractState = {
-  seoSettings: Record<string, any>;
-  ids: string[];
-};
-
-async function loadDeletedBusinessContractState(): Promise<DeletedBusinessContractState> {
-  try {
-    const config = await loadAdminConfig(activeAdminSession);
-    const seoSettings = config?.seoSettings && typeof config.seoSettings === 'object' && !Array.isArray(config.seoSettings)
-      ? { ...config.seoSettings }
-      : {};
-    const ids = Array.isArray(seoSettings.deletedContractIds)
-      ? seoSettings.deletedContractIds.map((id: unknown) => String(id || '').trim()).filter(Boolean)
-      : [];
-    return { seoSettings, ids };
-  } catch (_) {
-    return { seoSettings: {}, ids: [] };
-  }
-}
-
 export async function loadBusinessSnapshot(force = false): Promise<BusinessSnapshot> {
-  const [data, deletedState] = await Promise.all([
-    adminBusinessRequest<{ snapshot: BusinessSnapshot }>('adminBusinessSnapshot', { force }),
-    loadDeletedBusinessContractState(),
-  ]);
-  const snapshot = normalizeBusinessSnapshot(data.snapshot);
-  if (!deletedState.ids.length) return snapshot;
-  const deleted = new Set(deletedState.ids);
-  return { ...snapshot, contracts: snapshot.contracts.filter((contract) => !deleted.has(String(contract.id))) };
+  const data = await adminBusinessRequest<{ snapshot: BusinessSnapshot }>('adminBusinessSnapshot', { force });
+  return normalizeBusinessSnapshot(data.snapshot);
 }
 
 export async function deleteBusinessContract(contractId: string): Promise<void> {
   const id = String(contractId || '').trim();
   if (!id) throw new Error('Contrato no identificado.');
-  const deletedState = await loadDeletedBusinessContractState();
-  if (!deletedState.ids.includes(id)) {
-    await saveAdminConfig(
-      activeAdminSession,
-      { seoSettings: { ...deletedState.seoSettings, deletedContractIds: [...deletedState.ids, id] } },
-      'CONTRATO_ELIMINADO_PANEL',
-      'Contrato ' + id + ' eliminado del panel administrativo',
-    );
-  }
+  await adminBusinessRequest('adminContractDelete', { contractId: id });
   businessSnapshotCache = null;
 }
 
