@@ -85,6 +85,21 @@ export interface CrmFollowUp {
   createdAt: string;
 }
 
+export interface WhatsAppHistoryItem {
+  id: string;
+  clientId: string;
+  direction: 'ENTRANTE' | 'SALIENTE' | string;
+  phone: string;
+  contactName: string;
+  type: string;
+  message: string;
+  status: string;
+  occurredAt: string;
+  phoneNumberId: string;
+  businessAccountId: string;
+  userId: string;
+}
+
 export type ExpenseCategory =
   | 'Equipo y fotografía'
   | 'Maquillaje e insumos'
@@ -456,6 +471,7 @@ export interface BusinessSnapshot {
   gmailConfig: GmailConfig | null;
   emailTemplates: EmailTemplate[];
   emailHistory: EmailHistory[];
+  whatsappHistory: WhatsAppHistoryItem[];
   notifications: CrmNotification[];
   auditLog: CrmAuditEntry[];
   galleries: ClientGalleryRecord[];

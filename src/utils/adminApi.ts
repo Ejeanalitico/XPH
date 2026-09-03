@@ -220,6 +220,7 @@ function normalizeBusinessSnapshot(snapshot?: Partial<BusinessSnapshot> | null):
     gmailConfig: snapshot?.gmailConfig || null,
     emailTemplates: Array.isArray(snapshot?.emailTemplates) ? snapshot.emailTemplates : [],
     emailHistory: Array.isArray(snapshot?.emailHistory) ? snapshot.emailHistory : [],
+    whatsappHistory: Array.isArray(snapshot?.whatsappHistory) ? snapshot.whatsappHistory : [],
     notifications: Array.isArray(snapshot?.notifications) ? snapshot.notifications : [],
     auditLog: Array.isArray(snapshot?.auditLog) ? snapshot.auditLog : [],
     galleries: Array.isArray(snapshot?.galleries) ? snapshot.galleries : [],
@@ -287,6 +288,15 @@ export async function saveCrmClient(client: Partial<CrmClient>): Promise<CrmClie
 
 export async function createCrmFollowUp(followUp: Partial<CrmFollowUp> & { recordId: string }): Promise<{ followUp: CrmFollowUp; client: CrmClient }> {
   return await adminBusinessRequest('adminFollowUpCreate', { followUp });
+}
+
+export async function loadWhatsAppStatus(): Promise<{ configured: boolean; businessAccountId: string; phoneNumberId: string; displayNumber: string }> {
+  const data = await adminBusinessRequest<{ whatsapp: { configured: boolean; businessAccountId: string; phoneNumberId: string; displayNumber: string } }>('adminWhatsAppStatus');
+  return data.whatsapp;
+}
+
+export async function sendWhatsAppMessage(clientId: string, message: string): Promise<void> {
+  await adminBusinessRequest('adminWhatsAppSend', { clientId, message });
 }
 
 export async function convertProspectToClient(prospectId: string): Promise<CrmClient> {

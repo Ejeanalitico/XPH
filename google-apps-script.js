@@ -135,6 +135,7 @@ function initSpreadsheetSheets(ss) {
       'Gmail_Config': ['id', 'enabled', 'connectedEmail', 'senderName', 'replyTo', 'signatureHtml', 'logoFileId', 'autoPaymentReceived', 'autoPaymentDue', 'autoEventReminders', 'updatedAt'],
       'Plantillas_Email': ['id', 'name', 'subject', 'htmlBody', 'status', 'updatedAt'],
       'Historial_Correos': ['id', 'clientId', 'prospectId', 'sentAt', 'recipient', 'subject', 'templateId', 'status', 'userId', 'mode', 'gmailMessageId', 'error'],
+      'Historial_WhatsApp': ['id', 'clientId', 'direction', 'phone', 'contactName', 'type', 'message', 'status', 'occurredAt', 'phoneNumberId', 'businessAccountId', 'userId', 'rawJson'],
       'Notificaciones_CRM': ['id', 'type', 'title', 'message', 'relatedId', 'userId', 'status', 'dueAt', 'dedupeKey', 'createdAt', 'updatedAt'],
       'Galerias_Clientes': ['id', 'clientId', 'eventId', 'title', 'slug', 'accessToken', 'rootFolderId', 'photosFolderId', 'folderUrl', 'galleryUrl', 'status', 'createdAt', 'updatedAt'],
       'Eventos_Internos': ['id', 'title', 'activityType', 'startDate', 'startTime', 'endDate', 'endTime', 'location', 'notes', 'visibility', 'userIdsJson', 'status', 'calendarEventId', 'syncStatus', 'createdAt', 'updatedAt'],
@@ -488,6 +489,7 @@ var BUSINESS_HEADERS = {
   gmailConfig: ['id', 'enabled', 'connectedEmail', 'senderName', 'replyTo', 'signatureHtml', 'logoFileId', 'autoPaymentReceived', 'autoPaymentDue', 'autoEventReminders', 'updatedAt'],
   emailTemplates: ['id', 'name', 'subject', 'htmlBody', 'status', 'updatedAt'],
   emailHistory: ['id', 'clientId', 'prospectId', 'sentAt', 'recipient', 'subject', 'templateId', 'status', 'userId', 'mode', 'gmailMessageId', 'error'],
+  whatsappHistory: ['id', 'clientId', 'direction', 'phone', 'contactName', 'type', 'message', 'status', 'occurredAt', 'phoneNumberId', 'businessAccountId', 'userId', 'rawJson'],
   notifications: ['id', 'type', 'title', 'message', 'relatedId', 'userId', 'status', 'dueAt', 'dedupeKey', 'createdAt', 'updatedAt'],
   galleries: ['id', 'clientId', 'eventId', 'title', 'slug', 'accessToken', 'rootFolderId', 'photosFolderId', 'folderUrl', 'galleryUrl', 'status', 'createdAt', 'updatedAt'],
   internalEvents: ['id', 'title', 'activityType', 'startDate', 'startTime', 'endDate', 'endTime', 'location', 'notes', 'visibility', 'userIdsJson', 'status', 'calendarEventId', 'syncStatus', 'createdAt', 'updatedAt'],
@@ -495,7 +497,7 @@ var BUSINESS_HEADERS = {
   ownerSignature: ['id', 'fileId', 'updatedAt']
 };
 
-var BUSINESS_SCHEMA_VERSION = '2026-09-02-contract-document-v1';
+var BUSINESS_SCHEMA_VERSION = '2026-09-03-whatsapp-cloud-v1';
 var BUSINESS_RECORD_CACHE_TTL_SECONDS = 21600;
 
 function businessSchemaPropertyKey(ss) {
@@ -530,7 +532,7 @@ function clearBusinessRecordCache(sheetName) {
 }
 
 function clearBusinessSnapshotCaches() {
-  ['CRM_Clientes','Seguimientos_CRM','Gastos','Pagos_Clientes','Movimientos_Financieros','Ajustes_Financieros','Paquetes_Cliente','Servicios_Contratados','Adicionales_Cliente','Usuarios_CRM','Funciones_Equipo','Invitaciones_Usuarios','Asignaciones_Equipo','Gmail_Config','Plantillas_Email','Historial_Correos','Notificaciones_CRM','Galerias_Clientes','Eventos_Internos','Contratos','Firma_Administrador','Historial_Auditoria'].forEach(clearBusinessRecordCache);
+  ['CRM_Clientes','Seguimientos_CRM','Gastos','Pagos_Clientes','Movimientos_Financieros','Ajustes_Financieros','Paquetes_Cliente','Servicios_Contratados','Adicionales_Cliente','Usuarios_CRM','Funciones_Equipo','Invitaciones_Usuarios','Asignaciones_Equipo','Gmail_Config','Plantillas_Email','Historial_Correos','Historial_WhatsApp','Notificaciones_CRM','Galerias_Clientes','Eventos_Internos','Contratos','Firma_Administrador','Historial_Auditoria'].forEach(clearBusinessRecordCache);
 }
 
 function ensureBusinessSchema(ss) {
@@ -554,6 +556,7 @@ function ensureBusinessSchema(ss) {
     'Gmail_Config': BUSINESS_HEADERS.gmailConfig,
     'Plantillas_Email': BUSINESS_HEADERS.emailTemplates,
     'Historial_Correos': BUSINESS_HEADERS.emailHistory,
+    'Historial_WhatsApp': BUSINESS_HEADERS.whatsappHistory,
     'Notificaciones_CRM': BUSINESS_HEADERS.notifications,
     'Galerias_Clientes': BUSINESS_HEADERS.galleries,
     'Eventos_Internos': BUSINESS_HEADERS.internalEvents,
@@ -687,6 +690,42 @@ function findEmailTemplate(ss, templateId) {
   var templates = readBusinessRecords(ss, 'Plantillas_Email', BUSINESS_HEADERS.emailTemplates);
   for (var i = 0; i < templates.length; i++) if (String(templates[i].id) === String(templateId)) return templates[i];
   return null;
+}
+
+function normalizedWhatsAppPhone(value) {
+  var digits = String(value || '').replace(/\D/g, '');
+  if (digits.indexOf('521') === 0 && digits.length === 13) digits = '52' + digits.substring(3);
+  if (digits.length === 10) digits = '52' + digits;
+  return digits;
+}
+
+function saveWhatsAppMessageRecord(ss, input) {
+  input = input || {};
+  var messageId = cleanBusinessText(input.id || businessId('whatsapp'), 240);
+  var existing = findBusinessRecord(ss, 'Historial_WhatsApp', BUSINESS_HEADERS.whatsappHistory, messageId) || {};
+  var phone = normalizedWhatsAppPhone(input.phone || existing.phone);
+  var clientId = cleanBusinessText(input.clientId || existing.clientId, 120);
+  if (!clientId && phone) {
+    var clients = readBusinessRecords(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients);
+    for (var i = 0; i < clients.length; i++) {
+      if (normalizedWhatsAppPhone(clients[i].phone) === phone) { clientId = clients[i].id; break; }
+    }
+  }
+  var record = {
+    id: messageId, clientId: clientId,
+    direction: cleanBusinessText(input.direction || existing.direction || 'ENTRANTE', 20),
+    phone: phone, contactName: cleanBusinessText(input.contactName || existing.contactName, 240),
+    type: cleanBusinessText(input.type || existing.type || 'text', 40),
+    message: cleanBusinessText(input.message !== undefined ? input.message : existing.message, 6000),
+    status: cleanBusinessText(input.status || existing.status || 'RECIBIDO', 40),
+    occurredAt: cleanBusinessText(input.occurredAt || existing.occurredAt || businessNow(), 50),
+    phoneNumberId: cleanBusinessText(input.phoneNumberId || existing.phoneNumberId, 200),
+    businessAccountId: cleanBusinessText(input.businessAccountId || existing.businessAccountId, 200),
+    userId: cleanBusinessText(input.userId || existing.userId || 'Sistema WhatsApp', 180),
+    rawJson: cleanBusinessText(input.rawJson || existing.rawJson, 20000)
+  };
+  upsertBusinessRecord(ss, 'Historial_WhatsApp', BUSINESS_HEADERS.whatsappHistory, record);
+  return record;
 }
 
 function sendCrmTemplateEmail(ss, input) {
@@ -1957,6 +1996,12 @@ function syncCalendarClientRecord(ss, calendarClient) {
 function handleBusinessAction(ss, action, payload) {
   payload = payload || {};
   ensureBusinessSchema(ss);
+  if (action === 'whatsappMessageRecord') return { status: 'success', whatsappMessage: saveWhatsAppMessageRecord(ss, payload.message) };
+  if (action === 'whatsappWebhookIngest') {
+    var whatsappRows = Array.isArray(payload.messages) ? payload.messages.slice(0, 250) : [];
+    whatsappRows.forEach(function(item) { saveWhatsAppMessageRecord(ss, item); });
+    return { status: 'success', processed: whatsappRows.length };
+  }
   if (action === 'uploadInit') return createDriveResumableSession(payload);
   if (action === 'contractUploadInit') return createContractResumableSession(payload);
   if (action === 'gmailLogoUploadInit') return createEmailLogoResumableSession(payload);
@@ -2031,6 +2076,7 @@ function handleBusinessAction(ss, action, payload) {
         gmailConfig: publicGmailConfig(gmailConfigRows.length ? gmailConfigRows[0] : null),
         emailTemplates: readBusinessRecords(ss, 'Plantillas_Email', BUSINESS_HEADERS.emailTemplates),
         emailHistory: readBusinessRecords(ss, 'Historial_Correos', BUSINESS_HEADERS.emailHistory).sort(function(a, b) { return String(b.sentAt || '').localeCompare(String(a.sentAt || '')); }).slice(0, 300),
+        whatsappHistory: readBusinessRecords(ss, 'Historial_WhatsApp', BUSINESS_HEADERS.whatsappHistory).sort(function(a, b) { return String(b.occurredAt || '').localeCompare(String(a.occurredAt || '')); }).slice(0, 500),
         notifications: readBusinessRecords(ss, 'Notificaciones_CRM', BUSINESS_HEADERS.notifications).sort(function(a, b) { return String(b.createdAt || '').localeCompare(String(a.createdAt || '')); }).slice(0, 300),
         auditLog: readBusinessRecords(ss, 'Historial_Auditoria', ['Fecha_Hora', 'Accion', 'Detalles_Cambio', 'ID_Elemento', 'Usuario', 'Estado']).sort(function(a, b) { return String(b.Fecha_Hora || '').localeCompare(String(a.Fecha_Hora || '')); }).slice(0, 300),
         galleries: readBusinessRecords(ss, 'Galerias_Clientes', BUSINESS_HEADERS.galleries),
@@ -2872,7 +2918,7 @@ function doPost(e) {
     var ss = getDatabaseSpreadsheet();
 
     var businessActions = [
-      'businessClients', 'businessSnapshot', 'uploadInit', 'uploadFinalize', 'driveFolderImport', 'driveManagedMediaDelete', 'contractUploadInit', 'contractUploadFinalize', 'gmailLogoUploadInit', 'gmailLogoUploadFinalize', 'galleryUploadInit', 'galleryUploadFinalize', 'galleryCreate', 'galleryStatusUpdate', 'internalEventUpsert', 'crmUpsert', 'followUpCreate', 'prospectConvert', 'calendarSync', 'calendarSyncAll', 'expenseUpsert', 'paymentUpsert', 'adjustmentUpsert', 'clientPackageAssign', 'serviceUpsert', 'addonUpsert', 'teamFunctionUpsert', 'teamUserUpsert', 'teamInviteCreate', 'teamInviteResolve', 'teamGoogleConnect', 'teamAssignmentUpsert', 'gmailConfigUpsert', 'gmailTest', 'emailTemplateUpsert', 'emailSend', 'notificationRead', 'remindersRun', 'remindersInstall', 'contractUpload', 'contractGenerate', 'contractDocument', 'contractCreateLink',
+      'businessClients', 'businessSnapshot', 'whatsappMessageRecord', 'whatsappWebhookIngest', 'uploadInit', 'uploadFinalize', 'driveFolderImport', 'driveManagedMediaDelete', 'contractUploadInit', 'contractUploadFinalize', 'gmailLogoUploadInit', 'gmailLogoUploadFinalize', 'galleryUploadInit', 'galleryUploadFinalize', 'galleryCreate', 'galleryStatusUpdate', 'internalEventUpsert', 'crmUpsert', 'followUpCreate', 'prospectConvert', 'calendarSync', 'calendarSyncAll', 'expenseUpsert', 'paymentUpsert', 'adjustmentUpsert', 'clientPackageAssign', 'serviceUpsert', 'addonUpsert', 'teamFunctionUpsert', 'teamUserUpsert', 'teamInviteCreate', 'teamInviteResolve', 'teamGoogleConnect', 'teamAssignmentUpsert', 'gmailConfigUpsert', 'gmailTest', 'emailTemplateUpsert', 'emailSend', 'notificationRead', 'remindersRun', 'remindersInstall', 'contractUpload', 'contractGenerate', 'contractDocument', 'contractCreateLink',
       'contractInvalidate', 'contractResolve', 'contractCompleteSignature', 'ownerSignatureSave',
       'contractAdminPdfData', 'contractFinalizeData', 'contractFinalize'
     ];

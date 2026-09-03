@@ -13,6 +13,11 @@ const SEARCH_CONSOLE_SCRIPT_URL = process.env.XPH_SEARCH_CONSOLE_SCRIPT_URL || '
 const SEARCH_CONSOLE_SECRET = process.env.XPH_SEARCH_CONSOLE_SECRET || '';
 const GOOGLE_CLIENT_ID = process.env.XPH_GOOGLE_CLIENT_ID || '';
 const GOOGLE_CLIENT_SECRET = process.env.XPH_GOOGLE_CLIENT_SECRET || '';
+const WHATSAPP_ACCESS_TOKEN = process.env.XPH_WHATSAPP_ACCESS_TOKEN || '';
+const WHATSAPP_APP_SECRET = process.env.XPH_WHATSAPP_APP_SECRET || '';
+const WHATSAPP_VERIFY_TOKEN = process.env.XPH_WHATSAPP_VERIFY_TOKEN || '';
+const WHATSAPP_PHONE_NUMBER_ID = process.env.XPH_WHATSAPP_PHONE_NUMBER_ID || '1243834275483990';
+const WHATSAPP_BUSINESS_ACCOUNT_ID = process.env.XPH_WHATSAPP_BUSINESS_ACCOUNT_ID || '899134319903049';
 
 const SESSION_COOKIE = 'xph_admin_session';
 const SESSION_DAYS = 30;
@@ -651,6 +656,61 @@ async function persistContractDeletion(contractId) {
   return nextIds;
 }
 
+function whatsappConfigured() {
+  return Boolean(WHATSAPP_ACCESS_TOKEN && WHATSAPP_APP_SECRET && WHATSAPP_VERIFY_TOKEN && WHATSAPP_PHONE_NUMBER_ID);
+}
+
+function normalizeWhatsAppRecipient(value) {
+  let digits = String(value || '').replace(/\D/g, '');
+  if (digits.length === 10) digits = `52${digits}`;
+  if (digits.startsWith('521') && digits.length === 13) digits = `52${digits.slice(3)}`;
+  if (!/^\d{11,15}$/.test(digits)) throw new Error('El número de WhatsApp no es válido.');
+  return digits;
+}
+
+function validWhatsAppSignature(rawBody, signature) {
+  if (!WHATSAPP_APP_SECRET || !signature || !String(signature).startsWith('sha256=')) return false;
+  const expected = createHmac('sha256', WHATSAPP_APP_SECRET).update(rawBody).digest('hex');
+  const received = String(signature).slice(7);
+  const expectedBuffer = Buffer.from(expected, 'hex');
+  const receivedBuffer = Buffer.from(received, 'hex');
+  return expectedBuffer.length === receivedBuffer.length && timingSafeEqual(expectedBuffer, receivedBuffer);
+}
+
+function whatsappWebhookMessages(body) {
+  const rows = [];
+  for (const entry of Array.isArray(body?.entry) ? body.entry : []) {
+    for (const change of Array.isArray(entry?.changes) ? entry.changes : []) {
+      const value = change?.value || {};
+      const profileByWaId = new Map((value.contacts || []).map((contact) => [String(contact.wa_id || ''), String(contact.profile?.name || '')]));
+      for (const message of Array.isArray(value.messages) ? value.messages : []) {
+        const text = message.text?.body || message.button?.text || message.interactive?.button_reply?.title || message.interactive?.list_reply?.title || '';
+        rows.push({
+          id: String(message.id || ''), direction: 'ENTRANTE', phone: String(message.from || ''), contactName: profileByWaId.get(String(message.from || '')) || '',
+          type: String(message.type || 'unknown'), message: String(text || `[${message.type || 'mensaje'}]`).slice(0, 6000), status: 'RECIBIDO',
+          occurredAt: message.timestamp ? new Date(Number(message.timestamp) * 1000).toISOString() : new Date().toISOString(),
+          phoneNumberId: String(value.metadata?.phone_number_id || ''), businessAccountId: String(entry?.id || ''), rawJson: JSON.stringify(message).slice(0, 20000),
+        });
+      }
+      for (const status of Array.isArray(value.statuses) ? value.statuses : []) {
+        rows.push({ id: String(status.id || ''), direction: 'SALIENTE', phone: String(status.recipient_id || ''), contactName: '', type: 'status', message: '', status: String(status.status || '').toUpperCase(), occurredAt: new Date().toISOString(), phoneNumberId: String(value.metadata?.phone_number_id || ''), businessAccountId: String(entry?.id || ''), rawJson: JSON.stringify(status).slice(0, 20000) });
+      }
+    }
+  }
+  return rows;
+}
+
+async function sendWhatsAppText(to, message) {
+  if (!whatsappConfigured()) throw new Error('WhatsApp Cloud API todavía no tiene acceso permanente configurado.');
+  const response = await fetch(`https://graph.facebook.com/v23.0/${encodeURIComponent(WHATSAPP_PHONE_NUMBER_ID)}/messages`, {
+    method: 'POST', headers: { Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to, type: 'text', text: { preview_url: true, body: message } }),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result.messages?.[0]?.id) throw new Error(result?.error?.message || 'Meta no pudo enviar el mensaje de WhatsApp.');
+  return result.messages[0].id;
+}
+
 function isGoogleDriveResumableUploadUrl(value) {
   try {
     const url = new URL(String(value || ''));
@@ -1127,12 +1187,31 @@ export default async function handler(req, res) {
 
   if (req.method === 'OPTIONS') return res.status(204).end();
 
+  const requestedAction = String(req.query?.action || '');
+  if (req.method === 'GET' && requestedAction === 'whatsappWebhook') {
+    const mode = String(req.query?.['hub.mode'] || '');
+    const verifyToken = String(req.query?.['hub.verify_token'] || '');
+    const challenge = String(req.query?.['hub.challenge'] || '');
+    if (mode === 'subscribe' && WHATSAPP_VERIFY_TOKEN && verifyToken === WHATSAPP_VERIFY_TOKEN) return res.status(200).send(challenge);
+    return res.status(403).send('Verification failed');
+  }
+
+  if (req.method === 'POST' && requestedAction === 'whatsappWebhook') {
+    const raw = await readBody(req);
+    if (!validWhatsAppSignature(raw, req.headers?.['x-hub-signature-256'])) return res.status(401).json({ status: 'error', message: 'Firma de webhook no válida.' });
+    let event = {};
+    try { event = JSON.parse(raw || '{}'); } catch (_) { return res.status(400).json({ status: 'error', message: 'Evento no válido.' }); }
+    const messages = whatsappWebhookMessages(event);
+    if (messages.length) await forwardBusinessAction('whatsappWebhookIngest', { messages });
+    return res.status(200).json({ status: 'success' });
+  }
+
   if (req.method === 'POST' && !isSameOrigin(req)) {
     return res.status(403).json({ status: 'error', message: 'Origen no permitido.' });
   }
 
   try {
-    const action = String(req.query?.action || '');
+    const action = requestedAction;
 
     if (req.method === 'GET' && action === 'adminSession') {
       const session = verifySession(req);
@@ -1253,6 +1332,8 @@ export default async function handler(req, res) {
       'adminGmailTest',
       'adminEmailTemplateUpsert',
       'adminEmailSend',
+      'adminWhatsAppStatus',
+      'adminWhatsAppSend',
       'adminEmailLogoUploadInit',
       'adminEmailLogoUploadFinalize',
       'adminNotificationRead',
@@ -1291,6 +1372,7 @@ export default async function handler(req, res) {
         adminTeamAssignmentUpsert: 'USERS_ADMIN',
         adminGmailConfigUpsert: 'GMAIL_ADMIN', adminGmailTest: 'GMAIL_ADMIN', adminEmailTemplateUpsert: 'GMAIL_ADMIN',
         adminEmailSend: 'EMAIL_SEND', adminEmailLogoUploadInit: 'GMAIL_ADMIN', adminEmailLogoUploadFinalize: 'GMAIL_ADMIN',
+        adminWhatsAppStatus: 'CRM_OR_CLIENT_READ', adminWhatsAppSend: 'CRM_OR_CLIENT_WRITE',
         adminNotificationRead: 'CRM_OR_CLIENT_READ', adminRemindersRun: 'GMAIL_ADMIN', adminRemindersInstall: 'GMAIL_ADMIN',
         adminGalleryCreate: 'GALLERIES', adminGalleryUploadInit: 'GALLERIES', adminGalleryUploadFinalize: 'GALLERIES', adminGalleryStatusUpdate: 'GALLERIES',
         adminInternalEventUpsert: 'USERS_ADMIN',
@@ -1657,6 +1739,25 @@ export default async function handler(req, res) {
         }
         const result = await forwardBusinessAction('emailSend', { clientId, templateId, variables: submitted.variables && typeof submitted.variables === 'object' ? submitted.variables : {}, userId: session.userId });
         return res.status(200).json({ status: 'success', emailHistory: result.emailHistory });
+      }
+      if (action === 'adminWhatsAppStatus') {
+        return res.status(200).json({ status: 'success', whatsapp: { configured: whatsappConfigured(), businessAccountId: WHATSAPP_BUSINESS_ACCOUNT_ID, phoneNumberId: WHATSAPP_PHONE_NUMBER_ID, displayNumber: '+52 56 1556 7863' } });
+      }
+      if (action === 'adminWhatsAppSend') {
+        const clientId = String(submitted.clientId || '').trim().slice(0, 120);
+        const message = String(submitted.message || '').trim().slice(0, 4096);
+        if (!clientId || !message) return res.status(400).json({ status: 'error', message: 'Selecciona un contacto y escribe el mensaje.' });
+        const snapshotResult = await forwardTransientBusinessAction('businessSnapshot');
+        const client = (snapshotResult.snapshot?.clients || []).find((item) => String(item.id) === clientId);
+        if (!client) return res.status(404).json({ status: 'error', message: 'Contacto no localizado.' });
+        if (session.role !== 'SUPER_ADMIN') {
+          const assigned = (snapshotResult.snapshot?.assignments || []).some((item) => String(item.userId) === String(session.userId) && String(item.clientId) === clientId && item.status !== 'CANCELADA');
+          if (!assigned && String(client.recordType) !== 'Prospecto') return res.status(403).json({ status: 'error', message: 'No puedes enviar mensajes a este contacto.' });
+        }
+        const to = normalizeWhatsAppRecipient(client.phone);
+        const messageId = await sendWhatsAppText(to, message);
+        const saved = await forwardBusinessAction('whatsappMessageRecord', { message: { id: messageId, clientId, direction: 'SALIENTE', phone: to, contactName: client.name || '', type: 'text', message, status: 'ENVIADO', occurredAt: new Date().toISOString(), phoneNumberId: WHATSAPP_PHONE_NUMBER_ID, businessAccountId: WHATSAPP_BUSINESS_ACCOUNT_ID, userId: session.userId } });
+        return res.status(200).json({ status: 'success', whatsappMessage: saved.whatsappMessage || null });
       }
       if (action === 'adminEmailLogoUploadInit') {
         const filename = String(submitted.filename || '').trim().slice(0, 180);
