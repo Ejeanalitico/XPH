@@ -1,0 +1,36 @@
+name: Install quote download reliability fix
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - .github/workflows/install-quote-download-reliability.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Patch quote PDF and snapshot reliability
+        run: python3 scripts/patch-quote-download-reliability.py
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - name: Commit fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add api/proxy.js src/components/BusinessAdminPanel.tsx
+          git diff --cached --quiet && exit 0
+          git commit -m "fix(quotes): download generated PDFs reliably"
+          git push origin master
