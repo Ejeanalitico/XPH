@@ -553,7 +553,7 @@ async function forwardTransientBusinessAction(action, payload = {}, attempts = 3
     } catch (error) {
       lastError = error;
       const message = String(error?.message || error);
-      if (!/respuesta no válida|fetch failed|bad gateway|temporarily unavailable/i.test(message) || attempt >= attempts) throw error;
+      if (!/respuesta no válida|solicitud no autorizada|unauthorized|fetch failed|bad gateway|temporarily unavailable|service unavailable|internal server error/i.test(message) || attempt >= attempts) throw error;
       await new Promise((resolve) => setTimeout(resolve, 450 * attempt));
     }
   }
@@ -1423,7 +1423,7 @@ export default async function handler(req, res) {
       }
 
       if (action === 'adminBusinessSnapshot') {
-        const result = await forwardTransientBusinessAction('businessSnapshot');
+        const result = await forwardTransientBusinessAction('businessSnapshot', {}, 5);
         result.snapshot = filterDeletedContractsFromSnapshot(result.snapshot);
         if (session.role !== 'SUPER_ADMIN') {
           const assignments = (result.snapshot?.assignments || []).filter((item) => String(item.userId) === String(session.userId) && item.status !== 'CANCELADA');
@@ -1922,10 +1922,25 @@ export default async function handler(req, res) {
       const requestedVersion = String(req.query?.version || 'latest');
       const version = ['original', 'signed', 'final', 'latest'].includes(requestedVersion) ? requestedVersion : 'latest';
       if (!contractId) return res.status(400).json({ status: 'error', message: 'Contrato no identificado.' });
-      const result = await forwardBusinessAction('contractAdminPdfData', { contractId, version });
-      const pdf = Buffer.from(cleanBase64(result.pdfBase64), 'base64');
-      if (pdf.subarray(0, 5).toString('ascii') !== '%PDF-') throw new Error('El contrato privado no contiene un PDF válido.');
-      const filename = `contrato-${String(result.folio || 'xph').replace(/[^a-z0-9-]/gi, '_')}.pdf`;
+      let result = null;
+      let contractMeta = null;
+      let pdfBase64 = '';
+      try {
+        result = await forwardTransientBusinessAction('contractAdminPdfData', { contractId, version }, 4);
+        pdfBase64 = String(result?.pdfBase64 || '');
+      } catch (error) {
+        const message = String(error?.message || error);
+        if (!/versión solicitada.*no está disponible|version solicitada.*no esta disponible|respuesta no válida|solicitud no autorizada|bad gateway|temporarily unavailable/i.test(message)) throw error;
+        const documentResult = await forwardTransientBusinessAction('contractDocument', { contractId }, 5);
+        contractMeta = documentResult?.contract || null;
+        if (!contractMeta?.documentSnapshot) throw error;
+        pdfBase64 = await renderContractSnapshotPdf(contractMeta.documentSnapshot, contractMeta);
+        result = { folio: contractMeta.folio || contractMeta.id, documentType: contractMeta.documentType || '' };
+      }
+      const pdf = Buffer.from(cleanBase64(pdfBase64), 'base64');
+      if (pdf.subarray(0, 5).toString('ascii') !== '%PDF-') throw new Error('El documento privado no contiene un PDF válido.');
+      const kind = String(result?.documentType || contractMeta?.documentType || '').toUpperCase() === 'COTIZACION' ? 'cotizacion' : 'contrato';
+      const filename = `${kind}-${String(result?.folio || contractMeta?.folio || 'xph').replace(/[^a-z0-9-]/gi, '_')}.pdf`;
       const disposition = String(req.query?.download || '') === '1' ? 'attachment' : 'inline';
       setPrivatePdfHeaders(res, filename, disposition);
       return res.status(200).send(pdf);
