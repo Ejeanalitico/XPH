@@ -771,9 +771,9 @@ function signingAudit(req) {
   };
 }
 
-function setPrivatePdfHeaders(res, filename) {
+function setPrivatePdfHeaders(res, filename, disposition = 'inline') {
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+  res.setHeader('Content-Disposition', `${disposition}; filename="${filename}"`);
   res.setHeader('Cache-Control', 'private, no-store, no-cache, must-revalidate, max-age=0');
   res.setHeader('CDN-Cache-Control', 'no-store');
   res.setHeader('Vercel-CDN-Cache-Control', 'no-store');
@@ -1925,7 +1925,9 @@ export default async function handler(req, res) {
       const result = await forwardBusinessAction('contractAdminPdfData', { contractId, version });
       const pdf = Buffer.from(cleanBase64(result.pdfBase64), 'base64');
       if (pdf.subarray(0, 5).toString('ascii') !== '%PDF-') throw new Error('El contrato privado no contiene un PDF válido.');
-      setPrivatePdfHeaders(res, `contrato-${String(result.folio || 'xph').replace(/[^a-z0-9-]/gi, '_')}.pdf`);
+      const filename = `contrato-${String(result.folio || 'xph').replace(/[^a-z0-9-]/gi, '_')}.pdf`;
+      const disposition = String(req.query?.download || '') === '1' ? 'attachment' : 'inline';
+      setPrivatePdfHeaders(res, filename, disposition);
       return res.status(200).send(pdf);
     }
 
