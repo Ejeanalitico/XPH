@@ -491,6 +491,57 @@ async function forwardSaveConfig(patch, auditType, auditDetails) {
   return parsed;
 }
 
+const ACTIVE_CONFIG_DEFAULTS = Object.freeze({
+  catalogVersion: 0,
+  catalogCategories: [],
+  packages: {},
+  addons: [],
+  footerContact: {},
+  promotionPopup: null,
+  testimonials: [],
+  quotes: [],
+  adminCredentials: {},
+  galleryImages: [],
+  seoSettings: {},
+});
+
+function isPropertyStorageQuotaError(error) {
+  return /exceeded the property storage quota|property storage quota/i.test(String(error?.message || error || ''));
+}
+
+function completeActiveConfig(currentConfig, patch) {
+  const merged = {
+    ...(currentConfig && typeof currentConfig === 'object' ? currentConfig : {}),
+    ...(patch && typeof patch === 'object' ? patch : {}),
+  };
+  return Object.fromEntries(
+    Object.entries(ACTIVE_CONFIG_DEFAULTS).map(([key, fallback]) => [
+      key,
+      Object.prototype.hasOwnProperty.call(merged, key) ? merged[key] : fallback,
+    ]),
+  );
+}
+
+async function forwardSaveConfigWithQuotaRecovery(patch, currentConfig, auditType, auditDetails) {
+  try {
+    return await forwardSaveConfig(patch, auditType, auditDetails);
+  } catch (error) {
+    if (!isPropertyStorageQuotaError(error)) throw error;
+
+    // Apps Script legacy guarda la configuración en fragmentos dentro de
+    // PropertiesService. Una configuración mínima reemplaza chunk_0 y permite
+    // que ese código elimine los fragmentos sobrantes antes de restaurar todo.
+    await forwardSaveConfig(
+      ACTIVE_CONFIG_DEFAULTS,
+      'MANTENIMIENTO_STORAGE_CONFIG',
+      'Compactación automática del almacenamiento de configuración.',
+    );
+
+    const restoredConfig = completeActiveConfig(currentConfig, patch);
+    return forwardSaveConfig(restoredConfig, auditType, auditDetails);
+  }
+}
+
 async function forwardUpload(submitted) {
   assertIntegrationConfig();
   const body = JSON.stringify({
@@ -2013,7 +2064,12 @@ export default async function handler(req, res) {
         delete patch.quotes;
         patch = encodeHeroSettingsIntoGallery(config, patch);
         patch = encodePromotionIntoGallery(config, patch);
-        await forwardSaveConfig(patch, submitted.auditType, submitted.auditDetails);
+        await forwardSaveConfigWithQuotaRecovery(
+          patch,
+          config,
+          submitted.auditType,
+          submitted.auditDetails,
+        );
         const confirmedPayload = await fetchConfigFromScript();
         const confirmedConfig = normalizeConfig(confirmedPayload);
         return res.status(200).json({

@@ -391,65 +391,76 @@ function syncQuotesTable(ss, quotes) {
 }
 
 /**
- * Guarda la última versión activa en la pestaña Config_Activa y en Properties
+ * Elimina únicamente los fragmentos legacy de la configuración activa.
+ * No toca secretos OAuth, credenciales de integración ni otras propiedades
+ * pequeñas que siguen siendo necesarias para el proyecto.
  */
-function saveActiveConfig(ss, configJsonString) {
-  if (ss) {
-    try {
-      var sheet = ss.getSheetByName('Config_Activa');
-      if (sheet) {
-        var lastRow = sheet.getLastRow();
-        if (lastRow > 1) {
-          sheet.deleteRows(2, lastRow - 1);
-        }
-        sheet.appendRow(['database_json_payload', configJsonString, new Date().toISOString()]);
-      }
-    } catch (e) {
-      Logger.log('Error save active config: ' + e);
+function cleanupLegacyActiveConfigChunks_(props) {
+  if (!props) return;
+  var existing = props.getProperties();
+  Object.keys(existing || {}).forEach(function(key) {
+    if (key === 'xph_total_chunks' || /^chunk_\d+$/.test(key)) {
+      props.deleteProperty(key);
     }
-  }
-
-  var props = PropertiesService.getScriptProperties();
-  var CHUNK_SIZE = 8000;
-  var totalChunks = Math.ceil(configJsonString.length / CHUNK_SIZE);
-  var previousTotalChunks = parseInt(props.getProperty('xph_total_chunks') || '0', 10);
-  
-  var newProps = {
-    'xph_total_chunks': totalChunks.toString(),
-    'xph_updated_at': new Date().toISOString()
-  };
-
-  if (ss) {
-    try {
-      newProps['xph_spreadsheet_id'] = ss.getId();
-      newProps['xph_spreadsheet_url'] = ss.getUrl();
-    } catch (_) {}
-  }
-  
-  for (var i = 0; i < totalChunks; i++) {
-    newProps['chunk_' + i] = configJsonString.substring(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-  }
-  
-  // Conserva las propiedades privadas del proyecto (XPH_API_SECRET,
-  // XPH_SPREADSHEET_ID y XPH_FOLDER_ID). El segundo argumento en `true`
-  // borraba todas las claves que no pertenecían a la configuración activa y
-  // dejaba al proxy de Vercel sin autorización después de cada guardado.
-  props.setProperties(newProps, false);
-
-  // Si la configuración nueva ocupa menos fragmentos, elimina únicamente los
-  // fragmentos sobrantes de la versión anterior.
-  for (var staleChunk = totalChunks; staleChunk < previousTotalChunks; staleChunk++) {
-    props.deleteProperty('chunk_' + staleChunk);
-  }
+  });
 }
 
 /**
- * Lee la última versión activa de la base de datos
+ * Guarda la última versión activa en Config_Activa.
+ * La hoja es la fuente de verdad; PropertiesService conserva solo metadatos
+ * pequeños para evitar volver a exceder la cuota de almacenamiento.
+ */
+function saveActiveConfig(ss, configJsonString) {
+  if (!ss) throw new Error('No se pudo abrir la hoja de configuración activa.');
+
+  try {
+    var sheet = ss.getSheetByName('Config_Activa');
+    if (!sheet) throw new Error('No existe la pestaña Config_Activa.');
+    var lastRow = sheet.getLastRow();
+    if (lastRow > 1) {
+      sheet.deleteRows(2, lastRow - 1);
+    }
+    sheet.appendRow(['database_json_payload', configJsonString, new Date().toISOString()]);
+  } catch (e) {
+    Logger.log('Error save active config: ' + e);
+    throw e;
+  }
+
+  var props = PropertiesService.getScriptProperties();
+
+  // Primero libera los fragmentos grandes heredados. De esta forma la propia
+  // operación de limpieza no intenta escribir sobre un almacén ya saturado.
+  cleanupLegacyActiveConfigChunks_(props);
+
+  var metadata = {
+    'xph_updated_at': new Date().toISOString()
+  };
+  try {
+    metadata['xph_spreadsheet_id'] = ss.getId();
+    metadata['xph_spreadsheet_url'] = ss.getUrl();
+  } catch (_) {}
+  props.setProperties(metadata, false);
+}
+
+/**
+ * Lee la última versión activa. Config_Activa es la fuente de verdad.
+ * Los fragmentos en PropertiesService se conservan solo como fallback de
+ * migración para instalaciones que todavía no hayan sido compactadas.
  */
 function loadActiveConfig() {
+  try {
+    var ss = getDatabaseSpreadsheet();
+    if (ss) {
+      var sheet = ss.getSheetByName('Config_Activa');
+      if (sheet && sheet.getLastRow() >= 2) {
+        var sheetValue = sheet.getRange(2, 2).getValue() || '';
+        if (sheetValue) return sheetValue;
+      }
+    }
+  } catch (_) {}
+
   var props = PropertiesService.getScriptProperties();
   var totalChunksStr = props.getProperty('xph_total_chunks');
-  
   if (totalChunksStr) {
     var totalChunks = parseInt(totalChunksStr, 10);
     var fullString = '';
@@ -458,16 +469,6 @@ function loadActiveConfig() {
     }
     if (fullString) return fullString;
   }
-
-  try {
-    var ss = getDatabaseSpreadsheet();
-    if (ss) {
-      var sheet = ss.getSheetByName('Config_Activa');
-      if (sheet && sheet.getLastRow() >= 2) {
-        return sheet.getRange(2, 2).getValue() || '';
-      }
-    }
-  } catch (_) {}
 
   return '';
 }
