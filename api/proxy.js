@@ -337,6 +337,61 @@ function publicGalleryOnly(items, promotionPopup = null) {
     });
 }
 
+function compactGalleryImagesForConfig(items) {
+  if (!Array.isArray(items)) return [];
+  return items.map((item) => {
+    if (!item || item.visibility !== 'private') return item;
+    const pick = (keys) => Object.fromEntries(keys
+      .filter((key) => Object.prototype.hasOwnProperty.call(item, key))
+      .map((key) => [key, item[key]]));
+    if (item.mediaType === 'gallery-meta') {
+      return pick([
+        'id', 'visibility', 'mediaType', 'galleryId', 'gallerySlug', 'galleryTitle',
+        'galleryClient', 'galleryToken', 'galleryAllowDownloads', 'driveFolderId', 'createdAt',
+      ]);
+    }
+    return pick(['id', 'visibility', 'mediaType', 'galleryId', 'galleryAllowDownloads']);
+  });
+}
+
+function hydratePrivateGalleryMedia(item) {
+  const clean = { ...(item || {}) };
+  if (clean.visibility !== 'private' || clean.mediaType === 'gallery-meta') return clean;
+  const fileId = String(clean.id || '').trim();
+  if (!fileId) return clean;
+  const encoded = encodeURIComponent(fileId);
+  const downloadUrl = `https://drive.usercontent.google.com/download?id=${encoded}&export=download&confirm=t`;
+  if (clean.mediaType === 'video') {
+    const previewUrl = `https://drive.google.com/file/d/${encoded}/preview`;
+    clean.url = clean.url || previewUrl;
+    clean.previewUrl = clean.previewUrl || previewUrl;
+    clean.downloadUrl = clean.downloadUrl || downloadUrl;
+    return clean;
+  }
+  const previewUrl = `https://lh3.googleusercontent.com/d/${encoded}`;
+  clean.url = clean.url || previewUrl;
+  clean.previewUrl = clean.previewUrl || previewUrl;
+  clean.downloadUrl = clean.downloadUrl || downloadUrl;
+  return clean;
+}
+
+async function compactCurrentGalleryConfig(details = 'Compactación automática de metadatos privados de galería.') {
+  try {
+    const payload = await fetchConfigFromScript();
+    const config = normalizeConfig(payload);
+    const current = Array.isArray(config.galleryImages) ? config.galleryImages : [];
+    const compact = compactGalleryImagesForConfig(current);
+    if (JSON.stringify(current) === JSON.stringify(compact)) return;
+    await forwardSaveConfig(
+      { galleryImages: compact },
+      'MANTENIMIENTO_GALERIA_COMPACTADA',
+      details,
+    );
+  } catch (error) {
+    console.error('[XPH Gallery Compaction] Error:', error);
+  }
+}
+
 function operationalClientRecord(item) {
   return {
     ...item,
@@ -471,10 +526,14 @@ function encodePromotionIntoGallery(config, patch) {
 
 async function forwardSaveConfig(patch, auditType, auditDetails) {
   assertIntegrationConfig();
+  const normalizedPatch = patch && typeof patch === 'object' ? { ...patch } : {};
+  if (Array.isArray(normalizedPatch.galleryImages)) {
+    normalizedPatch.galleryImages = compactGalleryImagesForConfig(normalizedPatch.galleryImages);
+  }
   const body = JSON.stringify({
     action: 'saveConfig',
     apiSecret: APPS_SCRIPT_SHARED_SECRET,
-    configData: JSON.stringify(patch || {}),
+    configData: JSON.stringify(normalizedPatch),
     auditType: auditType || 'ACTUALIZACION_ADMIN',
     auditDetails: auditDetails || 'Cambios guardados desde panel administrador',
   });
@@ -1852,6 +1911,7 @@ export default async function handler(req, res) {
         const galleryId = `galeria-${randomBytes(12).toString('hex')}`;
         const galleryUrl = `${requestOrigin(req)}/?galeria=${encodeURIComponent(slug)}&k=${encodeURIComponent(token)}`;
         const result = await forwardBusinessAction('galleryCreate', { clientId, title: String(submitted.title || '').slice(0, 240), galleryId, slug, accessToken: token, galleryUrl });
+        await compactCurrentGalleryConfig(`Galería ${galleryId} compactada después de crearla.`);
         return res.status(200).json({ status: 'success', gallery: result.gallery, created: Boolean(result.created) });
       }
       if (action === 'adminGalleryUploadInit') {
@@ -1868,7 +1928,8 @@ export default async function handler(req, res) {
         const fileId = String(submitted.fileId || '').trim().slice(0, 200);
         if (!galleryId || !fileId) return res.status(400).json({ status: 'error', message: 'La fotografía o la galería no están identificadas.' });
         const result = await forwardBusinessAction('galleryUploadFinalize', { galleryId, fileId, title: String(submitted.title || '').slice(0, 180) });
-        return res.status(200).json({ status: 'success', gallery: result.gallery, media: result.media });
+        await compactCurrentGalleryConfig(`Galería ${galleryId} compactada después de agregar el archivo ${fileId}.`);
+        return res.status(200).json({ status: 'success', gallery: result.gallery, media: hydratePrivateGalleryMedia(result.media) });
       }
       if (action === 'adminGalleryStatusUpdate') {
         const galleryId = String(submitted.galleryId || '').trim();
@@ -2156,7 +2217,7 @@ export default async function handler(req, res) {
       const media = items
         .filter((item) => item?.visibility === 'private' && item?.galleryId === meta.galleryId && item?.mediaType !== 'gallery-meta')
         .map((item) => {
-          const clean = { ...item };
+          const clean = hydratePrivateGalleryMedia(item);
           delete clean.galleryToken;
           if (meta.galleryAllowDownloads === false) delete clean.downloadUrl;
           return clean;
