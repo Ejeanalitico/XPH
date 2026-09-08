@@ -21,12 +21,48 @@ function normalizeConfig(payload) {
   return raw && typeof raw === 'object' ? raw : {};
 }
 
+function splitMediaIds(value) {
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function drivePreviewUrl(fileId) {
   return `https://drive.google.com/file/d/${encodeURIComponent(fileId)}/preview`;
 }
 
+function driveImageUrl(fileId) {
+  return `https://lh3.googleusercontent.com/d/${encodeURIComponent(fileId)}`;
+}
+
 function driveOriginalStreamUrl(fileId) {
   return `https://drive.usercontent.google.com/download?id=${encodeURIComponent(fileId)}&export=download&confirm=t`;
+}
+
+function normalizeMedia(item, allowDownloads, fallbackTitle = '') {
+  const isVideo = item?.mediaType === 'video';
+  const fileId = String(item?.id || '').trim();
+  const imageUrl = fileId ? driveImageUrl(fileId) : '';
+  const videoPreview = fileId ? drivePreviewUrl(fileId) : '';
+  const downloadUrl = fileId ? driveOriginalStreamUrl(fileId) : '';
+
+  return {
+    id: item?.id,
+    title: item?.title || fallbackTitle,
+    category: 'private',
+    url: isVideo ? (item?.url || videoPreview) : (item?.url || imageUrl),
+    visibility: 'private',
+    mediaType: isVideo ? 'video' : 'image',
+    galleryId: item?.galleryId,
+    galleryAllowDownloads: allowDownloads,
+    downloadUrl: allowDownloads ? (item?.downloadUrl || downloadUrl || undefined) : undefined,
+    previewUrl: isVideo
+      ? (item?.previewUrl || videoPreview || undefined)
+      : (item?.previewUrl || item?.url || imageUrl || undefined),
+    streamUrl: allowDownloads && isVideo ? (item?.streamUrl || downloadUrl || undefined) : undefined,
+    createdAt: item?.createdAt,
+  };
 }
 
 export default async function handler(req, res) {
@@ -69,30 +105,39 @@ export default async function handler(req, res) {
     }
 
     const allowDownloads = meta.galleryAllowDownloads !== false;
-    const media = items
-      .filter((item) =>
-        item?.visibility === 'private' &&
-        item?.galleryId === meta.galleryId &&
-        item?.mediaType !== 'gallery-meta'
-      )
-      .map((item) => {
-        const isVideo = item.mediaType === 'video';
-        const fileId = String(item.id || '').trim();
-        return {
-          id: item.id,
-          title: item.title || '',
-          category: 'private',
-          url: item.url,
-          visibility: 'private',
-          mediaType: isVideo ? 'video' : 'image',
-          galleryId: item.galleryId,
-          galleryAllowDownloads: allowDownloads,
-          downloadUrl: allowDownloads ? item.downloadUrl : undefined,
-          previewUrl: isVideo && fileId ? drivePreviewUrl(fileId) : (item.previewUrl || item.url),
-          streamUrl: allowDownloads && isVideo && fileId ? driveOriginalStreamUrl(fileId) : undefined,
-          createdAt: item.createdAt,
-        };
-      });
+    const explicitMedia = items.filter((item) =>
+      item?.visibility === 'private' &&
+      String(item?.galleryId || '') === String(meta.galleryId || '') &&
+      item?.mediaType !== 'gallery-meta'
+    );
+
+    const indexedImages = splitMediaIds(meta.imageIds).map((id, index) => ({
+      id,
+      title: `Fotografía ${index + 1}`,
+      mediaType: 'image',
+      galleryId: meta.galleryId,
+    }));
+    const indexedVideos = splitMediaIds(meta.videoIds).map((id, index) => ({
+      id,
+      title: `Video ${index + 1}`,
+      mediaType: 'video',
+      galleryId: meta.galleryId,
+    }));
+
+    const deduped = [];
+    const seen = new Set();
+    [...explicitMedia, ...indexedImages, ...indexedVideos].forEach((item) => {
+      const key = `${String(item?.id || '')}:${item?.mediaType === 'video' ? 'video' : 'image'}`;
+      if (!item?.id || seen.has(key)) return;
+      seen.add(key);
+      deduped.push(item);
+    });
+
+    const media = deduped.map((item, index) => normalizeMedia(
+      item,
+      allowDownloads,
+      item?.mediaType === 'video' ? `Video ${index + 1}` : `Fotografía ${index + 1}`,
+    ));
 
     return res.status(200).json({
       status: 'success',
