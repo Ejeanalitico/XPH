@@ -1,0 +1,41 @@
+name: Install private gallery hydration repair
+
+on:
+  push:
+    paths:
+      - '.github/workflows/install-gallery-admin-hydration.yml'
+      - 'scripts/patch-gallery-admin-hydration.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Apply private gallery hydration repair
+        run: python3 scripts/patch-gallery-admin-hydration.py
+      - name: Verify build
+        run: |
+          npm ci
+          npm run build
+      - name: Commit repair
+        run: |
+          if git diff --quiet; then
+            echo 'No changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add api/proxy.js
+          git commit -m 'Hydrate indexed private gallery media in admin'
+          git push origin master
