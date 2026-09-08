@@ -189,7 +189,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
   const [successModal, setSuccessModal] = useState(false);
   const [tab, setTab] = useState<Tab>(initialTab);
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
-  const [expandedAdminArea, setExpandedAdminArea] = useState<Tab | null>(initialTab);
+  const [expandedAdminArea, setExpandedAdminArea] = useState<Tab | null>(null);
   const [businessTab, setBusinessTab] = useState<BusinessTab>('overview');
   const [businessRefreshSignal, setBusinessRefreshSignal] = useState(0);
 
@@ -732,7 +732,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
           </div>
         </header>
 
-        <button type="button" onClick={() => setAdminMenuOpen(true)} className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-[#161C28] px-4 py-3 text-left" aria-haspopup="dialog" aria-expanded={adminMenuOpen}>
+        <button type="button" onClick={() => { setExpandedAdminArea(null); setAdminMenuOpen(true); }} className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-[#161C28] px-4 py-3 text-left" aria-haspopup="dialog" aria-expanded={adminMenuOpen}>
           <span className="flex min-w-0 items-center gap-3">{activeAdminNavItem && React.createElement(activeAdminNavItem.icon, { className: 'h-5 w-5 shrink-0 text-[#D4AF37]' })}<span className="min-w-0"><strong className="block truncate text-sm text-white">{activeAdminNavItem?.label || 'Menú del administrador'}</strong><span className="block truncate text-xs text-gray-500">{activeAdminNavItem?.description}</span></span></span>
           <span className="ml-3 inline-flex shrink-0 items-center gap-2 rounded-xl border border-[#D4AF37]/25 bg-[#D4AF37]/10 px-3 py-2 text-xs font-semibold text-[#F5D76E]"><Menu className="h-5 w-5" />Menú</span>
         </button>
