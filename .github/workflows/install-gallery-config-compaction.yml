@@ -1,0 +1,54 @@
+name: Install gallery config compaction
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'scripts/patch-gallery-config-compaction.py'
+      - '.github/workflows/install-gallery-config-compaction.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Apply patch
+        run: python3 scripts/patch-gallery-config-compaction.py
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate JavaScript syntax
+        run: node --check api/proxy.js
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Validate diff
+        run: git diff --check
+
+      - name: Commit patch
+        run: |
+          if git diff --quiet; then
+            echo 'No changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add api/proxy.js
+          git commit -m 'Compact private gallery metadata in active config'
+          git push origin HEAD:master
