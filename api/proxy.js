@@ -337,28 +337,95 @@ function publicGalleryOnly(items, promotionPopup = null) {
     });
 }
 
-function compactGalleryImagesForConfig(items) {
-  if (!Array.isArray(items)) return [];
-  return items.map((item) => {
-    if (!item || item.visibility !== 'private') return item;
-    const pick = (keys) => Object.fromEntries(keys
-      .filter((key) => Object.prototype.hasOwnProperty.call(item, key))
-      .map((key) => [key, item[key]]));
-    if (item.mediaType === 'gallery-meta') {
-      return pick([
-        'id', 'visibility', 'mediaType', 'galleryId', 'gallerySlug', 'galleryTitle',
-        'galleryClient', 'galleryToken', 'galleryAllowDownloads', 'driveFolderId', 'createdAt',
-      ]);
-    }
-    return pick(['id', 'visibility', 'mediaType', 'galleryId', 'galleryAllowDownloads']);
-  });
+function splitGalleryMediaIds(value) {
+  return String(value || '').split(',').map((value) => value.trim()).filter(Boolean);
 }
 
-function hydratePrivateGalleryMedia(item) {
+function looksLikeDriveFileId(value) {
+  return /^[A-Za-z0-9_-]{20,}$/.test(String(value || ''));
+}
+
+function compactGalleryImagesForConfig(items) {
+  if (!Array.isArray(items)) return [];
+  const privateMetas = [];
+  const metaByGallery = new Map();
+  const deferredPrivateMedia = [];
+  const compactPublic = [];
+
+  const pick = (item, keys) => Object.fromEntries(keys
+    .filter((key) => Object.prototype.hasOwnProperty.call(item || {}, key))
+    .map((key) => [key, item[key]]));
+
+  items.forEach((item) => {
+    if (!item) return;
+    if (item.visibility === 'private' && item.mediaType === 'gallery-meta') {
+      const meta = pick(item, [
+        'id', 'visibility', 'mediaType', 'galleryId', 'gallerySlug', 'galleryTitle',
+        'galleryClient', 'galleryToken', 'galleryAllowDownloads', 'driveFolderId', 'createdAt',
+        'imageIds', 'videoIds',
+      ]);
+      const galleryId = String(meta.galleryId || '');
+      meta.imageIds = splitGalleryMediaIds(meta.imageIds).join(',');
+      meta.videoIds = splitGalleryMediaIds(meta.videoIds).join(',');
+      if (!meta.imageIds) delete meta.imageIds;
+      if (!meta.videoIds) delete meta.videoIds;
+      privateMetas.push(meta);
+      if (galleryId) metaByGallery.set(galleryId, meta);
+      return;
+    }
+    if (item.visibility === 'private') {
+      deferredPrivateMedia.push(item);
+      return;
+    }
+    if (item.mediaType === 'cover-meta' || item.mediaType === 'gallery-meta') {
+      compactPublic.push(item);
+      return;
+    }
+    if (looksLikeDriveFileId(item.id)) {
+      compactPublic.push(pick(item, ['id', 'title', 'category', 'location', 'visibility', 'mediaType']));
+      return;
+    }
+    compactPublic.push(item);
+  });
+
+  const imageIdsByGallery = new Map();
+  const videoIdsByGallery = new Map();
+  privateMetas.forEach((meta) => {
+    const galleryId = String(meta.galleryId || '');
+    imageIdsByGallery.set(galleryId, new Set(splitGalleryMediaIds(meta.imageIds)));
+    videoIdsByGallery.set(galleryId, new Set(splitGalleryMediaIds(meta.videoIds)));
+  });
+
+  const orphanPrivate = [];
+  deferredPrivateMedia.forEach((item) => {
+    const galleryId = String(item.galleryId || '');
+    const fileId = String(item.id || '');
+    if (!galleryId || !fileId || !metaByGallery.has(galleryId)) {
+      orphanPrivate.push(pick(item, ['id', 'visibility', 'mediaType', 'galleryId', 'galleryAllowDownloads']));
+      return;
+    }
+    const target = item.mediaType === 'video' ? videoIdsByGallery.get(galleryId) : imageIdsByGallery.get(galleryId);
+    target.add(fileId);
+  });
+
+  privateMetas.forEach((meta) => {
+    const galleryId = String(meta.galleryId || '');
+    const imageIds = Array.from(imageIdsByGallery.get(galleryId) || []);
+    const videoIds = Array.from(videoIdsByGallery.get(galleryId) || []);
+    if (imageIds.length) meta.imageIds = imageIds.join(',');
+    else delete meta.imageIds;
+    if (videoIds.length) meta.videoIds = videoIds.join(',');
+    else delete meta.videoIds;
+  });
+
+  return [...compactPublic, ...privateMetas, ...orphanPrivate];
+}
+
+function hydrateGalleryMediaItem(item) {
   const clean = { ...(item || {}) };
-  if (clean.visibility !== 'private' || clean.mediaType === 'gallery-meta') return clean;
+  if (clean.mediaType === 'gallery-meta' || clean.mediaType === 'cover-meta') return clean;
   const fileId = String(clean.id || '').trim();
-  if (!fileId) return clean;
+  if (!looksLikeDriveFileId(fileId)) return clean;
   const encoded = encodeURIComponent(fileId);
   const downloadUrl = `https://drive.usercontent.google.com/download?id=${encoded}&export=download&confirm=t`;
   if (clean.mediaType === 'video') {
@@ -373,6 +440,23 @@ function hydratePrivateGalleryMedia(item) {
   clean.previewUrl = clean.previewUrl || previewUrl;
   clean.downloadUrl = clean.downloadUrl || downloadUrl;
   return clean;
+}
+
+function hydratePrivateGalleryMedia(item) {
+  return hydrateGalleryMediaItem(item);
+}
+
+function indexedPrivateGalleryMedia(meta) {
+  const galleryId = String(meta?.galleryId || '');
+  const shared = {
+    visibility: 'private',
+    galleryId,
+    galleryAllowDownloads: meta?.galleryAllowDownloads,
+  };
+  return [
+    ...splitGalleryMediaIds(meta?.imageIds).map((id) => hydrateGalleryMediaItem({ ...shared, id, mediaType: 'image' })),
+    ...splitGalleryMediaIds(meta?.videoIds).map((id) => hydrateGalleryMediaItem({ ...shared, id, mediaType: 'video' })),
+  ];
 }
 
 async function compactCurrentGalleryConfig(details = 'Compactación automática de metadatos privados de galería.') {
@@ -433,7 +517,7 @@ function sanitizePublicConfig(payload) {
     copy.config.promotionPopup = copy.config.promotionPopup && typeof copy.config.promotionPopup === 'object'
       ? copy.config.promotionPopup
       : promotionPopupFromGallery(allGalleryItems);
-    copy.config.galleryImages = publicGalleryOnly(allGalleryItems, copy.config.promotionPopup);
+    copy.config.galleryImages = publicGalleryOnly(allGalleryItems.map(hydrateGalleryMediaItem), copy.config.promotionPopup);
     delete copy.config.adminCredentials;
     delete copy.config.quotes;
     delete copy.config.testimonials;
@@ -444,6 +528,7 @@ function sanitizePublicConfig(payload) {
 function sanitizeAdminConfig(config) {
   const copy = JSON.parse(JSON.stringify(config || {}));
   const allGalleryItems = Array.isArray(copy.galleryImages) ? copy.galleryImages : [];
+  copy.galleryImages = allGalleryItems.map(hydrateGalleryMediaItem);
   copy.heroCovers = heroCoverMap(allGalleryItems);
   copy.heroCoverSettings = heroCoverSettingsMap(allGalleryItems);
   copy.promotionPopup = copy.promotionPopup && typeof copy.promotionPopup === 'object'
@@ -2214,14 +2299,17 @@ export default async function handler(req, res) {
       );
       if (!meta) return res.status(404).json({ status: 'error', message: 'Galería privada no encontrada o liga inválida.' });
 
-      const media = items
-        .filter((item) => item?.visibility === 'private' && item?.galleryId === meta.galleryId && item?.mediaType !== 'gallery-meta')
-        .map((item) => {
-          const clean = hydratePrivateGalleryMedia(item);
-          delete clean.galleryToken;
-          if (meta.galleryAllowDownloads === false) delete clean.downloadUrl;
-          return clean;
-        });
+      const inlineMedia = items
+        .filter((item) => item?.visibility === 'private' && item?.galleryId === meta.galleryId && item?.mediaType !== 'gallery-meta');
+      const mediaById = new Map();
+      [...indexedPrivateGalleryMedia(meta), ...inlineMedia.map(hydratePrivateGalleryMedia)].forEach((item) => {
+        if (!item?.id) return;
+        const clean = { ...item };
+        delete clean.galleryToken;
+        if (meta.galleryAllowDownloads === false) delete clean.downloadUrl;
+        mediaById.set(String(clean.id), clean);
+      });
+      const media = Array.from(mediaById.values());
 
       return res.status(200).json({
         status: 'success',
