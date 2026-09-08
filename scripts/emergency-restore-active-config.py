@@ -2,8 +2,15 @@ from pathlib import Path
 
 path = Path('api/proxy.js')
 text = path.read_text(encoding='utf-8')
+pinned_payload = "const EMERGENCY_RESTORE_BRANCH = '0c986407c65dc048b08c61a78e0cbea48bbb6b8f';"
 if 'emergencyRestoreCompactConfig' in text:
-    print('Restore endpoint already installed; nothing to patch.')
+    old_branch = "const EMERGENCY_RESTORE_BRANCH = 'quota-restore-payload-20260907';"
+    if old_branch in text:
+        text = text.replace(old_branch, pinned_payload, 1)
+        path.write_text(text, encoding='utf-8')
+        print('Restore endpoint payload pinned to immutable commit.')
+    else:
+        print('Restore endpoint already installed and payload already pinned.')
     raise SystemExit(0)
 
 old_import = "import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';"
@@ -18,7 +25,7 @@ const EMERGENCY_RESTORE_KEY_SHA256 = 'ddabc24f609891b0e202bb1ba9bd7a91d6814a9bd9
 const EMERGENCY_RESTORE_NONCE = 'tWItPnxwn-8cKFMk';
 const EMERGENCY_RESTORE_TAG = '4pzpJfFZyw15HlRSUTWBWg';
 const EMERGENCY_RESTORE_PARTS = 8;
-const EMERGENCY_RESTORE_BRANCH = 'quota-restore-payload-20260907';
+const EMERGENCY_RESTORE_BRANCH = '0c986407c65dc048b08c61a78e0cbea48bbb6b8f';
 """.strip()
 if constant_marker not in text:
     raise SystemExit('constant marker not found')
