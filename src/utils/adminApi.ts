@@ -1,6 +1,7 @@
 import { GalleryImage, PackageOption } from '../types';
 import { BusinessContract, BusinessExpense, BusinessPayment, BusinessSnapshot, ClientAddon, ClientGalleryRecord, ClientPackageSnapshot, ContractDocumentSnapshot, ContractedService, CrmClient, CrmFollowUp, CrmNotification, EmailHistory, EmailTemplate, FinancialAdjustment, FinancialTransaction, GmailConfig, InternalCalendarEvent, TeamAssignment, TeamFunction, TeamUser } from '../types/business';
 import { CURRENT_CATALOG_VERSION, resolvePublishedAddons, resolvePublishedPackages } from './catalogMerge';
+import { getDirectGoogleDriveUrl } from './googleDrive';
 
 export type AdminSession = {
   authenticated: true;
@@ -146,10 +147,29 @@ export async function loadDriveImages(_session?: AdminSession | null): Promise<D
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
+    cache: 'no-store',
     body: '{}',
   });
   const data = await parseResponse(res);
-  return Array.isArray(data.images) ? data.images : [];
+  return (Array.isArray(data.images) ? data.images : []).map((item: DriveImageRecord) => ({
+    ...item,
+    url: getDirectGoogleDriveUrl(item.id || item.url),
+  }));
+}
+
+export async function registerExistingDriveImage(
+  fileId: string,
+  options: { title: string; category: string; location: string },
+): Promise<{ fileId: string; url: string; driveUrl?: string }> {
+  const res = await fetch('/api/proxy?action=adminUploadFinalize', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    cache: 'no-store',
+    body: JSON.stringify({ fileId, ...options, visibility: 'public' }),
+  });
+  const data = await parseResponse(res);
+  return { fileId: data.fileId || fileId, url: getDirectGoogleDriveUrl(data.fileId || fileId), driveUrl: data.driveUrl || '' };
 }
 
 export async function loadAdminAnalytics(

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Sparkles, ChevronRight, HeartHandshake, MapPin, CalendarCheck, Camera } from 'lucide-react';
 import { BuiltInRoutePath, CatalogCategory, HeroCoverSetting, RoutePath } from '../types';
 import { DEFAULT_CATALOG_CATEGORIES } from '../utils/catalogCategories';
+import { getDirectGoogleDriveUrl } from '../utils/googleDrive';
 
 interface HeroProps {
   currentRoute: RoutePath;
@@ -86,7 +87,8 @@ export const Hero: React.FC<HeroProps> = ({
     imageTag: category?.name || 'XPH Fotografía & Video',
   };
   const setting = heroCoverSettings[currentRoute];
-  const imageUrl = setting?.url || heroCovers[currentRoute] || category?.imageUrl || current.imageUrl;
+  const sourceImageUrl = setting?.url || heroCovers[currentRoute] || category?.imageUrl || current.imageUrl;
+  const imageUrl = getDirectGoogleDriveUrl(sourceImageUrl);
   const managedCover = Boolean(setting?.url || heroCovers[currentRoute]);
   const coverLabel = setting?.label || current.imageTag;
   const coverDescription = setting?.description || (managedCover

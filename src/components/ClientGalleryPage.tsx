@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Camera, ChevronLeft, ChevronRight, Download, FileVideo2, Loader2, LockKeyhole, X } from 'lucide-react';
 import { GalleryImage } from '../types';
+import { SafeImage } from './SafeImage';
 
 type ClientGalleryMedia = GalleryImage & { streamUrl?: string };
 
@@ -184,7 +185,7 @@ export const ClientGalleryPage: React.FC<ClientGalleryPageProps> = ({ slug, toke
               {photos.map((item, index) => (
                 <article key={item.id} className="break-inside-avoid mb-3 rounded-xl overflow-hidden bg-[#161C28] border border-white/10 group relative">
                   <button onClick={() => setActivePhotoIndex(index)} className="block w-full">
-                    <img src={item.url} alt={`Fotografía ${index + 1}`} className="w-full object-cover" loading="lazy" />
+                    <SafeImage src={item.url} alt={`Fotografía ${index + 1}`} className="w-full object-cover" />
                   </button>
                   {downloadsEnabled && item.downloadUrl && (
                     <a href={item.downloadUrl} target="_blank" rel="noreferrer" className="absolute bottom-3 right-3 p-2.5 rounded-full bg-[#D4AF37] text-black shadow-xl opacity-0 group-hover:opacity-100 transition-opacity" title="Descargar fotografía" aria-label={`Descargar fotografía ${index + 1}`}>
@@ -212,7 +213,7 @@ export const ClientGalleryPage: React.FC<ClientGalleryPageProps> = ({ slug, toke
           )}
 
           <div className="max-w-6xl max-h-[92vh] w-full flex flex-col items-center" onClick={(event) => event.stopPropagation()}>
-            <img src={activePhoto.url} alt={`Fotografía ${activePhotoIndex + 1}`} className="max-w-full max-h-[82vh] object-contain mx-auto" />
+            <SafeImage src={activePhoto.url} alt={`Fotografía ${activePhotoIndex + 1}`} className="max-w-full max-h-[82vh] object-contain mx-auto" />
             <div className="mt-3 flex items-center justify-center gap-4 min-h-10">
               <span className="text-xs text-gray-500">{activePhotoIndex + 1} / {photos.length}</span>
               {downloadsEnabled && activePhoto.downloadUrl && (

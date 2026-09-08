@@ -1,14 +1,37 @@
+/** Extrae un ID únicamente de referencias válidas de Google Drive. */
+export function extractGoogleDriveFileId(urlOrId: string): string {
+  const trimmed = String(urlOrId || '').trim();
+  if (!trimmed) return '';
+  if (/^[a-zA-Z0-9_-]{20,}$/.test(trimmed)) return trimmed;
+
+  let host = '';
+  try { host = new URL(trimmed).hostname.toLowerCase(); } catch (_) { return ''; }
+  if (!host.endsWith('google.com') && !host.endsWith('googleusercontent.com')) return '';
+
+  const match = trimmed.match(/\/file\/d\/([a-zA-Z0-9_-]+)/)
+    || trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/)
+    || trimmed.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  return match?.[1] || '';
+}
+
+/** URLs alternativas para una imagen de Drive. */
+export function getGoogleDriveImageCandidates(urlOrId: string): string[] {
+  const trimmed = String(urlOrId || '').trim();
+  if (!trimmed) return [];
+  const fileId = extractGoogleDriveFileId(trimmed);
+  if (!fileId) return [trimmed];
+  const encoded = encodeURIComponent(fileId);
+  return Array.from(new Set([
+    `https://drive.google.com/thumbnail?id=${encoded}&sz=w1600`,
+    `https://lh3.googleusercontent.com/d/${fileId}`,
+    `https://drive.google.com/uc?export=view&id=${encoded}`,
+    `https://drive.usercontent.google.com/download?id=${encoded}&export=download&confirm=t`,
+  ]));
+}
+
 /** Convierte IDs y enlaces de Drive en una URL pública de vista previa. */
 export function getDirectGoogleDriveUrl(urlOrId: string): string {
-  if (!urlOrId) return '';
-  const trimmed = urlOrId.trim();
-  if (trimmed.includes('googleusercontent.com') || trimmed.startsWith('data:image/') || trimmed.startsWith('http')) {
-    const fileIdMatch = trimmed.match(/\/d\/([a-zA-Z0-9_-]+)/);
-    if (fileIdMatch?.[1]) return `https://lh3.googleusercontent.com/d/${fileIdMatch[1]}`;
-    return trimmed;
-  }
-  const cleanId = trimmed.replace(/[^a-zA-Z0-9_-]/g, '');
-  return `https://lh3.googleusercontent.com/d/${cleanId}`;
+  return getGoogleDriveImageCandidates(urlOrId)[0] || '';
 }
 
 /** Carga únicamente la configuración pública sanitizada por el proxy de Vercel. */
