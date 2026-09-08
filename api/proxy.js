@@ -527,18 +527,12 @@ async function forwardSaveConfigWithQuotaRecovery(patch, currentConfig, auditTyp
     return await forwardSaveConfig(patch, auditType, auditDetails);
   } catch (error) {
     if (!isPropertyStorageQuotaError(error)) throw error;
-
-    // Apps Script legacy guarda la configuración en fragmentos dentro de
-    // PropertiesService. Una configuración mínima reemplaza chunk_0 y permite
-    // que ese código elimine los fragmentos sobrantes antes de restaurar todo.
-    await forwardSaveConfig(
-      ACTIVE_CONFIG_DEFAULTS,
-      'MANTENIMIENTO_STORAGE_CONFIG',
-      'Compactación automática del almacenamiento de configuración.',
+    const quotaError = new Error(
+      'Apps Script alcanzó el límite de PropertiesService. Se bloqueó la compactación automática para proteger los datos; requiere publicar el backend corregido.'
     );
-
-    const restoredConfig = completeActiveConfig(currentConfig, patch);
-    return forwardSaveConfig(restoredConfig, auditType, auditDetails);
+    quotaError.code = 'APPS_SCRIPT_PROPERTY_QUOTA';
+    quotaError.statusCode = 507;
+    throw quotaError;
   }
 }
 
@@ -2085,70 +2079,65 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'POST' && action === 'submitLead') {
-      const attempt = rateLimit(req, 'public-lead', 6, 10 * 60 * 1000);
-      if (!attempt.allowed) {
-        res.setHeader('Retry-After', String(attempt.retryAfter));
-        return res.status(429).json({ status: 'error', message: 'Demasiadas solicitudes. Intenta más tarde.' });
-      }
-      const raw = await readBody(req);
-      let submitted = {};
-      try { submitted = JSON.parse(raw || '{}'); } catch (_) {}
-      const lead = submitted.lead && typeof submitted.lead === 'object' ? submitted.lead : null;
-      if (!lead || !lead.clientName || !lead.clientPhone || !lead.eventDate) {
-        return res.status(400).json({ status: 'error', message: 'Solicitud incompleta.' });
-      }
-      const payload = await fetchConfigFromScript();
-      const config = normalizeConfig(payload);
-      const quotes = Array.isArray(config.quotes) ? config.quotes : [];
-      const safeLead = {
-        id: lead.id || `quote-${Date.now()}`,
-        clientName: String(lead.clientName).trim().slice(0, 120),
-        clientEmail: String(lead.clientEmail || '').trim().slice(0, 160),
-        clientPhone: String(lead.clientPhone).replace(/[^0-9+\s()-]/g, '').slice(0, 30),
-        eventType: String(lead.eventType || '').slice(0, 40),
-        selectedPackageId: String(lead.selectedPackageId || '').slice(0, 80),
-        packageName: String(lead.packageName || '').slice(0, 120),
-        packagePrice: Math.max(0, Number(lead.packagePrice) || 0),
-        addons: Array.isArray(lead.addons) ? lead.addons.slice(0, 20).map((item) => String(item).slice(0, 160)) : [],
-        extraHours: Math.min(24, Math.max(0, Number(lead.extraHours) || 0)),
-        total: Math.max(0, Number(lead.total) || 0),
-        eventDate: String(lead.eventDate).slice(0, 30),
-        eventCity: String(lead.eventCity || '').slice(0, 160),
-        status: 'Pendiente',
-        createdAt: lead.createdAt || new Date().toISOString().split('T')[0],
-        notes: String(lead.notes || '').slice(0, 1000),
-      };
-      await forwardSaveConfig(
-        { quotes: [safeLead, ...quotes] },
-        'NUEVA_SOLICITUD_DISPONIBILIDAD',
-        `Solicitud web de ${String(safeLead.clientName).slice(0, 120)} para ${String(safeLead.eventDate).slice(0, 30)}`
-      );
-      await forwardBusinessAction('crmUpsert', {
-        client: {
-          id: `web-${String(safeLead.id).replace(/[^a-z0-9-]/gi, '').slice(0, 100)}`,
-          recordType: 'Prospecto',
-          name: safeLead.clientName,
-          phone: safeLead.clientPhone,
-          email: safeLead.clientEmail,
-          eventType: safeLead.eventType,
-          eventDate: safeLead.eventDate,
-          eventLocation: safeLead.eventCity,
-          packageName: safeLead.packageName,
-          totalAmount: safeLead.total,
-          paidAmount: 0,
-          status: 'Nuevo',
-          source: 'Formulario de xaviph.com',
-          firstContactAt: new Date().toISOString(),
-          lastContactAt: '',
-          nextAction: 'Responder solicitud de disponibilidad',
-          nextActionAt: '',
-          notes: safeLead.notes,
-          campaign: '',
-          followUpAttempts: 0,
-        },
-      });
-      return res.status(200).json({ status: 'success', message: 'Solicitud registrada.' });
+    const attempt = rateLimit(req, 'public-lead', 6, 10 * 60 * 1000);
+    if (!attempt.allowed) {
+      res.setHeader('Retry-After', String(attempt.retryAfter));
+      return res.status(429).json({ status: 'error', message: 'Demasiadas solicitudes. Intenta más tarde.' });
     }
+    const raw = await readBody(req);
+    let submitted = {};
+    try { submitted = JSON.parse(raw || '{}'); } catch (_) {}
+    const lead = submitted.lead && typeof submitted.lead === 'object' ? submitted.lead : null;
+    if (!lead || !lead.clientName || !lead.clientPhone || !lead.eventDate) {
+      return res.status(400).json({ status: 'error', message: 'Solicitud incompleta.' });
+    }
+    const safeLead = {
+      id: lead.id || `quote-${Date.now()}`,
+      clientName: String(lead.clientName).trim().slice(0, 120),
+      clientEmail: String(lead.clientEmail || '').trim().slice(0, 160),
+      clientPhone: String(lead.clientPhone).replace(/[^0-9+\s()-]/g, '').slice(0, 30),
+      eventType: String(lead.eventType || '').slice(0, 40),
+      selectedPackageId: String(lead.selectedPackageId || '').slice(0, 80),
+      packageName: String(lead.packageName || '').slice(0, 120),
+      packagePrice: Math.max(0, Number(lead.packagePrice) || 0),
+      addons: Array.isArray(lead.addons) ? lead.addons.slice(0, 20).map((item) => String(item).slice(0, 160)) : [],
+      extraHours: Math.min(24, Math.max(0, Number(lead.extraHours) || 0)),
+      total: Math.max(0, Number(lead.total) || 0),
+      eventDate: String(lead.eventDate).slice(0, 30),
+      eventCity: String(lead.eventCity || '').slice(0, 160),
+      status: 'Pendiente',
+      createdAt: lead.createdAt || new Date().toISOString().split('T')[0],
+      notes: String(lead.notes || '').slice(0, 1000),
+    };
+
+    // Cotizaciones web ya no se guardan dentro de la configuración global.
+    // Esto evita inflar PropertiesService y conserva el prospecto en la tabla CRM.
+    await forwardBusinessAction('crmUpsert', {
+      client: {
+        id: `web-${String(safeLead.id).replace(/[^a-z0-9-]/gi, '').slice(0, 100)}`,
+        recordType: 'Prospecto',
+        name: safeLead.clientName,
+        phone: safeLead.clientPhone,
+        email: safeLead.clientEmail,
+        eventType: safeLead.eventType,
+        eventDate: safeLead.eventDate,
+        eventLocation: safeLead.eventCity,
+        packageName: safeLead.packageName,
+        totalAmount: safeLead.total,
+        paidAmount: 0,
+        status: 'Nuevo',
+        source: 'Formulario de xaviph.com',
+        firstContactAt: new Date().toISOString(),
+        lastContactAt: '',
+        nextAction: 'Responder solicitud de disponibilidad',
+        nextActionAt: '',
+        notes: safeLead.notes,
+        campaign: '',
+        followUpAttempts: 0,
+      },
+    });
+    return res.status(200).json({ status: 'success', message: 'Solicitud registrada.', quote: safeLead });
+  }
 
     if (req.method === 'GET' && action === 'clientGallery') {
       const slug = String(req.query?.slug || '').trim();
