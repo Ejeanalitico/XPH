@@ -1,0 +1,41 @@
+name: Install Drive import loading screen
+
+on:
+  push:
+    paths:
+      - '.github/workflows/install-drive-import-loading.yml'
+      - 'scripts/patch-drive-import-loading.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Apply Drive loading patch
+        run: python3 scripts/patch-drive-import-loading.py
+      - name: Verify build
+        run: |
+          npm ci
+          npm run build
+      - name: Commit patch
+        run: |
+          if git diff --quiet; then
+            echo 'No changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/components/UnifiedAdminDashboard.tsx
+          git commit -m 'Show loading screen while importing from Drive'
+          git push origin master
