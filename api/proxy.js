@@ -453,9 +453,11 @@ function indexedPrivateGalleryMedia(meta) {
     galleryId,
     galleryAllowDownloads: meta?.galleryAllowDownloads,
   };
+  const images = splitGalleryMediaIds(meta?.imageIds);
+  const videos = splitGalleryMediaIds(meta?.videoIds);
   return [
-    ...splitGalleryMediaIds(meta?.imageIds).map((id) => hydrateGalleryMediaItem({ ...shared, id, mediaType: 'image' })),
-    ...splitGalleryMediaIds(meta?.videoIds).map((id) => hydrateGalleryMediaItem({ ...shared, id, mediaType: 'video' })),
+    ...images.map((id, index) => hydrateGalleryMediaItem({ ...shared, id, title: `Fotografía ${index + 1}`, mediaType: 'image' })),
+    ...videos.map((id, index) => hydrateGalleryMediaItem({ ...shared, id, title: `Video ${index + 1}`, mediaType: 'video' })),
   ];
 }
 
@@ -528,7 +530,18 @@ function sanitizePublicConfig(payload) {
 function sanitizeAdminConfig(config) {
   const copy = JSON.parse(JSON.stringify(config || {}));
   const allGalleryItems = Array.isArray(copy.galleryImages) ? copy.galleryImages : [];
-  copy.galleryImages = allGalleryItems.map(hydrateGalleryMediaItem);
+  const hydrated = allGalleryItems.map(hydrateGalleryMediaItem);
+  const existingKeys = new Set(hydrated.map((item) => `${String(item?.galleryId || '')}:${String(item?.id || '')}:${String(item?.mediaType || '')}`));
+  const indexed = allGalleryItems
+    .filter((item) => item?.visibility === 'private' && item?.mediaType === 'gallery-meta')
+    .flatMap((meta) => indexedPrivateGalleryMedia(meta))
+    .filter((item) => {
+      const key = `${String(item?.galleryId || '')}:${String(item?.id || '')}:${String(item?.mediaType || '')}`;
+      if (existingKeys.has(key)) return false;
+      existingKeys.add(key);
+      return true;
+    });
+  copy.galleryImages = [...hydrated, ...indexed];
   copy.heroCovers = heroCoverMap(allGalleryItems);
   copy.heroCoverSettings = heroCoverSettingsMap(allGalleryItems);
   copy.promotionPopup = copy.promotionPopup && typeof copy.promotionPopup === 'object'
