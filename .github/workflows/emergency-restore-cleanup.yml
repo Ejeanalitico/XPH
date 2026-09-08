@@ -1,0 +1,60 @@
+name: Emergency restore cleanup
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'scripts/emergency-restore-cleanup.py'
+      - '.github/workflows/emergency-restore-cleanup.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Remove temporary endpoint
+        run: python3 scripts/emergency-restore-cleanup.py
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate JavaScript syntax
+        run: node --check api/proxy.js
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Validate cleanup
+        run: |
+          git diff --check
+          if grep -q 'emergencyRestoreCompactConfig\|EMERGENCY_RESTORE_\|createDecipheriv\|gunzipSync' api/proxy.js; then
+            echo 'Temporary restore code remains'
+            exit 1
+          fi
+
+      - name: Commit cleanup
+        run: |
+          if git diff --quiet; then
+            echo 'No changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add api/proxy.js
+          git commit -m 'Cleanup: remove one-time config restore endpoint'
+          git pull --rebase origin master
+          git push origin HEAD:master
