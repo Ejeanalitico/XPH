@@ -221,6 +221,8 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
   const [driveMediaUrl, setDriveMediaUrl] = useState('');
   const [driveMediaTitle, setDriveMediaTitle] = useState('');
   const [driveMediaType, setDriveMediaType] = useState<'image' | 'video'>('video');
+  const [driveImportLoading, setDriveImportLoading] = useState(false);
+  const [driveImportStatus, setDriveImportStatus] = useState('Preparando importación...');
 
   const privateGalleries = useMemo(() => privateGallerySummaries(galleryImages), [galleryImages]);
   const adminNavItems = ADMIN_NAV_ITEMS.filter((item) => session?.role === 'SUPER_ADMIN' || item.id === 'business');
@@ -595,30 +597,49 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
     const folderId = extractDriveFolderId(driveMediaUrl);
     if (folderId) {
       setBusy(true);
+      setDriveImportLoading(true);
+      setDriveImportStatus('Conectando con Google Drive y leyendo la carpeta...');
       try {
         const files = await importPrivateDriveFolder(folderId);
+        setDriveImportStatus(files.length
+          ? `Se encontraron ${files.length} archivos. Preparando la galería...`
+          : 'La carpeta se leyó correctamente. No se encontraron archivos compatibles.');
         const added: GalleryImage[] = files.map((file) => {
           const mediaType: 'image' | 'video' = file.mimeType.startsWith('video/') ? 'video' : 'image';
           const preview = mediaType === 'video' ? drivePreviewUrl(file.id) : `https://lh3.googleusercontent.com/d/${file.id}`;
           return { id: file.id, title: file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '), category: 'private', url: preview, location: selectedGallery.clientName, visibility: 'private', mediaType, galleryId: selectedGallery.galleryId, gallerySlug: selectedGallery.slug, galleryTitle: selectedGallery.title, galleryClient: selectedGallery.clientName, storageSource: 'drive-link', downloadUrl: driveDownloadUrl(file.id), previewUrl: preview, driveFolderId: folderId, createdAt: new Date().toISOString() };
         });
         const ids = new Set(added.map((item) => item.id));
+        setDriveImportStatus(`Guardando ${added.length} archivos en “${selectedGallery.title}”...`);
         await persistGallery([...added, ...galleryImages.filter((item) => !ids.has(item.id))], 'ADMIN_GALERIA_PRIVADA', `${added.length} archivos importados desde carpeta de Drive a ${selectedGallery.title}`);
+        setDriveImportStatus('Importación terminada. Actualizando la galería...');
         setDriveMediaUrl(''); setDriveMediaTitle(''); notify(`${added.length} archivos importados desde la carpeta de Drive.`);
       } catch (error: any) { notify(error?.message || 'No se pudo leer la carpeta. Verifica que pertenezca o esté compartida con la cuenta de XPH.'); }
-      finally { setBusy(false); }
+      finally {
+        setBusy(false);
+        setDriveImportLoading(false);
+        setDriveImportStatus('Preparando importación...');
+      }
       return;
     }
     const fileId = extractDriveFileId(driveMediaUrl);
     if (!fileId) return notify('La liga no corresponde a un archivo ni a una carpeta válida de Google Drive.');
     setBusy(true);
+    setDriveImportLoading(true);
+    setDriveImportStatus('Importando el archivo desde Google Drive...');
     try {
       const preview = driveMediaType === 'video' ? drivePreviewUrl(fileId) : `https://lh3.googleusercontent.com/d/${fileId}`;
       const record: GalleryImage = { id: fileId, title: driveMediaTitle.trim() || (driveMediaType === 'video' ? 'Video del evento' : 'Fotografía'), category: 'private', url: preview, location: selectedGallery.clientName, visibility: 'private', mediaType: driveMediaType, galleryId: selectedGallery.galleryId, gallerySlug: selectedGallery.slug, galleryTitle: selectedGallery.title, galleryClient: selectedGallery.clientName, storageSource: 'drive-link', downloadUrl: driveDownloadUrl(fileId), previewUrl: preview, createdAt: new Date().toISOString() };
+      setDriveImportStatus(`Guardando el archivo en “${selectedGallery.title}”...`);
       await persistGallery([record, ...galleryImages.filter((item) => item.id !== fileId)], 'ADMIN_GALERIA_PRIVADA', `Archivo de Drive agregado a ${selectedGallery.title}`);
+      setDriveImportStatus('Importación terminada. Actualizando la galería...');
       setDriveMediaUrl(''); setDriveMediaTitle(''); notify('Archivo agregado a la galería privada.');
     } catch (error: any) { notify(error?.message || 'No se pudo registrar el archivo.'); }
-    finally { setBusy(false); }
+    finally {
+      setBusy(false);
+      setDriveImportLoading(false);
+      setDriveImportStatus('Preparando importación...');
+    }
   };
 
   const removePrivateMedia = async (item: GalleryImage) => {
@@ -685,6 +706,22 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
 
   return (
     <main className="min-h-screen bg-[#0B0F17] text-white py-8 px-4">
+      {driveImportLoading && (
+        <div className="fixed inset-0 z-[9999] bg-[#05070D]/95 backdrop-blur-sm flex items-center justify-center p-5" role="status" aria-live="polite" aria-busy="true">
+          <div className="w-full max-w-sm rounded-3xl border border-[#D4AF37]/30 bg-[#111722] p-7 text-center shadow-2xl">
+            <div className="mx-auto w-16 h-16 rounded-full border border-[#D4AF37]/30 bg-[#D4AF37]/10 flex items-center justify-center">
+              <Loader2 className="w-8 h-8 animate-spin text-[#D4AF37]" />
+            </div>
+            <p className="mt-5 text-[11px] uppercase tracking-[0.28em] text-[#D4AF37] font-mono">Google Drive</p>
+            <h2 className="mt-2 text-2xl font-bold">Importando archivos</h2>
+            <p className="mt-3 text-sm leading-6 text-gray-300">{driveImportStatus}</p>
+            <div className="mt-5 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+              <div className="h-full w-1/2 rounded-full bg-[#D4AF37] animate-pulse" />
+            </div>
+            <p className="mt-4 text-xs leading-5 text-gray-500">Mantén esta pantalla abierta. Se cerrará automáticamente cuando termine la importación.</p>
+          </div>
+        </div>
+      )}
       <div className="max-w-7xl mx-auto space-y-6">
         <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div><p className="text-xs uppercase tracking-widest text-[#D4AF37] font-mono">XPH Fotografía & Video</p><h1 className="text-3xl font-bold">Administrador</h1><p className="text-sm text-gray-400">Todo el contenido vive en este panel.</p></div>
