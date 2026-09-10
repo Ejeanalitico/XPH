@@ -1091,8 +1091,9 @@ async function appendClientSignature(pdfBase64, signatureDataUrl, contract, audi
   const pdf = await PDFDocument.load(pdfBytes, { ignoreEncryption: false });
   const signature = await pdf.embedPng(signatureBytes);
   const templateVersion = String(contract?.templateVersion || contract?.documentSnapshot?.templateVersion || '');
+  const generatedContract = Boolean(contract?.documentSnapshot) && String(contract?.documentType || contract?.documentSnapshot?.documentType || 'CONTRATO') === 'CONTRATO';
 
-  if (templateVersion.includes('canonical-v3')) {
+  if (generatedContract || templateVersion.includes('canonical-v3')) {
     const pages = pdf.getPages();
     if (!pages.length) throw new Error('El contrato no contiene páginas.');
     const page = pages[pages.length - 1];
@@ -1198,8 +1199,9 @@ async function renderContractSnapshotPdf(snapshot, contract) {
     (snapshot.terms || []).forEach((term, index) => bullet(`${index + 1}. ${term}`));
   }
 
-  if (snapshot.documentType === 'CONTRATO' && String(snapshot.templateVersion || '').includes('canonical-v3')) {
-    // La página de firmas forma parte del PDF original desde su creación.
+  if (snapshot.documentType === 'CONTRATO') {
+    // Todo contrato generado por XPH incluye su página de firmas dentro del PDF original.
+    // Esto también unifica contratos generados antes de canonical-v3 que aún no han sido firmados.
     // Las firmas se insertan después sobre ESTA MISMA página; nunca se cambia de diseño.
     addPage();
     heading('Firmas y aceptacion');
