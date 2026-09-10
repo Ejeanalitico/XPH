@@ -1,0 +1,48 @@
+name: Install fast contract preview repair
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - scripts/patch-fast-contract-preview.py
+      - .github/workflows/install-fast-contract-preview.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply fast preview repair
+        run: python scripts/patch-fast-contract-preview.py
+      - name: Verify application
+        run: |
+          npm ci
+          npm run typecheck --if-present
+          npm run build
+      - name: Verify instant document rendering
+        run: |
+          grep -q "Vista previa instantánea" src/components/BusinessAdminPanel.tsx
+          grep -q "<ContractDocument snapshot={contractPreview.documentSnapshot}" src/components/BusinessAdminPanel.tsx
+          grep -q "<ContractDocument snapshot={contract.documentSnapshot}" src/components/MobileContractSigningPage.tsx
+          if grep -q 'title={`Documento ${contractPreview.folio}`} src={adminContractPdfUrl' src/components/BusinessAdminPanel.tsx; then exit 1; fi
+          if grep -q 'title={`Contrato ${contract.folio}`} src={safeContractPdfUrl(token)}' src/components/MobileContractSigningPage.tsx; then exit 1; fi
+      - name: Commit repair
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/components/BusinessAdminPanel.tsx src/components/MobileContractSigningPage.tsx
+          git commit -m "Restore fast original contract preview design"
+          git push origin master
