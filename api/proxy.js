@@ -277,6 +277,65 @@ function requestOrigin(req) {
   return `${protocol}://${String(req.headers?.host || 'www.xaviph.com')}`;
 }
 
+
+const FINAL_CONTRACT_EMAIL_TEMPLATE_ID = 'contrato-firmado-final-auto';
+const FINAL_CONTRACT_DOWNLOAD_DAYS = 365;
+
+function signFinalContractDownload(contractId, expiresAt) {
+  const encoded = b64url(JSON.stringify({ contractId: String(contractId || ''), exp: Number(expiresAt || 0) }));
+  const signature = createHmac('sha256', sessionSecret()).update(`contract-final:${encoded}`).digest('base64url');
+  return `${encoded}.${signature}`;
+}
+
+function verifyFinalContractDownload(value) {
+  if (!value || !String(value).includes('.')) return null;
+  const [encoded, signature] = String(value).split('.');
+  const expected = createHmac('sha256', sessionSecret()).update(`contract-final:${encoded}`).digest('base64url');
+  try {
+    const left = Buffer.from(signature);
+    const right = Buffer.from(expected);
+    if (left.length !== right.length || !timingSafeEqual(left, right)) return null;
+    const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+    if (!payload?.contractId || Number(payload.exp) <= Date.now()) return null;
+    return payload;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function deliverFinalContractEmail(req, contract, userId) {
+  if (!contract?.clientId) throw new Error('El contrato final no está vinculado a un cliente.');
+  const expiresAtMs = Date.now() + FINAL_CONTRACT_DOWNLOAD_DAYS * 24 * 60 * 60 * 1000;
+  const token = signFinalContractDownload(contract.id, expiresAtMs);
+  const contractUrl = `${requestOrigin(req)}/api/proxy?action=contractFinalPdf&token=${encodeURIComponent(token)}`;
+
+  await forwardBusinessAction('emailTemplateUpsert', {
+    emailTemplate: {
+      id: FINAL_CONTRACT_EMAIL_TEMPLATE_ID,
+      name: 'Contrato firmado final',
+      subject: 'Tu contrato firmado XPH · {{evento_tipo}}',
+      htmlBody: '<p>Hola {{cliente_nombre}},</p><p>Tu contrato con <strong>XPH Producción Audiovisual &amp; Makeup</strong> ya fue firmado y autorizado por ambas partes.</p><p>Puedes descargar tu copia final en PDF desde el siguiente botón:</p><p style="margin:24px 0"><a href="{{contrato_url}}" style="display:inline-block;background:#D4AF37;color:#111827;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:10px">Descargar contrato firmado en PDF</a></p><p><strong>Folio:</strong> {{contrato_folio}}</p><p>Conserva este documento como tu copia del contrato final.</p>',
+      status: 'ACTIVA',
+    },
+  });
+
+  const sent = await forwardBusinessAction('emailSend', {
+    clientId: contract.clientId,
+    templateId: FINAL_CONTRACT_EMAIL_TEMPLATE_ID,
+    variables: {
+      contrato_url: contractUrl,
+      contrato_folio: contract.folio || contract.id,
+    },
+    userId: userId || 'xph-super-admin',
+  });
+  return {
+    sent: true,
+    mode: 'LINK_SEGURO_PDF',
+    expiresAt: new Date(expiresAtMs).toISOString(),
+    emailHistory: sent.emailHistory || null,
+  };
+}
+
 function setSessionCookie(res, token) {
   res.setHeader(
     'Set-Cookie',
@@ -1556,6 +1615,7 @@ export default async function handler(req, res) {
       'adminContractCreateLink',
       'adminOwnerSignatureSave',
       'adminContractFinalize',
+      'adminContractEmailFinal',
       'adminContractDelete',
     ];
 
@@ -1569,7 +1629,7 @@ export default async function handler(req, res) {
         adminCalendarSync: 'CALENDAR', adminCalendarSyncAll: 'CALENDAR',
         adminExpenseUpsert: 'FINANCE', adminPaymentUpsert: 'FINANCE', adminAdjustmentUpsert: 'FINANCE',
         adminClientPackageAssign: 'CLIENTS_WRITE', adminServiceUpsert: 'CLIENTS_WRITE', adminAddonUpsert: 'CLIENTS_WRITE',
-        adminContractUpload: 'CONTRACTS', adminContractUploadInit: 'CONTRACTS', adminDriveUploadBody: uploadPermissionByKind[uploadKind] || 'SUPER_ADMIN', adminContractUploadFinalize: 'CONTRACTS', adminContractGenerate: 'CONTRACTS', adminContractDocument: 'CONTRACTS', adminContractCreateLink: 'CONTRACTS', adminOwnerSignatureSave: 'CONTRACTS', adminContractFinalize: 'CONTRACTS', adminContractDelete: 'SUPER_ADMIN',
+        adminContractUpload: 'CONTRACTS', adminContractUploadInit: 'CONTRACTS', adminDriveUploadBody: uploadPermissionByKind[uploadKind] || 'SUPER_ADMIN', adminContractUploadFinalize: 'CONTRACTS', adminContractGenerate: 'CONTRACTS', adminContractDocument: 'CONTRACTS', adminContractCreateLink: 'CONTRACTS', adminOwnerSignatureSave: 'CONTRACTS', adminContractFinalize: 'CONTRACTS', adminContractEmailFinal: 'CONTRACTS', adminContractDelete: 'SUPER_ADMIN',
         adminUploadInit: 'GALLERIES', adminUploadFinalize: 'GALLERIES', adminDriveFolderImport: 'GALLERIES', adminManagedMediaDelete: 'GALLERIES',
         adminTeamFunctionUpsert: 'USERS_ADMIN', adminTeamUserUpsert: 'USERS_ADMIN', adminTeamInviteCreate: 'USERS_ADMIN',
         adminTeamAssignmentUpsert: 'USERS_ADMIN',
@@ -2144,8 +2204,42 @@ export default async function handler(req, res) {
         const finalizedPdfBase64 = await applyOwnerSignature(material.pdfBase64, material.ownerSignatureDataUrl, authorizedAt);
         const finalDocumentHash = createHash('sha256').update(Buffer.from(finalizedPdfBase64, 'base64')).digest('hex');
         const result = await forwardBusinessAction('contractFinalize', { contractId, finalizedPdfBase64, finalDocumentHash, authorizedAt });
-        return res.status(200).json({ status: 'success', contract: result.contract });
+        let emailDelivery = result.emailDelivery || null;
+        if (!emailDelivery?.sent) {
+          try {
+            emailDelivery = await deliverFinalContractEmail(req, result.contract, session.userId);
+          } catch (error) {
+            emailDelivery = { sent: false, mode: 'NO_ENVIADO', error: String(error?.message || error || 'No se pudo enviar el correo.') };
+          }
+        }
+        return res.status(200).json({ status: 'success', contract: result.contract, emailDelivery });
       }
+      if (action === 'adminContractEmailFinal') {
+        const contractId = String(submitted.contractId || '').trim();
+        if (!contractId) return res.status(400).json({ status: 'error', message: 'Contrato no identificado.' });
+        const snapshotResult = await forwardTransientBusinessAction('businessSnapshot', {}, 5);
+        const contract = (snapshotResult.snapshot?.contracts || []).find((item) => String(item.id) === contractId);
+        if (!contract || String(contract.status || '') !== 'Finalizado') return res.status(400).json({ status: 'error', message: 'Solo se puede reenviar un contrato finalizado.' });
+        const emailDelivery = await deliverFinalContractEmail(req, contract, session.userId);
+        return res.status(200).json({ status: 'success', contract, emailDelivery });
+      }
+    }
+
+    if (req.method === 'GET' && action === 'contractFinalPdf') {
+      const attempt = rateLimit(req, 'contract-final-pdf', 30, 10 * 60 * 1000);
+      if (!attempt.allowed) {
+        res.setHeader('Retry-After', String(attempt.retryAfter));
+        return res.status(429).json({ status: 'error', message: 'Demasiadas descargas. Intenta nuevamente más tarde.' });
+      }
+      const claims = verifyFinalContractDownload(String(req.query?.token || '').trim());
+      if (!claims) return res.status(403).json({ status: 'error', message: 'La liga del contrato no es válida o ya caducó.' });
+      const result = await forwardTransientBusinessAction('contractAdminPdfData', { contractId: claims.contractId, version: 'final' }, 4);
+      const pdf = Buffer.from(cleanBase64(result.pdfBase64 || ''), 'base64');
+      if (!pdf.length || pdf.subarray(0, 5).toString('ascii') !== '%PDF-') throw new Error('El contrato final no contiene un PDF válido.');
+      const filename = `Contrato-firmado-${String(result.folio || claims.contractId || 'xph').replace(/[^a-z0-9-]/gi, '_')}.pdf`;
+      setPrivatePdfHeaders(res, filename, 'attachment');
+      res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+      return res.status(200).send(pdf);
     }
 
     if (req.method === 'GET' && action === 'adminContractPdf') {

@@ -563,9 +563,21 @@ export async function saveOwnerSignature(signatureDataUrl: string): Promise<void
   await adminBusinessRequest('adminOwnerSignatureSave', { signatureDataUrl });
 }
 
-export async function finalizeBusinessContract(contractId: string): Promise<BusinessContract> {
-  const data = await adminBusinessRequest<{ contract: BusinessContract }>('adminContractFinalize', { contractId });
-  return data.contract;
+export type FinalContractEmailDelivery = {
+  sent: boolean;
+  mode?: 'ADJUNTO_PDF' | 'LINK_SEGURO_PDF' | 'NO_ENVIADO' | string;
+  expiresAt?: string;
+  error?: string;
+};
+
+export async function finalizeBusinessContract(contractId: string): Promise<{ contract: BusinessContract; emailDelivery: FinalContractEmailDelivery }> {
+  const data = await adminBusinessRequest<{ contract: BusinessContract; emailDelivery?: FinalContractEmailDelivery }>('adminContractFinalize', { contractId });
+  return { contract: data.contract, emailDelivery: data.emailDelivery || { sent: false, mode: 'NO_ENVIADO', error: 'El servidor no confirmó el envío del correo.' } };
+}
+
+export async function resendFinalBusinessContract(contractId: string): Promise<FinalContractEmailDelivery> {
+  const data = await adminBusinessRequest<{ emailDelivery?: FinalContractEmailDelivery }>('adminContractEmailFinal', { contractId });
+  return data.emailDelivery || { sent: false, mode: 'NO_ENVIADO', error: 'El servidor no confirmó el reenvío.' };
 }
 
 export async function loadPublicContract(token: string, sessionId = ''): Promise<{

@@ -38,6 +38,7 @@ import {
   convertProspectToClient,
   createCrmFollowUp,
   finalizeBusinessContract,
+  resendFinalBusinessContract,
   loadBusinessSnapshot,
   loadAdminContractDocument,
   readCachedBusinessSnapshot,
@@ -1245,10 +1246,26 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
   const finalize = async (contract: BusinessContract) => {
     setBusy(true);
     try {
-      const saved = await finalizeBusinessContract(contract.id);
+      const result = await finalizeBusinessContract(contract.id);
+      const saved = result.contract;
       setSnapshot((prev) => ({ ...prev, contracts: prev.contracts.map((item) => item.id === saved.id ? saved : item) }));
-      setModalNotice('Contrato autorizado y finalizado con tu firma.');
+      if (result.emailDelivery?.sent) {
+        setModalNotice(result.emailDelivery.mode === 'ADJUNTO_PDF'
+          ? 'Contrato autorizado y finalizado. El PDF firmado fue enviado automáticamente al correo de la clienta.'
+          : 'Contrato autorizado y finalizado. Se envió automáticamente a la clienta un correo con acceso seguro al PDF firmado.');
+      } else {
+        setModalNotice(`Contrato autorizado y finalizado, pero el correo no pudo enviarse automáticamente: ${result.emailDelivery?.error || 'revisa la configuración de Gmail.'}`);
+      }
     } catch (error: any) { setModalNotice(error?.message || 'No se pudo finalizar el contrato.'); }
+    finally { setBusy(false); }
+  };
+
+  const resendFinalContract = async (contract: BusinessContract) => {
+    setBusy(true);
+    try {
+      const delivery = await resendFinalBusinessContract(contract.id);
+      setModalNotice(delivery.sent ? 'Correo del contrato final reenviado correctamente a la clienta.' : `No se pudo reenviar el correo: ${delivery.error || 'revisa Gmail.'}`);
+    } catch (error: any) { setModalNotice(error?.message || 'No se pudo reenviar el contrato por correo.'); }
     finally { setBusy(false); }
   };
 

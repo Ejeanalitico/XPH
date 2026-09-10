@@ -762,6 +762,13 @@ function sendCrmTemplateEmail(ss, input) {
     var options = { htmlBody: wrapXphEmail(body, config, Boolean(inlineImages.xphLogo)), name: config.senderName || 'XPH Fotografía & Video' };
     if (config.replyTo) options.replyTo = config.replyTo;
     if (inlineImages.xphLogo) options.inlineImages = inlineImages;
+    if (Array.isArray(input.attachments) && input.attachments.length) {
+      var attachmentBlobs = input.attachments.slice(0, 5).map(function(attachment) {
+        if (!attachment || !attachment.base64) return null;
+        return base64Blob(attachment.base64, attachment.mimeType || 'application/pdf', cleanBusinessText(attachment.name || 'archivo.pdf', 220));
+      }).filter(function(blob) { return Boolean(blob); });
+      if (attachmentBlobs.length) options.attachments = attachmentBlobs;
+    }
     GmailApp.sendEmail(recipient, subject, emailPlainText(body), options);
   } catch (error) {
     history.status = 'ERROR';
@@ -2829,7 +2836,46 @@ function handleBusinessAction(ss, action, payload) {
     finalContract.updatedAt = businessNow();
     upsertBusinessRecord(ss, 'Contratos', BUSINESS_HEADERS.contracts, finalContract);
     logAudit(ss, 'CONTRATO_FINALIZADO', finalContract.folio + ' | hash ' + finalContract.finalDocumentHash, finalContract.id, 'Javier Garcia');
-    return { status: 'success', contract: publicContractRecord(finalContract) };
+
+    var finalEmailDelivery = { sent: false, mode: 'ADJUNTO_PDF', error: '' };
+    var finalClient = findBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, finalContract.clientId);
+    if (finalClient && finalClient.email) {
+      try {
+        var finalTemplateId = 'contrato-firmado-final-auto';
+        upsertBusinessRecord(ss, 'Plantillas_Email', BUSINESS_HEADERS.emailTemplates, {
+          id: finalTemplateId,
+          name: 'Contrato firmado final',
+          subject: 'Tu contrato firmado XPH · {{evento_tipo}}',
+          htmlBody: '<p>Hola {{cliente_nombre}},</p><p>Tu contrato con <strong>XPH Producción Audiovisual &amp; Makeup</strong> ya fue firmado y autorizado por ambas partes.</p><p>Adjuntamos a este correo tu copia final en formato PDF.</p><p><strong>Folio:</strong> {{contrato_folio}}</p><p>Conserva este documento como tu copia del contrato final.</p>',
+          status: 'ACTIVA',
+          updatedAt: businessNow()
+        });
+        clearBusinessRecordCache('Plantillas_Email');
+        var finalEmailHistory = sendCrmTemplateEmail(ss, {
+          recipient: finalClient.email,
+          clientId: finalClient.id,
+          templateId: finalTemplateId,
+          variables: clientEmailVariables(finalClient, { contrato_folio: finalContract.folio || finalContract.id }),
+          mode: 'AUTOMATICO',
+          userId: 'xph-system',
+          historyId: 'correo-contrato-final-' + finalContract.id + '-' + finalContract.finalDocumentHash,
+          attachments: [{ name: finalName, mimeType: 'application/pdf', base64: payload.finalizedPdfBase64 }]
+        });
+        finalEmailDelivery = { sent: true, mode: 'ADJUNTO_PDF', emailHistory: finalEmailHistory };
+      } catch (finalEmailError) {
+        finalEmailDelivery.error = cleanBusinessText(finalEmailError && finalEmailError.message || finalEmailError, 1000);
+        upsertCrmNotification(ss, {
+          type: 'ERROR_GMAIL',
+          title: 'No se envió el contrato firmado',
+          message: (finalClient.name || 'Cliente') + ' · ' + finalEmailDelivery.error,
+          relatedId: finalContract.id,
+          dedupeKey: 'error-gmail-contrato-final-' + finalContract.id + '-' + finalContract.finalDocumentHash
+        });
+      }
+    } else {
+      finalEmailDelivery.error = 'El cliente no tiene un correo electrónico válido registrado.';
+    }
+    return { status: 'success', contract: publicContractRecord(finalContract), emailDelivery: finalEmailDelivery };
   }
 
   throw new Error('Acción privada no reconocida.');
