@@ -1,0 +1,40 @@
+name: Install addon delete action
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/install-addon-delete.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply addon delete repair
+        run: python scripts/patch-addon-delete.py
+      - name: Verify application
+        run: |
+          npm ci
+          npm run check
+      - name: Commit repair
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/components/ClientOperationsPanel.tsx
+          if git diff --cached --quiet; then
+            echo 'No changes to commit'
+          else
+            git commit -m 'Allow deleting client addons and recalculate totals'
+            git push origin master
+          fi
