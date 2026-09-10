@@ -1,0 +1,49 @@
+name: Install automatic final contract email
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/install-contract-final-email.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply automatic contract email repair
+        run: python scripts/patch-contract-final-email.py
+      - name: Verify application
+        run: |
+          node --check api/proxy.js
+          node --check google-apps-script.js
+          npm ci
+          npm run check
+      - name: Verify contract delivery invariants
+        run: |
+          grep -q "contractFinalPdf" api/proxy.js
+          grep -q "LINK_SEGURO_PDF" api/proxy.js
+          grep -q "attachmentBlobs = input.attachments" google-apps-script.js
+          grep -q "ADJUNTO_PDF" google-apps-script.js
+          grep -q "resendFinalBusinessContract" src/utils/adminApi.ts
+      - name: Commit repair
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add api/proxy.js google-apps-script.js src/utils/adminApi.ts src/components/BusinessAdminPanel.tsx
+          if git diff --cached --quiet; then
+            echo 'No changes to commit'
+          else
+            git commit -m 'Email finalized contracts automatically'
+            git push origin master
+          fi
