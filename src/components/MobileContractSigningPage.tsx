@@ -3,7 +3,6 @@ import { AlertTriangle, CheckCircle2, FileText, Loader2, ShieldCheck } from 'luc
 import { loadPublicContract, publicContractPdfUrl, signPublicContract } from '../utils/adminApi';
 import { BusinessContract } from '../types/business';
 import { SignaturePad } from './SignaturePad';
-import { ContractDocument } from './ContractDocument';
 
 interface Props {
   token: string;
@@ -66,7 +65,10 @@ export const MobileContractSigningPage: React.FC<Props> = ({ token }) => {
         </header>
 
         {step === 'read' && <>
-          <section className="overflow-hidden rounded-2xl border border-white/10 bg-white">{contract.documentSnapshot ? <ContractDocument snapshot={contract.documentSnapshot} folio={contract.folio} /> : <iframe title={`Contrato ${contract.folio}`} src={safeContractPdfUrl(token)} className="h-[66vh] w-full bg-white" />}</section>
+          <section className="overflow-hidden rounded-2xl border border-white/10 bg-white">
+            <iframe title={`Contrato ${contract.folio}`} src={safeContractPdfUrl(token)} className="h-[72vh] w-full bg-white" />
+          </section>
+          <a href={safeContractPdfUrl(token)} target="_blank" rel="noreferrer" className="block rounded-xl border border-[#D4AF37]/30 bg-[#D4AF37]/5 px-4 py-3 text-center text-sm font-semibold text-[#F5D76E]">Abrir el mismo PDF en pantalla completa</a>
           <section className="space-y-4 rounded-2xl border border-white/10 bg-[#161C28] p-4">
             <div className="flex gap-3 text-xs leading-5 text-gray-300"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[#D4AF37]" /><p>Lee el documento completo. Tu aceptación y firma se guardarán con fecha, hora y datos técnicos de esta sesión como evidencia.</p></div>
             <label className="flex items-start gap-3 rounded-xl border border-white/10 bg-black/20 p-3 text-sm"><input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} className="mt-1 h-4 w-4 accent-[#D4AF37]" /><span>He leído el contrato completo, comprendo su contenido y acepto sus términos.</span></label>

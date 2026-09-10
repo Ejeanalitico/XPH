@@ -1089,12 +1089,29 @@ async function appendClientSignature(pdfBase64, signatureDataUrl, contract, audi
   const pdfBytes = Buffer.from(cleanBase64(pdfBase64), 'base64');
   const signatureBytes = Buffer.from(cleanBase64(signatureDataUrl), 'base64');
   const pdf = await PDFDocument.load(pdfBytes, { ignoreEncryption: false });
+  const signature = await pdf.embedPng(signatureBytes);
+  const templateVersion = String(contract?.templateVersion || contract?.documentSnapshot?.templateVersion || '');
+
+  if (templateVersion.includes('canonical-v3')) {
+    const pages = pdf.getPages();
+    if (!pages.length) throw new Error('El contrato no contiene páginas.');
+    const page = pages[pages.length - 1];
+    const font = await pdf.embedFont(StandardFonts.Helvetica);
+    const rightX = page.getWidth() / 2 + 18;
+    const boxWidth = Math.max(150, Math.min(220, page.getWidth() - rightX - 42));
+    const scaled = signature.scaleToFit(boxWidth, 88);
+    page.drawRectangle({ x: rightX - 3, y: 408, width: boxWidth + 6, height: 94, color: rgb(1, 1, 1) });
+    page.drawImage(signature, { x: rightX + Math.max(0, (boxWidth - scaled.width) / 2), y: 410 + Math.max(0, (88 - scaled.height) / 2), width: scaled.width, height: scaled.height });
+    page.drawText(`Firmado: ${formatContractDateTime(audit.acceptedAt)}`, { x: rightX, y: 342, size: 7, font, color: rgb(0.35, 0.37, 0.42) });
+    page.drawText(`IP: ${audit.ip || 'No disponible'}`, { x: rightX, y: 330, size: 7, font, color: rgb(0.35, 0.37, 0.42) });
+    return Buffer.from(await pdf.save()).toString('base64');
+  }
+
+  // Compatibilidad con contratos históricos: conservan la constancia anterior.
   const page = pdf.addPage([612, 792]);
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
-  const signature = await pdf.embedPng(signatureBytes);
   const scaled = signature.scaleToFit(220, 92);
-
   page.drawText('CONSTANCIA DE ACEPTACIÓN Y FIRMA', { x: 54, y: 720, size: 16, font: bold, color: rgb(0.12, 0.14, 0.18) });
   page.drawText(`Contrato: ${String(contract.folio || contract.id || '').slice(0, 100)}`, { x: 54, y: 685, size: 10, font });
   page.drawText(`Cliente: ${String(contract.clientName || '').slice(0, 120)}`, { x: 54, y: 667, size: 10, font });
@@ -1115,7 +1132,6 @@ async function appendClientSignature(pdfBase64, signatureDataUrl, contract, audi
   page.drawText(String(contract.clientName || 'Cliente registrado').slice(0, 42), { x: 338, y: 306, size: 10, font: bold });
   page.drawText('Cliente / Contratante', { x: 338, y: 290, size: 9, font });
   page.drawText('Xavi.ph conserva el documento original y esta constancia como evidencia del proceso.', { x: 54, y: 95, size: 8, font, color: rgb(0.35, 0.37, 0.42) });
-
   return Buffer.from(await pdf.save()).toString('base64');
 }
 
@@ -1181,6 +1197,29 @@ async function renderContractSnapshotPdf(snapshot, contract) {
     heading('Terminos y condiciones');
     (snapshot.terms || []).forEach((term, index) => bullet(`${index + 1}. ${term}`));
   }
+
+  if (snapshot.documentType === 'CONTRATO' && String(snapshot.templateVersion || '').includes('canonical-v3')) {
+    // La página de firmas forma parte del PDF original desde su creación.
+    // Las firmas se insertan después sobre ESTA MISMA página; nunca se cambia de diseño.
+    addPage();
+    heading('Firmas y aceptacion');
+    page.drawText('Las partes manifiestan que leyeron y aceptan el contenido completo de este contrato.', { x: 42, y: 675, size: 10, font: regular, color: dark });
+    page.drawText('La firma electrónica se integra directamente a esta misma versión del documento.', { x: 42, y: 658, size: 10, font: regular, color: dark });
+    page.drawText(`Folio ${String(contract.folio || '')}`, { x: 42, y: 628, size: 9, font: bold, color: rgb(.35, .35, .35) });
+
+    const signatureRightX = page.getWidth() / 2 + 18;
+    page.drawText('EL PRESTADOR DEL SERVICIO', { x: 42, y: 540, size: 9, font: bold, color: dark });
+    page.drawText('EL CLIENTE', { x: signatureRightX, y: 540, size: 9, font: bold, color: dark });
+    page.drawLine({ start: { x: 42, y: 400 }, end: { x: 270, y: 400 }, thickness: 0.9, color: dark });
+    page.drawLine({ start: { x: signatureRightX, y: 400 }, end: { x: 553, y: 400 }, thickness: 0.9, color: dark });
+    page.drawText('Javier García', { x: 42, y: 382, size: 9, font: bold, color: dark });
+    page.drawText('Prestador del servicio', { x: 42, y: 367, size: 8, font: regular, color: rgb(.35, .35, .35) });
+    page.drawText(String(snapshot.client?.name || contract.clientName || 'Cliente').slice(0, 42), { x: signatureRightX, y: 382, size: 9, font: bold, color: dark });
+    page.drawText('Cliente / Contratante', { x: signatureRightX, y: 367, size: 8, font: regular, color: rgb(.35, .35, .35) });
+    page.drawText('Documento original de XPH. Las firmas posteriores no alteran el contenido comercial ni las cláusulas.', { x: 42, y: 270, size: 8, font: regular, color: rgb(.4, .4, .4) });
+    y = 220;
+  }
+
   ensure(50);
   y -= 12;
   page.drawLine({ start: { x: 42, y }, end: { x: 553, y }, thickness: 1, color: rgb(.82, .82, .82) });
@@ -1195,6 +1234,19 @@ async function applyOwnerSignature(pdfBase64, signatureDataUrl, authorizedAt) {
   const page = pages[pages.length - 1];
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const signature = await pdf.embedPng(Buffer.from(cleanBase64(signatureDataUrl), 'base64'));
+
+  // Nuevos contratos: la última página A4 ya es la página canónica de firmas.
+  const canonical = page.getWidth() < 600 && page.getHeight() > 820;
+  if (canonical) {
+    const boxWidth = 220;
+    const scaled = signature.scaleToFit(boxWidth, 88);
+    page.drawRectangle({ x: 39, y: 408, width: boxWidth + 6, height: 94, color: rgb(1, 1, 1) });
+    page.drawImage(signature, { x: 42 + Math.max(0, (boxWidth - scaled.width) / 2), y: 410 + Math.max(0, (88 - scaled.height) / 2), width: scaled.width, height: scaled.height });
+    page.drawText(`Autorizado: ${formatContractDateTime(authorizedAt)}`, { x: 42, y: 342, size: 7, font, color: rgb(0.35, 0.37, 0.42) });
+    return Buffer.from(await pdf.save()).toString('base64');
+  }
+
+  // Compatibilidad con la constancia histórica.
   const scaled = signature.scaleToFit(220, 92);
   page.drawRectangle({ x: 50, y: 332, width: 228, height: 105, color: rgb(1, 1, 1) });
   page.drawImage(signature, { x: 54, y: 335, width: scaled.width, height: scaled.height });
