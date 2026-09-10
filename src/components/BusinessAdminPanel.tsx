@@ -457,6 +457,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
   const [contractDraft, setContractDraft] = useState({ clientId: '', folio: '', eventType: '', eventDate: '', documentType: 'CONTRATO' as 'CONTRATO' | 'COTIZACION', paymentPolicy: '40-30-30' as '40-30-30' | 'PERSONALIZADA', file: null as File | null });
   const [latestLink, setLatestLink] = useState('');
   const [contractPreview, setContractPreview] = useState<BusinessContract | null>(null);
+  const [showInlineContractEditor, setShowInlineContractEditor] = useState(false);
   const [ownerSignature, setOwnerSignature] = useState('');
   const [query, setQuery] = useState('');
   const [selectedClientId, setSelectedClientId] = useState('');
@@ -934,6 +935,8 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
     setSelectedClientId(client.id);
     setShowClientForm(false);
     setShowInlinePayment(false);
+    setShowInlineContractEditor(false);
+    setContractPreview(null);
     setTab(client.recordType === 'Prospecto' ? 'prospects' : 'clients');
   };
 
@@ -941,6 +944,8 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
     setSelectedClientId('');
     setShowClientForm(false);
     setShowInlinePayment(false);
+    setShowInlineContractEditor(false);
+    setContractPreview(null);
     setPaymentDraft(blankPayment());
     setPaymentReceipt(null);
     setTab(recordReturnTab);
@@ -987,6 +992,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
   const canEditSelected = Boolean(selectedClient && (session.role === 'SUPER_ADMIN' || (selectedClient.recordType === 'Prospecto' ? session.permissions.includes('CRM_WRITE') : session.permissions.includes('CLIENTS_WRITE'))));
   const canCreateCurrentType = session.role === 'SUPER_ADMIN' || (tab === 'prospects' ? session.permissions.includes('CRM_WRITE') : session.permissions.includes('CLIENTS_WRITE'));
   const canManageFinance = session.role === 'SUPER_ADMIN';
+  const canManageContracts = session.role === 'SUPER_ADMIN' || session.permissions.includes('CONTRACTS');
   const pendingNotificationCount = snapshot.notifications.filter((item) => item.status === 'PENDIENTE').length;
   const visibleNotifications = snapshot.notifications.filter((item) => item.status !== 'ANULADA').slice(0, 20);
   const selectedClientPayments = selectedClient ? snapshot.payments
@@ -1001,7 +1007,9 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
         : recordReturnTab === 'payments'
           ? 'Pagos'
           : 'Clientes';
-  const selectedClientContract = selectedClient ? snapshot.contracts.find((contract) => contract.clientId === selectedClient.id) : undefined;
+  const selectedClientContract = selectedClient ? snapshot.contracts
+    .filter((contract) => contract.clientId === selectedClient.id && contract.documentType !== 'COTIZACION')
+    .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))[0] : undefined;
   const selectedFollowUps = selectedClient ? snapshot.followUps.filter((item) => item.prospectId === selectedClient.id || item.clientId === selectedClient.id).sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt))) : [];
   const calendarRecords = [...snapshot.clients]
     .filter((client) => calendarAudience === 'clients'
@@ -1143,6 +1151,52 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
         'Aceptación electrónica: La firma electrónica, la fecha y hora de aceptación, la versión congelada del documento y sus identificadores se conservarán como evidencia del acuerdo entre las partes.',
       ],
     };
+  };
+
+  const openInlineContractEditor = (client: CrmClient, contract?: BusinessContract) => {
+    const frozen = contract?.documentSnapshot;
+    const eventDate = dateValue(frozen?.event?.date || contract?.eventDate || client.eventDate);
+    const eventType = String(frozen?.event?.type || contract?.eventType || client.eventType || '');
+    const compactDate = (eventDate || today()).replace(/-/g, '');
+    const prefix = /xv|15|quince/i.test(eventType) ? 'XVA' : 'BD';
+    setContractDraft({
+      clientId: client.id,
+      folio: contract?.folio || `${prefix}-${compactDate}`,
+      eventType,
+      eventDate,
+      documentType: 'CONTRATO',
+      paymentPolicy: contract?.paymentPolicy || frozen?.paymentPolicy || '40-30-30',
+      file: null,
+    });
+    setShowInlineContractEditor(true);
+    setShowClientForm(false);
+    setContractPreview(null);
+  };
+
+  const generateInlineContractDocument = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const client = selectedClient;
+    if (!client || !contractDraft.folio) return setModalNotice('Registra el folio antes de crear el contrato.');
+    const missingFields = getContractDataChecklist(client).filter((item) => item.required && !item.complete);
+    if (missingFields.length) return setModalNotice(`Completa antes de generar: ${missingFields.map((item) => item.label).join(', ')}.`);
+    setBusy(true);
+    try {
+      const documentSnapshot = buildContractSnapshot(client);
+      const paymentTotal = roundContractMoney(documentSnapshot.payments.reduce((sum, item) => sum + Number(item.amount || 0), 0));
+      const contractTotal = roundContractMoney(documentSnapshot.commercial.total);
+      if (contractDraft.paymentPolicy === 'PERSONALIZADA' && !documentSnapshot.payments.length) throw new Error('El plan personalizado no tiene pagos registrados.');
+      if (Math.abs(paymentTotal - contractTotal) > 0.01) throw new Error(`El calendario de pagos suma ${money(paymentTotal)}, pero el total contratado es ${money(contractTotal)}. Corrige el plan antes de generar el contrato.`);
+      const hadContract = Boolean(selectedClientContract);
+      const saved = await createGeneratedBusinessContract({ clientId: client.id, folio: contractDraft.folio, documentType: 'CONTRATO', paymentPolicy: contractDraft.paymentPolicy, snapshot: documentSnapshot });
+      setSnapshot((prev) => ({ ...prev, contracts: [saved, ...prev.contracts.filter((item) => item.id !== saved.id)] }));
+      setShowInlineContractEditor(false);
+      setContractPreview(saved);
+      setModalNotice(hadContract ? 'Nueva versión del contrato creada con los datos actualizados. La versión anterior se conserva en el historial.' : 'Contrato creado desde la ficha del contacto.');
+    } catch (error: any) {
+      setModalNotice(error?.message || 'No se pudo generar el contrato.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const generateContractDocument = async (event: React.FormEvent) => {
@@ -1393,6 +1447,26 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
                 <div className="flex items-center gap-3"><button onClick={closeClientDetails} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-gray-200 hover:bg-white/5">← {returnLabel}</button><span className="inline-flex items-center gap-2 rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-3 py-2 text-xs text-emerald-200"><CheckCircle2 className="h-4 w-4" />{selectedClient.status}</span></div>
                 <div className="flex flex-wrap gap-2">{session.role === 'SUPER_ADMIN' && selectedClient.recordType === 'Cliente' && <button type="button" onClick={() => downloadClientCsv([selectedClient], snapshot)} className="inline-flex items-center gap-2 rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100"><Download className="h-4 w-4" />Descargar CSV</button>}{canEditSelected && selectedClient.recordType === 'Prospecto' && <button onClick={convertSelectedProspect} disabled={busy} className="rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100">Convertir en cliente</button>}{canManageFinance && selectedClient.recordType === 'Cliente' && <button onClick={() => prepareNextPayment(selectedClient)} className="rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100">Agregar pago al plan</button>}{canManageFinance && selectedClientContract && <a href={adminContractPdfUrl(selectedClientContract.id, 'latest', contractPdfRevision(selectedClientContract))} target="_blank" rel="noreferrer" className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm text-white">{contractViewLabel(selectedClientContract)}</a>}{canEditSelected && <button onClick={() => { setClientDraft(selectedClient); setShowClientForm(true); }} className="rounded-lg bg-[#D4AF37] px-4 py-2 text-sm font-bold text-black">Editar seguimiento</button>}{canEditSelected && selectedClient.recordType === 'Cliente' && <button onClick={() => syncCalendar(selectedClient)} disabled={Boolean(syncingClientId)} className="inline-flex items-center gap-2 rounded-lg border border-sky-300/30 bg-sky-400/10 px-4 py-2 text-sm text-sky-100 disabled:border-white/10 disabled:bg-transparent disabled:text-gray-600">{syncingClientId === selectedClient.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}{syncingClientId === selectedClient.id ? 'Rectificando…' : 'Actualizar Calendar'}</button>}</div>
               </div>
+              {canManageContracts && <section className="border-b border-white/10 p-5">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <div className="flex items-center gap-2"><FileSignature className="h-4 w-4 text-[#D4AF37]" /><h3 className="font-semibold text-white">Contrato</h3></div>
+                    {selectedClientContract ? <p className="mt-1 text-xs text-gray-400">{selectedClientContract.folio} · {selectedClientContract.status} · última versión relacionada con este contacto</p> : <p className="mt-1 text-xs text-amber-200">Este {selectedClient.recordType === 'Prospecto' ? 'prospecto' : 'cliente'} todavía no tiene contrato.</p>}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {!selectedClientContract && <button type="button" onClick={() => openInlineContractEditor(selectedClient)} disabled={busy} className="inline-flex items-center gap-2 rounded-lg bg-[#D4AF37] px-4 py-2 text-sm font-bold text-black disabled:opacity-40"><Plus className="h-4 w-4" />Crear contrato</button>}
+                    {selectedClientContract && <><a href={adminContractPdfUrl(selectedClientContract.id, 'latest', contractPdfRevision(selectedClientContract))} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm text-white"><Eye className="h-4 w-4" />Ver contrato</a><button type="button" onClick={() => downloadContractPdf(selectedClientContract)} disabled={busy} className="inline-flex items-center gap-2 rounded-lg border border-[#D4AF37]/35 bg-[#D4AF37]/5 px-4 py-2 text-sm font-semibold text-[#F5D76E] disabled:opacity-40"><Download className="h-4 w-4" />Descargar PDF</button><button type="button" onClick={() => openInlineContractEditor(selectedClient, selectedClientContract)} disabled={busy} className="inline-flex items-center gap-2 rounded-lg border border-sky-300/30 bg-sky-400/10 px-4 py-2 text-sm font-semibold text-sky-100 disabled:opacity-40"><PenLine className="h-4 w-4" />Modificar contrato</button>{!['Finalizado'].includes(selectedClientContract.status) && selectedClientContract.documentType !== 'COTIZACION' && <button type="button" onClick={() => createLink(selectedClientContract)} disabled={busy} className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-4 py-2 text-sm text-gray-200 disabled:opacity-40"><Send className="h-4 w-4" />Liga de firma</button>}{selectedClientContract.status === 'Firmado por cliente' && <button type="button" onClick={() => finalize(selectedClientContract)} disabled={busy || !snapshot.ownerSignatureConfigured} className="inline-flex items-center gap-2 rounded-lg bg-emerald-400 px-4 py-2 text-sm font-bold text-black disabled:opacity-40"><CheckCircle2 className="h-4 w-4" />Autorizar y finalizar</button>}{selectedClientContract.status === 'Finalizado' && <button type="button" onClick={() => resendFinalContract(selectedClientContract)} disabled={busy} className="inline-flex items-center gap-2 rounded-lg border border-emerald-400/30 bg-emerald-400/5 px-4 py-2 text-sm font-semibold text-emerald-300 disabled:opacity-40"><Mail className="h-4 w-4" />Reenviar por correo</button>}</>}
+                  </div>
+                </div>
+                {showInlineContractEditor && <form onSubmit={generateInlineContractDocument} className="mt-4 grid gap-3 rounded-xl border border-[#D4AF37]/20 bg-black/15 p-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="sm:col-span-2 lg:col-span-4"><p className="text-sm font-semibold text-white">{selectedClientContract ? 'Modificar contrato / crear nueva versión' : 'Crear contrato'}</p><p className="mt-1 text-xs text-gray-400">Los datos comerciales, servicios y adicionales se toman directamente de la ficha actual. Al modificar un contrato existente se conserva la versión anterior como historial.</p></div>
+                  <label className="text-xs text-gray-300">Folio<input value={contractDraft.folio} onChange={(event) => setContractDraft((prev) => ({ ...prev, folio: event.target.value }))} className={`${inputClass} mt-1`} required /></label>
+                  <label className="text-xs text-gray-300">Tipo de evento<input value={contractDraft.eventType} onChange={(event) => setContractDraft((prev) => ({ ...prev, eventType: event.target.value }))} className={`${inputClass} mt-1`} required /></label>
+                  <label className="text-xs text-gray-300">Fecha del evento<input type="date" value={contractDraft.eventDate} onChange={(event) => setContractDraft((prev) => ({ ...prev, eventDate: event.target.value }))} className={`${inputClass} mt-1`} required /></label>
+                  <label className="text-xs text-gray-300">Plan de pagos<select value={contractDraft.paymentPolicy} onChange={(event) => setContractDraft((prev) => ({ ...prev, paymentPolicy: event.target.value as '40-30-30' | 'PERSONALIZADA' }))} className={`${inputClass} mt-1`}><option value="40-30-30">40% / 30% / 30%</option><option value="PERSONALIZADA">Personalizado</option></select></label>
+                  <div className="flex flex-wrap gap-2 sm:col-span-2 lg:col-span-4"><button type="button" onClick={() => setShowInlineContractEditor(false)} className="rounded-lg border border-white/15 px-4 py-2.5 text-sm text-gray-200">Cancelar</button><button type="submit" disabled={busy} className="rounded-lg bg-[#D4AF37] px-5 py-2.5 text-sm font-bold text-black disabled:opacity-40">{busy ? 'Generando…' : selectedClientContract ? 'Guardar nueva versión' : 'Crear contrato'}</button>{selectedClientContract && <button type="button" onClick={() => { setShowInlineContractEditor(false); setClientDraft(selectedClient); setShowClientForm(true); }} className="rounded-lg border border-sky-300/30 bg-sky-400/10 px-4 py-2.5 text-sm font-semibold text-sky-100">Editar datos del cliente</button>}</div>
+                </form>}
+              </section>}
               {showInlinePayment && <div className="border-b border-white/10 p-5"><div className="mb-3 flex items-center justify-between"><h3 className="font-semibold text-white">{paymentDraft.id ? `Editar pago de ${selectedClient.name}` : `Registrar siguiente pago de ${selectedClient.name}`}</h3><button onClick={() => { setPaymentDraft(blankPayment()); setPaymentReceipt(null); setShowInlinePayment(false); }} className="text-xs text-gray-400">Cerrar</button></div><PaymentForm draft={paymentDraft} receipt={paymentReceipt} clients={snapshot.clients} contracts={snapshot.contracts} onChange={setPaymentDraft} onReceipt={setPaymentReceipt} onSubmit={savePayment} onCancel={() => { setPaymentDraft(blankPayment()); setPaymentReceipt(null); setShowInlinePayment(false); }} busy={busy} /></div>}
               {canManageFinance && selectedClient.recordType === 'Cliente' && <section className="border-b border-white/10 p-5">
                 <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h3 className="font-semibold text-white">Pagos registrados</h3><p className="mt-1 text-xs text-gray-400">Edita cualquier pago sin perder su relación con el movimiento financiero ni su auditoría.</p></div><span className="text-xs text-gray-500">{selectedClientPayments.length} registro(s)</span></div>
