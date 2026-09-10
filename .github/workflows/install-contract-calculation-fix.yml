@@ -23,19 +23,26 @@ jobs:
           node-version: '22'
       - name: Apply contract arithmetic repair
         run: python scripts/patch-contract-calculations.py
-      - name: Update arithmetic invariant
+      - name: Update contract invariants
         run: |
           python - <<'PY'
           from pathlib import Path
           path = Path('scripts/verify-crm-invariants.mjs')
           text = path.read_text(encoding='utf-8')
-          old = "assert.match(businessPanel, /percentage: 40, amount: total \\* \\.4/);\nassert.match(businessPanel, /percentage: 30, amount: total \\* \\.3/);"
-          new = "assert.match(businessPanel, /standardContractPayments/);\nassert.match(businessPanel, /normalizedTotal \\* 0\\.4/);\nassert.match(businessPanel, /normalizedTotal \\* 0\\.3/);\nassert.match(businessPanel, /normalizedTotal - first - second/);\nassert.match(proxy, /scheduledTotal/);"
-          if old in text:
-              text = text.replace(old, new, 1)
-          elif new not in text:
-              raise SystemExit('No se encontró el invariante de pagos esperado')
+          replacements = {
+              "assert.match(businessPanel, /percentage: 40, amount: total \\* \\.4/);\nassert.match(businessPanel, /percentage: 30, amount: total \\* \\.3/);": "assert.match(businessPanel, /standardContractPayments/);\nassert.match(businessPanel, /normalizedTotal \\* 0\\.4/);\nassert.match(businessPanel, /normalizedTotal \\* 0\\.3/);\nassert.match(businessPanel, /normalizedTotal - first - second/);\nassert.match(proxy, /scheduledTotal/);",
+              "assert.match(contractDocument, /CONTRATO DE SERVICIOS/);": "assert.match(contractDocument, /CONTRATO DE PRESTACIÓN DE SERVICIOS FOTOGRÁFICOS Y AUDIOVISUALES/);",
+              "assert.match(contractDocument, /Política 40% \\/ 30% \\/ 30%/);": "assert.match(contractDocument, /Calendario de pagos programado/);",
+          }
+          changed = False
+          for old, new in replacements.items():
+              if old in text:
+                  text = text.replace(old, new, 1)
+                  changed = True
+              elif new not in text:
+                  raise SystemExit(f'No se encontró el invariante esperado: {old}')
           path.write_text(text, encoding='utf-8')
+          print('Invariantes de contrato actualizados.' if changed else 'Invariantes ya actualizados.')
           PY
       - name: Verify application
         run: |
