@@ -1,0 +1,46 @@
+name: Install inline client contract management
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/install-inline-client-contracts.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply inline contract management
+        run: python scripts/patch-inline-client-contracts.py
+      - name: Verify application
+        run: |
+          npm ci
+          npm run check
+      - name: Verify inline contract actions
+        run: |
+          grep -q "Crear contrato" src/components/BusinessAdminPanel.tsx
+          grep -q "Modificar contrato" src/components/BusinessAdminPanel.tsx
+          grep -q "Reenviar por correo" src/components/BusinessAdminPanel.tsx
+          grep -q "generateInlineContractDocument" src/components/BusinessAdminPanel.tsx
+      - name: Commit repair
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/components/BusinessAdminPanel.tsx
+          if git diff --cached --quiet; then
+            echo 'No changes to commit'
+          else
+            git commit -m 'Manage contracts directly from prospect and client records'
+            git push origin master
+          fi
