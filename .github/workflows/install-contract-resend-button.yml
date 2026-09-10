@@ -1,0 +1,41 @@
+name: Install finalized contract resend button
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/install-contract-resend-button.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install resend button
+        run: python scripts/patch-contract-resend-button.py
+      - name: Verify application
+        run: |
+          npm ci
+          npm run check
+          grep -q 'Reenviar PDF por correo' src/components/BusinessAdminPanel.tsx
+      - name: Commit repair
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/components/BusinessAdminPanel.tsx
+          if git diff --cached --quiet; then
+            echo 'No changes to commit'
+          else
+            git commit -m 'Show resend email action for finalized contracts'
+            git push origin master
+          fi
