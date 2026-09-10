@@ -1,0 +1,49 @@
+name: Install canonical quote and contract workflow
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - scripts/patch-canonical-contract-workflow.py
+      - .github/workflows/install-canonical-contract-workflow.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply canonical document workflow
+        run: python scripts/patch-canonical-contract-workflow.py
+      - name: Verify application
+        run: |
+          npm ci
+          npm run typecheck --if-present
+          npm run build
+      - name: Verify canonical invariants
+        run: |
+          grep -q "contrato-xph-canonical-v3" src/components/BusinessAdminPanel.tsx
+          grep -q "Crear cotización" src/components/BusinessAdminPanel.tsx
+          grep -q "Modificar cotización" src/components/BusinessAdminPanel.tsx
+          grep -q "Abrir el mismo PDF en pantalla completa" src/components/MobileContractSigningPage.tsx
+          grep -q "templateVersion.includes('canonical-v3')" api/proxy.js
+          grep -q "Firmas y aceptacion" api/proxy.js
+      - name: Commit repair
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add api/proxy.js src/components/BusinessAdminPanel.tsx src/components/MobileContractSigningPage.tsx
+          git commit -m "Unify prospect documents and canonical signed PDF"
+          git push origin master
