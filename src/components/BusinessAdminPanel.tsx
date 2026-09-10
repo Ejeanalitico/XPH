@@ -136,6 +136,24 @@ const monthKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth()
 const localDateKey = (date: Date) => `${monthKey(date)}-${String(date.getDate()).padStart(2, '0')}`;
 const monthLabel = (date: Date) => new Intl.DateTimeFormat('es-MX', { month: 'long', year: 'numeric' }).format(date);
 const money = (value: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(Number(value) || 0);
+const roundContractMoney = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
+const contractAddonAmount = (item: { quantity?: number; unitPrice?: number; total?: number }) => {
+  const quantity = Math.max(0, Number(item.quantity || 0));
+  const unitPrice = Math.max(0, Number(item.unitPrice || 0));
+  const storedTotal = Math.max(0, Number(item.total || 0));
+  return roundContractMoney(quantity > 0 && unitPrice > 0 ? quantity * unitPrice : storedTotal);
+};
+const standardContractPayments = (total: number, eventDate = '') => {
+  const normalizedTotal = roundContractMoney(Math.max(0, Number(total) || 0));
+  const first = roundContractMoney(normalizedTotal * 0.4);
+  const second = roundContractMoney(normalizedTotal * 0.3);
+  const third = roundContractMoney(normalizedTotal - first - second);
+  return [
+    { concept: '1er pago (Apartado)', percentage: 40, amount: first, dueDate: '', status: 'Pendiente' },
+    { concept: '2do pago (Intermedio)', percentage: 30, amount: second, dueDate: eventDate, status: 'Pendiente' },
+    { concept: '3er pago (Finiquito)', percentage: 30, amount: third, dueDate: '', status: 'Pendiente' },
+  ];
+};
 const clientCsvColumns: Array<[keyof CrmClient, string]> = [
   ['id', 'ID'],
   ['recordType', 'Tipo_registro'],
@@ -1085,16 +1103,23 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
     const services = snapshot.services.filter((item) => item.clientId === client.id && item.included && item.status !== 'Anulado');
     const addons = snapshot.addons.filter((item) => item.clientId === client.id && item.status !== 'Anulado');
     const registeredPayments = snapshot.payments.filter((item) => item.clientId === client.id && item.status !== 'Anulado').sort((a, b) => Number(a.installmentNumber || 0) - Number(b.installmentNumber || 0));
-    const packageBase = Number(packageSnapshot?.basePrice || Math.max(0, Number(client.totalAmount || 0) - addons.reduce((sum, item) => sum + Number(item.total || 0), 0)));
-    const additions = addons.reduce((sum, item) => sum + Number(item.total || 0), 0);
-    const discount = Number(packageSnapshot?.discount || 0);
-    const total = Number(client.totalAmount || packageBase + additions - discount);
-    const defaultPlan = [
-      { concept: '1er pago (Apartado)', percentage: 40, amount: total * .4, dueDate: '', status: 'Pendiente' },
-      { concept: '2do pago (Intermedio)', percentage: 30, amount: total * .3, dueDate: contractDraft.eventDate || client.eventDate || '', status: 'Pendiente' },
-      { concept: '3er pago (Finiquito)', percentage: 30, amount: total * .3, dueDate: '', status: 'Pendiente' },
-    ];
-    const payments = registeredPayments.length ? registeredPayments.map((item) => ({ concept: item.concept || `Pago ${item.installmentNumber || ''}`.trim(), percentage: Number(item.percentage || 0), amount: Number(item.plannedAmount || 0), dueDate: item.dueDate || '', status: item.status })) : defaultPlan;
+    const additions = roundContractMoney(addons.reduce((sum, item) => sum + contractAddonAmount(item), 0));
+    const discount = roundContractMoney(Math.max(0, Number(packageSnapshot?.discount || 0)));
+    const clientTotal = roundContractMoney(Math.max(0, Number(client.totalAmount || 0)));
+    const storedPackageBase = roundContractMoney(Math.max(0, Number(packageSnapshot?.basePrice || 0)));
+    const packageBase = storedPackageBase > 0
+      ? storedPackageBase
+      : roundContractMoney(Math.max(0, clientTotal - additions + discount));
+    const calculatedTotal = roundContractMoney(Math.max(0, packageBase + additions - discount));
+    const total = packageSnapshot ? calculatedTotal : (clientTotal > 0 ? clientTotal : calculatedTotal);
+    const defaultPlan = standardContractPayments(total, contractDraft.eventDate || client.eventDate || '');
+    const personalizedPlan = registeredPayments.map((item) => {
+      const percentage = Math.max(0, Number(item.percentage || 0));
+      const planned = Math.max(0, Number(item.plannedAmount || 0));
+      const amount = roundContractMoney(planned > 0 ? planned : (percentage > 0 ? total * (percentage / 100) : 0));
+      return { concept: item.concept || `Pago ${item.installmentNumber || ''}`.trim(), percentage, amount, dueDate: item.dueDate || '', status: item.status };
+    });
+    const payments = contractDraft.paymentPolicy === 'PERSONALIZADA' ? personalizedPlan : defaultPlan;
     return {
       documentType: contractDraft.documentType,
       templateVersion: 'contrato-xph-fiel-v2',
@@ -1103,7 +1128,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
       event: { type: contractDraft.eventType || client.eventType, date: contractDraft.eventDate || client.eventDate, time: client.eventTime, location: client.eventLocation, serviceHours: Number(client.serviceHours || 0) },
       commercial: { packageName: packageSnapshot?.packageName || client.packageName, packageBase, additions, discount, total, promotion: packageSnapshot?.promotion || '' },
       services: services.map((item) => ({ concept: item.concept, quantity: Number(item.quantity || 0), notes: item.notes || '' })),
-      addons: addons.map((item) => ({ concept: item.concept, quantity: Number(item.quantity || 0), unitPrice: Number(item.unitPrice || 0), total: Number(item.total || 0), notes: item.notes || '' })),
+      addons: addons.map((item) => ({ concept: item.concept, quantity: Number(item.quantity || 0), unitPrice: Number(item.unitPrice || 0), total: contractAddonAmount(item), notes: item.notes || '' })),
       payments,
       paymentPolicy: contractDraft.paymentPolicy,
       terms: [
@@ -1128,6 +1153,14 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
     setBusy(true);
     try {
       const documentSnapshot = buildContractSnapshot(client);
+      const paymentTotal = roundContractMoney(documentSnapshot.payments.reduce((sum, item) => sum + Number(item.amount || 0), 0));
+      const contractTotal = roundContractMoney(documentSnapshot.commercial.total);
+      if (contractDraft.paymentPolicy === 'PERSONALIZADA' && !documentSnapshot.payments.length) {
+        throw new Error('El plan personalizado no tiene pagos registrados.');
+      }
+      if (Math.abs(paymentTotal - contractTotal) > 0.01) {
+        throw new Error(`El calendario de pagos suma ${money(paymentTotal)}, pero el total contratado es ${money(contractTotal)}. Corrige el plan antes de generar el contrato.`);
+      }
       const saved = await createGeneratedBusinessContract({ clientId: client.id, folio: contractDraft.folio, documentType: contractDraft.documentType, paymentPolicy: contractDraft.paymentPolicy, snapshot: documentSnapshot });
       setSnapshot((prev) => ({ ...prev, contracts: [saved, ...prev.contracts.filter((item) => item.id !== saved.id)] }));
       setContractPreview(saved);

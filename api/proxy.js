@@ -2083,6 +2083,34 @@ export default async function handler(req, res) {
         if (!clientId || !folio) return res.status(400).json({ status: 'error', message: 'Selecciona un prospecto o cliente y registra el folio.' });
         const snapshot = normalizeContractDocumentSnapshot(submitted.snapshot, documentType);
         snapshot.paymentPolicy = paymentPolicy;
+        const roundCurrency = (value) => Math.round((Number(value) || 0) * 100) / 100;
+        snapshot.addons = (snapshot.addons || []).map((item) => {
+          const quantity = Math.max(0, Number(item.quantity || 0));
+          const unitPrice = Math.max(0, Number(item.unitPrice || 0));
+          const storedTotal = Math.max(0, Number(item.total || 0));
+          return { ...item, total: roundCurrency(quantity > 0 && unitPrice > 0 ? quantity * unitPrice : storedTotal) };
+        });
+        snapshot.commercial.additions = roundCurrency(snapshot.addons.reduce((sum, item) => sum + Number(item.total || 0), 0));
+        snapshot.commercial.packageBase = roundCurrency(Math.max(0, Number(snapshot.commercial.packageBase || 0)));
+        snapshot.commercial.discount = roundCurrency(Math.max(0, Number(snapshot.commercial.discount || 0)));
+        const arithmeticTotal = roundCurrency(Math.max(0, snapshot.commercial.packageBase + snapshot.commercial.additions - snapshot.commercial.discount));
+        if (snapshot.commercial.packageBase > 0 || snapshot.commercial.additions > 0 || snapshot.commercial.discount > 0) snapshot.commercial.total = arithmeticTotal;
+        else snapshot.commercial.total = roundCurrency(Math.max(0, Number(snapshot.commercial.total || 0)));
+        if (paymentPolicy === '40-30-30') {
+          const first = roundCurrency(snapshot.commercial.total * 0.4);
+          const second = roundCurrency(snapshot.commercial.total * 0.3);
+          const third = roundCurrency(snapshot.commercial.total - first - second);
+          snapshot.payments = [
+            { concept: '1er pago (Apartado)', percentage: 40, amount: first, dueDate: '', status: 'Pendiente' },
+            { concept: '2do pago (Intermedio)', percentage: 30, amount: second, dueDate: snapshot.event.date || '', status: 'Pendiente' },
+            { concept: '3er pago (Finiquito)', percentage: 30, amount: third, dueDate: '', status: 'Pendiente' },
+          ];
+        }
+        if (paymentPolicy === 'PERSONALIZADA' && !snapshot.payments.length) return res.status(400).json({ status: 'error', message: 'El plan personalizado no tiene pagos registrados.' });
+        const scheduledTotal = roundCurrency((snapshot.payments || []).reduce((sum, item) => sum + Number(item.amount || 0), 0));
+        if (Math.abs(scheduledTotal - snapshot.commercial.total) > 0.01) {
+          return res.status(400).json({ status: 'error', message: `El calendario de pagos suma $${scheduledTotal.toFixed(2)}, pero el total contratado es $${snapshot.commercial.total.toFixed(2)}. Corrige el plan antes de generar.` });
+        }
         const result = await forwardContractGenerateWithRecovery({ clientId, folio, documentType, paymentPolicy, templateVersion: snapshot.templateVersion, documentJson: JSON.stringify(snapshot) });
         return res.status(200).json({ status: 'success', contract: result.contract });
       }

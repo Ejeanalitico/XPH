@@ -57,16 +57,19 @@ assert.match(businessPanel, /const dateTimeLocalValue/);
 assert.match(businessPanel, /dateTimeLocalValue\(inlineDraft\.nextActionAt\)/);
 
 // El nuevo documento conserva una instantánea, usa 40-30-30 por defecto y limita sesiones sin contar recargas.
-assert.match(businessPanel, /percentage: 40, amount: total \* \.4/);
-assert.match(businessPanel, /percentage: 30, amount: total \* \.3/);
+assert.match(businessPanel, /standardContractPayments/);
+assert.match(businessPanel, /normalizedTotal \* 0\.4/);
+assert.match(businessPanel, /normalizedTotal \* 0\.3/);
+assert.match(businessPanel, /normalizedTotal - first - second/);
+assert.match(proxy, /scheduledTotal/);
 assert.match(proxy, /normalizeContractDocumentSnapshot/);
 assert.match(appsScript, /documentJson/);
 assert.match(appsScript, /'contractUpload', 'contractGenerate', 'contractDocument', 'contractCreateLink'/);
 assert.match(appsScript, /clientSessionIdsJson/);
 assert.match(appsScript, /sessionIds\.indexOf\(safeSessionId\) < 0/);
 assert.match(appsScript, /sessionIds\.length >= maxOpens/);
-assert.match(contractDocument, /CONTRATO DE SERVICIOS/);
-assert.match(contractDocument, /Política 40% \/ 30% \/ 30%/);
+assert.match(contractDocument, /CONTRATO DE PRESTACIÓN DE SERVICIOS FOTOGRÁFICOS Y AUDIOVISUALES/);
+assert.match(contractDocument, /Calendario de pagos programado/);
 assert.match(businessPanel, /Datos necesarios para generar/);
 assert.match(businessPanel, /missingContractData\.length/);
 assert.match(businessPanel, /Completar ficha/);
