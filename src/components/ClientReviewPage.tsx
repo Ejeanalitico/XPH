@@ -8,29 +8,24 @@ type Props = {
 type ReviewForm = {
   name: string;
   eventType: string;
-  serviceRating: number;
-  photoRating: number;
+  rating: number;
   comment: string;
-  publishConsent: boolean;
 };
 
 const EMPTY_FORM: ReviewForm = {
   name: '',
   eventType: '',
-  serviceRating: 0,
-  photoRating: 0,
+  rating: 0,
   comment: '',
-  publishConsent: false,
 };
 
 const RatingField: React.FC<{
-  label: string;
   value: number;
   onChange: (value: number) => void;
-}> = ({ label, value, onChange }) => (
+}> = ({ value, onChange }) => (
   <fieldset className="space-y-3">
-    <legend className="text-sm font-semibold text-white">{label}</legend>
-    <div className="flex gap-2" aria-label={label}>
+    <legend className="text-sm font-semibold text-white">¿Cómo calificarías tu experiencia con XPH?</legend>
+    <div className="flex gap-2" aria-label="Calificación de la experiencia">
       {[1, 2, 3, 4, 5].map((rating) => (
         <button
           key={rating}
@@ -40,9 +35,7 @@ const RatingField: React.FC<{
           onClick={() => onChange(rating)}
           className="rounded-xl border border-white/10 bg-white/[0.03] p-2.5 transition hover:border-[#d4af37]/60 hover:bg-[#d4af37]/10 focus:outline-none focus:ring-2 focus:ring-[#d4af37]/60"
         >
-          <Star
-            className={`h-7 w-7 ${rating <= value ? 'fill-[#d4af37] text-[#d4af37]' : 'text-white/35'}`}
-          />
+          <Star className={`h-7 w-7 ${rating <= value ? 'fill-[#d4af37] text-[#d4af37]' : 'text-white/35'}`} />
         </button>
       ))}
     </div>
@@ -60,8 +53,7 @@ export const ClientReviewPage: React.FC<Props> = ({ token }) => {
 
   const canSubmit = useMemo(() => (
     form.name.trim().length >= 2 &&
-    form.serviceRating >= 1 &&
-    form.photoRating >= 1 &&
+    form.rating >= 1 &&
     form.comment.trim().length >= 10
   ), [form]);
 
@@ -121,7 +113,7 @@ export const ClientReviewPage: React.FC<Props> = ({ token }) => {
           <p className="mb-2 text-xs font-bold uppercase tracking-[0.28em] text-[#d4af37]">XPH Producción Audiovisual</p>
           <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Cuéntanos cómo fue tu experiencia</h1>
           <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-white/60 sm:text-base">
-            Tu opinión nos ayuda a mejorar el servicio y la calidad de cada entrega.
+            Nos interesa saber qué te pareció el servicio, la atención y el resultado de tus fotografías.
           </p>
         </header>
 
@@ -142,7 +134,7 @@ export const ClientReviewPage: React.FC<Props> = ({ token }) => {
               <CheckCircle2 className="mb-5 h-14 w-14 text-[#d4af37]" />
               <h2 className="text-2xl font-semibold">Gracias por compartir tu experiencia</h2>
               <p className="mt-3 max-w-md text-sm leading-6 text-white/60">
-                Tu comentario quedó registrado. Si autorizaste su publicación, XPH lo revisará antes de mostrarlo en la página.
+                Tu reseña quedó registrada correctamente.
               </p>
             </div>
           ) : (
@@ -171,16 +163,10 @@ export const ClientReviewPage: React.FC<Props> = ({ token }) => {
                 </label>
               </div>
 
-              <div className="grid gap-7 border-y border-white/10 py-7 sm:grid-cols-2">
+              <div className="border-y border-white/10 py-7">
                 <RatingField
-                  label="¿Cómo calificarías nuestro servicio?"
-                  value={form.serviceRating}
-                  onChange={(serviceRating) => setForm((current) => ({ ...current, serviceRating }))}
-                />
-                <RatingField
-                  label="¿Cómo calificarías tus fotos?"
-                  value={form.photoRating}
-                  onChange={(photoRating) => setForm((current) => ({ ...current, photoRating }))}
+                  value={form.rating}
+                  onChange={(rating) => setForm((current) => ({ ...current, rating }))}
                 />
               </div>
 
@@ -195,16 +181,6 @@ export const ClientReviewPage: React.FC<Props> = ({ token }) => {
                   className="mt-2 w-full resize-y rounded-2xl border border-white/10 bg-black/35 px-4 py-3 text-sm leading-6 text-white outline-none transition placeholder:text-white/30 focus:border-[#d4af37]/60 focus:ring-2 focus:ring-[#d4af37]/15"
                 />
                 <span className="block text-right text-xs font-normal text-white/35">{form.comment.length}/1500</span>
-              </label>
-
-              <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-white/10 bg-black/20 p-4 text-sm leading-6 text-white/65">
-                <input
-                  type="checkbox"
-                  checked={form.publishConsent}
-                  onChange={(event) => setForm((current) => ({ ...current, publishConsent: event.target.checked }))}
-                  className="mt-1 h-4 w-4 accent-[#d4af37]"
-                />
-                <span>Autorizo a XPH a publicar mi comentario y mi nombre como testimonio en su página web o redes sociales. La autorización es opcional.</span>
               </label>
 
               {error ? (
