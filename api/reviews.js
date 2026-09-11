@@ -1,7 +1,8 @@
-import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 
 const APPS_SCRIPT_URL = process.env.XPH_APPS_SCRIPT_URL || '';
 const APPS_SCRIPT_SHARED_SECRET = process.env.XPH_APPS_SCRIPT_SHARED_SECRET || '';
+const SESSION_SECRET = process.env.XPH_SESSION_SECRET || '';
 const REVIEW_TOKEN_SHA256 = 'e328aa6adb0511d1a0e3f660bb8bd1f3aed05acd403d98b8f8313f130504e4e0';
 const MAX_TESTIMONIALS = 250;
 const rateLimitBuckets = globalThis.__xphReviewRateLimitBuckets || new Map();
@@ -22,12 +23,33 @@ function isSameOrigin(req) {
   }
 }
 
-function validToken(candidate) {
+function validLegacyToken(candidate) {
   const token = String(candidate || '').trim();
   if (!token || token.length > 200) return false;
   const actual = Buffer.from(createHash('sha256').update(token).digest('hex'));
   const expected = Buffer.from(REVIEW_TOKEN_SHA256);
   return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
+function validSignedToken(candidate) {
+  const token = String(candidate || '').trim();
+  if (!SESSION_SECRET || !token || !token.includes('.') || token.length > 1200) return false;
+  const [encoded, signature] = token.split('.');
+  if (!encoded || !signature) return false;
+  const expected = createHmac('sha256', SESSION_SECRET).update(`review:${encoded}`).digest('base64url');
+  try {
+    const left = Buffer.from(signature);
+    const right = Buffer.from(expected);
+    if (left.length !== right.length || !timingSafeEqual(left, right)) return false;
+    const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+    return payload?.kind === 'xph-review' && Number(payload.exp) > Date.now();
+  } catch (_) {
+    return false;
+  }
+}
+
+function validToken(candidate) {
+  return validSignedToken(candidate) || validLegacyToken(candidate);
 }
 
 function rateLimit(req) {
@@ -81,8 +103,8 @@ async function saveTestimonials(testimonials) {
     action: 'saveConfig',
     apiSecret: APPS_SCRIPT_SHARED_SECRET,
     configData: JSON.stringify({ testimonials }),
-    auditType: 'TESTIMONIO_CLIENTE_RECIBIDO',
-    auditDetails: 'Opinión recibida desde liga privada de clientes',
+    auditType: 'TESTIMONIO_CLIENTE_PUBLICADO',
+    auditDetails: 'Opinión publicada automáticamente desde liga privada de clientes',
   });
   const response = await fetch(APPS_SCRIPT_URL, {
     method: 'POST',
@@ -132,32 +154,25 @@ export default async function handler(req, res) {
     const name = cleanText(submitted.name, 80);
     const eventType = cleanText(submitted.eventType, 60);
     const comment = cleanText(submitted.comment, 1500);
-    const serviceRating = Math.round(Number(submitted.serviceRating || 0));
-    const photoRating = Math.round(Number(submitted.photoRating || 0));
-    const publishConsent = submitted.publishConsent === true;
+    const rating = Math.round(Number(submitted.rating || 0));
 
     if (name.length < 2) return res.status(400).json({ status: 'error', message: 'Escribe tu nombre.' });
-    if (![1, 2, 3, 4, 5].includes(serviceRating) || ![1, 2, 3, 4, 5].includes(photoRating)) {
-      return res.status(400).json({ status: 'error', message: 'Selecciona una calificación para el servicio y para las fotografías.' });
-    }
+    if (![1, 2, 3, 4, 5].includes(rating)) return res.status(400).json({ status: 'error', message: 'Selecciona una calificación de 1 a 5 estrellas.' });
     if (comment.length < 10) return res.status(400).json({ status: 'error', message: 'Cuéntanos un poco más sobre tu experiencia.' });
 
     const config = await loadConfig();
     const current = Array.isArray(config.testimonials) ? config.testimonials : [];
-    const rating = Number(((serviceRating + photoRating) / 2).toFixed(1));
     const review = {
       id: `review-${randomUUID()}`,
       name,
       author: name,
       eventType,
-      serviceRating,
-      photoRating,
       rating,
       comment,
       text: comment,
-      publishConsent,
-      approved: false,
-      status: 'PENDIENTE',
+      approved: true,
+      published: true,
+      status: 'PUBLICADO',
       source: 'PRIVATE_REVIEW_LINK',
       createdAt: new Date().toISOString(),
     };
@@ -165,7 +180,7 @@ export default async function handler(req, res) {
     const testimonials = [...current, review].slice(-MAX_TESTIMONIALS);
     await saveTestimonials(testimonials);
 
-    return res.status(200).json({ status: 'success', reviewId: review.id });
+    return res.status(200).json({ status: 'success', reviewId: review.id, published: true });
   } catch (error) {
     console.error('[XPH Reviews] Error:', error);
     return res.status(500).json({ status: 'error', message: 'No se pudo guardar tu opinión en este momento. Intenta nuevamente.' });
