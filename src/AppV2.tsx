@@ -28,6 +28,7 @@ import {
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { GallerySection } from './components/GallerySection';
+import { TestimonialsSection } from './components/TestimonialsSection';
 import { PricingQuoteEngineV2 } from './components/PricingQuoteEngineV2';
 import { InPersonConsultation } from './components/InPersonConsultation';
 import { BookingWizardV2 } from './components/BookingWizardV2';
@@ -249,6 +250,7 @@ export default function AppV2() {
       <Navbar currentRoute={currentRoute} categories={catalogCategories} onNavigateRoute={(route) => handleNavigateRoute(route, false)} />
       <Hero currentRoute={currentRoute} categories={catalogCategories} onQuoteClick={() => handleScrollTo('cotizador')} onGalleryClick={() => handleScrollTo('galerias')} onCitaClick={() => handleScrollTo('solicitud')} heroCovers={heroCovers} heroCoverSettings={heroCoverSettings} mediaReady={mediaReady} />
       <GallerySection currentRoute={currentRoute} onNavigateRoute={(route) => handleNavigateRoute(route, true)} images={galleryImages} categories={catalogCategories} onShowToast={showToast} loading={!mediaReady} />
+      <TestimonialsSection />
       <ServiceSeoSection currentRoute={currentRoute} categories={catalogCategories} packages={packagesState[currentRoute] || []} onNavigateRoute={(route) => handleNavigateRoute(route, false)} onQuoteClick={() => handleScrollTo('cotizador')} />
 
       <PricingQuoteEngineV2
