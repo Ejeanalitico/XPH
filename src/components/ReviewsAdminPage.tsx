@@ -1,5 +1,5 @@
 import React, { FormEvent, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Check, ClipboardCopy, Link2, Loader2, LogIn, LogOut, RefreshCw, Star } from 'lucide-react';
+import { ArrowLeft, Check, ClipboardCopy, Link2, Loader2, LogIn, LogOut, RefreshCw, Star, Trash2 } from 'lucide-react';
 import { AdminSession, adminLogin, adminLogout, resumeAdminSession } from '../utils/adminApi';
 
 type AdminReview = {
@@ -30,6 +30,8 @@ export const ReviewsAdminPage: React.FC = () => {
   const [reviews, setReviews] = useState<AdminReview[]>([]);
   const [loading, setLoading] = useState(false);
   const [linkLoading, setLinkLoading] = useState(false);
+  const [deletingId, setDeletingId] = useState('');
+  const [eventType, setEventType] = useState('');
   const [inviteUrl, setInviteUrl] = useState('');
   const [expiresAt, setExpiresAt] = useState('');
   const [copied, setCopied] = useState(false);
@@ -88,13 +90,14 @@ export const ReviewsAdminPage: React.FC = () => {
   const createLink = async () => {
     setLinkLoading(true);
     setCopied(false);
+    setInviteUrl('');
     setMessage('');
     try {
       const response = await fetch('/api/review-admin', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: '{}',
+        body: JSON.stringify({ eventType: eventType.trim() }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || data?.status !== 'success' || !data.url) throw new Error(data?.message || 'No se pudo generar la liga.');
@@ -118,9 +121,30 @@ export const ReviewsAdminPage: React.FC = () => {
     }
   };
 
-  const average = useMemo(() => reviews.length
-    ? reviews.reduce((sum, review) => sum + Number(review.rating || 0), 0) / reviews.length
-    : 0, [reviews]);
+  const deleteReview = async (review: AdminReview) => {
+    const confirmed = window.confirm(`¿Eliminar la reseña de ${review.name}? Dejará de mostrarse en la página pública.`);
+    if (!confirmed) return;
+    setDeletingId(review.id);
+    setMessage('');
+    try {
+      const response = await fetch('/api/review-admin', {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reviewId: review.id }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data?.status !== 'success') throw new Error(data?.message || 'No se pudo eliminar la reseña.');
+      setReviews((current) => current.filter((item) => item.id !== review.id));
+      setMessage('Reseña eliminada correctamente. Ya no se mostrará en la página pública.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'No se pudo eliminar la reseña.');
+    } finally {
+      setDeletingId('');
+    }
+  };
+
+  const average = useMemo(() => reviews.length ? reviews.reduce((sum, review) => sum + Number(review.rating || 0), 0) / reviews.length : 0, [reviews]);
 
   if (checkingSession) {
     return <main className="grid min-h-screen place-items-center bg-[#0B0F17] text-white"><Loader2 className="h-8 w-8 animate-spin text-[#D4AF37]" /></main>;
@@ -152,7 +176,7 @@ export const ReviewsAdminPage: React.FC = () => {
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.24em] text-[#D4AF37]">Administrador XPH</p>
             <h1 className="mt-1 text-3xl font-bold">Reseñas de clientes</h1>
-            <p className="mt-2 text-sm text-white/50">Genera la liga que enviarás al cliente y revisa las opiniones publicadas automáticamente.</p>
+            <p className="mt-2 text-sm text-white/50">Tú defines el tipo de evento al generar la liga. El cliente solo escribe su nombre, estrellas y comentario.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <a href="/?xph-admin=panel" className="inline-flex items-center gap-2 rounded-xl border border-white/10 px-4 py-2.5 text-sm"><ArrowLeft className="h-4 w-4" />Administrador</a>
@@ -165,22 +189,19 @@ export const ReviewsAdminPage: React.FC = () => {
           <div className="rounded-3xl border border-[#D4AF37]/25 bg-[#161C28] p-6">
             <div className="flex items-start gap-3">
               <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[#D4AF37]/10 text-[#D4AF37]"><Link2 className="h-5 w-5" /></div>
-              <div>
-                <h2 className="text-xl font-bold">Liga para solicitar una reseña</h2>
-                <p className="mt-1 text-sm leading-6 text-white/50">Genera una liga nueva cuando vayas a enviársela a un cliente. Cada liga tiene vigencia de 30 días.</p>
-              </div>
+              <div><h2 className="text-xl font-bold">Liga para solicitar una reseña</h2><p className="mt-1 text-sm leading-6 text-white/50">Indica el tipo de evento antes de generar la liga. Es opcional y quedará asociado a esa invitación.</p></div>
             </div>
 
-            <button onClick={createLink} disabled={linkLoading} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-[#D4AF37] px-5 py-3 text-sm font-bold text-black disabled:opacity-50">{linkLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}Generar liga</button>
+            <label className="mt-5 block text-sm font-semibold text-white">Tipo de evento <span className="font-normal text-white/40">(opcional)</span><input value={eventType} onChange={(event) => setEventType(event.target.value)} maxLength={60} placeholder="Ej. Boda, XV años, sesión, cumpleaños…" className="mt-2 w-full rounded-xl border border-white/10 bg-[#0B0F17] px-4 py-3 text-sm text-white outline-none placeholder:text-white/30 focus:border-[#D4AF37]/60" /></label>
+
+            <button onClick={createLink} disabled={linkLoading} className="mt-4 inline-flex items-center gap-2 rounded-xl bg-[#D4AF37] px-5 py-3 text-sm font-bold text-black disabled:opacity-50">{linkLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}Generar liga</button>
 
             {inviteUrl ? (
               <div className="mt-5 rounded-2xl border border-white/10 bg-[#0B0F17] p-4">
                 <label className="text-xs font-bold uppercase tracking-wider text-white/40">Liga lista para enviar</label>
-                <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-                  <input readOnly value={inviteUrl} onFocus={(event) => event.currentTarget.select()} className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 font-mono text-xs text-white/75" />
-                  <button onClick={copyLink} className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#D4AF37]/30 bg-[#D4AF37]/10 px-4 py-2.5 text-sm font-semibold text-[#F5D76E]">{copied ? <Check className="h-4 w-4" /> : <ClipboardCopy className="h-4 w-4" />}{copied ? 'Copiada' : 'Copiar liga'}</button>
-                </div>
-                {expiresAt ? <p className="mt-2 text-xs text-white/35">Vigente hasta {new Date(expiresAt).toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })}.</p> : null}
+                <div className="mt-2 flex flex-col gap-2 sm:flex-row"><input readOnly value={inviteUrl} onFocus={(event) => event.currentTarget.select()} className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 font-mono text-xs text-white/75" /><button onClick={copyLink} className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#D4AF37]/30 bg-[#D4AF37]/10 px-4 py-2.5 text-sm font-semibold text-[#F5D76E]">{copied ? <Check className="h-4 w-4" /> : <ClipboardCopy className="h-4 w-4" />}{copied ? 'Copiada' : 'Copiar liga'}</button></div>
+                {eventType.trim() ? <p className="mt-2 text-xs text-white/45">Evento asociado: <span className="font-semibold text-white/70">{eventType.trim()}</span></p> : null}
+                {expiresAt ? <p className="mt-1 text-xs text-white/35">Vigente hasta {new Date(expiresAt).toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })}.</p> : null}
               </div>
             ) : null}
           </div>
@@ -190,17 +211,14 @@ export const ReviewsAdminPage: React.FC = () => {
             <p className="mt-3 text-4xl font-bold">{reviews.length}</p>
             <p className="text-sm text-white/45">reseñas registradas</p>
             <div className="mt-5 flex items-center gap-3"><Stars rating={average} /><span className="text-sm text-white/60">{average ? average.toFixed(1) : '0.0'} / 5</span></div>
-            <p className="mt-4 text-xs leading-5 text-emerald-300/80">Las nuevas reseñas se publican automáticamente en la página.</p>
+            <p className="mt-4 text-xs leading-5 text-emerald-300/80">Las nuevas reseñas se publican automáticamente. Puedes eliminar cualquiera desde este módulo.</p>
           </div>
         </section>
 
         {message ? <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">{message}</div> : null}
 
         <section className="rounded-3xl border border-white/10 bg-[#161C28] p-5 sm:p-6">
-          <div className="flex items-center justify-between gap-4">
-            <div><h2 className="text-xl font-bold">Comentarios recibidos</h2><p className="mt-1 text-sm text-white/45">Los más recientes aparecen primero.</p></div>
-            {loading ? <Loader2 className="h-5 w-5 animate-spin text-[#D4AF37]" /> : null}
-          </div>
+          <div className="flex items-center justify-between gap-4"><div><h2 className="text-xl font-bold">Comentarios recibidos</h2><p className="mt-1 text-sm text-white/45">Los más recientes aparecen primero.</p></div>{loading ? <Loader2 className="h-5 w-5 animate-spin text-[#D4AF37]" /> : null}</div>
 
           <div className="mt-5 grid gap-4 lg:grid-cols-2">
             {reviews.map((review) => (
@@ -211,6 +229,7 @@ export const ReviewsAdminPage: React.FC = () => {
                 </div>
                 <div className="mt-3"><Stars rating={review.rating} /></div>
                 <p className="mt-4 text-sm leading-6 text-white/70">{review.comment}</p>
+                <div className="mt-5 border-t border-white/10 pt-4"><button onClick={() => deleteReview(review)} disabled={deletingId === review.id} className="inline-flex items-center gap-2 rounded-xl border border-rose-500/25 bg-rose-500/10 px-3.5 py-2 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/15 disabled:opacity-50">{deletingId === review.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}{deletingId === review.id ? 'Eliminando…' : 'Eliminar reseña'}</button></div>
               </article>
             ))}
           </div>
