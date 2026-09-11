@@ -65,6 +65,42 @@ function normalizeMedia(item, allowDownloads, fallbackTitle = '') {
   };
 }
 
+async function loadGalleryConfig() {
+  let lastError;
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const response = await fetch(appsScriptUrl('loadConfig'), {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        redirect: 'follow',
+      });
+
+      const text = await response.text();
+      let payload;
+      try {
+        payload = JSON.parse(text);
+      } catch (_) {
+        throw new Error(`Apps Script devolvió una respuesta no JSON (HTTP ${response.status}).`);
+      }
+
+      if (!response.ok || payload?.status !== 'success') {
+        throw new Error(payload?.message || `Apps Script respondió HTTP ${response.status}.`);
+      }
+
+      return normalizeConfig(payload);
+    } catch (error) {
+      lastError = error;
+      console.error(`[XPH Client Gallery] loadConfig intento ${attempt}/3:`, error?.message || error);
+      if (attempt < 3) {
+        await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
+      }
+    }
+  }
+
+  throw lastError || new Error('No se pudo cargar la configuración de galerías.');
+}
+
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, max-age=0');
   res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
@@ -80,18 +116,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ status: 'error', message: 'Liga privada incompleta.' });
     }
 
-    const response = await fetch(appsScriptUrl('loadConfig'), {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      redirect: 'follow',
-    });
-    const text = await response.text();
-    let payload;
-    try { payload = JSON.parse(text); } catch (_) {
-      return res.status(502).json({ status: 'error', message: 'La galería no pudo cargarse.' });
-    }
-
-    const config = normalizeConfig(payload);
+    const config = await loadGalleryConfig();
     const items = Array.isArray(config.galleryImages) ? config.galleryImages : [];
     const meta = items.find((item) =>
       item?.visibility === 'private' &&
@@ -147,7 +172,7 @@ export default async function handler(req, res) {
       media,
     });
   } catch (error) {
-    console.error('[XPH Client Gallery] Error:', error);
-    return res.status(502).json({ status: 'error', message: 'No se pudo abrir la galería.' });
+    console.error('[XPH Client Gallery] Error final:', error?.message || error);
+    return res.status(502).json({ status: 'error', message: 'No se pudo abrir la galería. Intenta nuevamente en unos segundos.' });
   }
 }
