@@ -145,8 +145,6 @@ export default function AppV2() {
         heroCoverSettings: data.heroCoverSettings && typeof data.heroCoverSettings === 'object' ? data.heroCoverSettings : {},
       };
 
-      // La promoción no debe depender de la precarga de galerías o portadas.
-      // Si Drive responde lento, el pop-up todavía debe abrir de inmediato.
       if (data.promotionPopup && typeof data.promotionPopup === 'object') setPromotionPopup(data.promotionPopup as PromotionPopupConfig);
       else setPromotionPopup(null);
 
@@ -250,7 +248,6 @@ export default function AppV2() {
       <Navbar currentRoute={currentRoute} categories={catalogCategories} onNavigateRoute={(route) => handleNavigateRoute(route, false)} />
       <Hero currentRoute={currentRoute} categories={catalogCategories} onQuoteClick={() => handleScrollTo('cotizador')} onGalleryClick={() => handleScrollTo('galerias')} onCitaClick={() => handleScrollTo('solicitud')} heroCovers={heroCovers} heroCoverSettings={heroCoverSettings} mediaReady={mediaReady} />
       <GallerySection currentRoute={currentRoute} onNavigateRoute={(route) => handleNavigateRoute(route, true)} images={galleryImages} categories={catalogCategories} onShowToast={showToast} loading={!mediaReady} />
-      <TestimonialsSection />
       <ServiceSeoSection currentRoute={currentRoute} categories={catalogCategories} packages={packagesState[currentRoute] || []} onNavigateRoute={(route) => handleNavigateRoute(route, false)} onQuoteClick={() => handleScrollTo('cotizador')} />
 
       <PricingQuoteEngineV2
@@ -266,6 +263,7 @@ export default function AppV2() {
 
       <InPersonConsultation bookingState={bookingState} onNavigateToQuote={() => handleScrollTo('cotizador')} onShowToast={showToast} />
       <BookingWizardV2 bookingState={bookingState} onUpdateBookingState={setBookingState} onShowToast={showToast} packages={packagesState} addons={addonsState} categories={catalogCategories} />
+      {currentRoute === 'inicio' ? <TestimonialsSection /> : null}
       <Footer onNavigateRoute={(route) => handleNavigateRoute(route, false)} footerContact={footerContact} categories={catalogCategories} />
 
       <WhatsAppFloatingButtonV2 bookingState={bookingState} phoneNumber={`52${whatsappNumber}`} packages={packagesState} addons={addonsState} />
