@@ -4,6 +4,7 @@ import { Analytics } from '@vercel/analytics/react';
 import AppV2 from './AppV2';
 import { ClientGalleryPage } from './components/ClientGalleryPage';
 import { ClientReviewPage } from './components/ClientReviewPage';
+import { ReviewsAdminPage } from './components/ReviewsAdminPage';
 import { PrivateGalleryDownloadSettings } from './components/PrivateGalleryDownloadSettings';
 import { UnifiedAdminDashboard } from './components/UnifiedAdminDashboard';
 import { AdminExitHomeEnhancer } from './components/AdminExitHomeEnhancer';
@@ -44,6 +45,8 @@ if (signingToken) {
   content = <MobileContractSigningPage token={signingToken} />;
 } else if (reviewToken) {
   content = <ClientReviewPage token={reviewToken} />;
+} else if (adminMode === 'resenas') {
+  content = <ReviewsAdminPage />;
 } else if (adminMode === 'panel' || adminMode === 'crm' || adminMode === 'galeria' || adminMode === 'portadas' || adminMode === 'promociones' || adminMode === 'analitica') {
   content = (
     <>
