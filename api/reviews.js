@@ -16,14 +16,14 @@ function noIndex(res) {
 function isSameOrigin(req) {
   const origin = String(req.headers?.origin || '');
   if (!origin) return true;
-  try {
-    return new URL(origin).host === String(req.headers?.host || '');
-  } catch (_) {
-    return false;
-  }
+  try { return new URL(origin).host === String(req.headers?.host || ''); } catch (_) { return false; }
 }
 
-function validLegacyToken(candidate) {
+function cleanText(value, maxLength) {
+  return String(value || '').replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, maxLength);
+}
+
+function legacyTokenValid(candidate) {
   const token = String(candidate || '').trim();
   if (!token || token.length > 200) return false;
   const actual = Buffer.from(createHash('sha256').update(token).digest('hex'));
@@ -31,25 +31,29 @@ function validLegacyToken(candidate) {
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
-function validSignedToken(candidate) {
+function signedTokenPayload(candidate) {
   const token = String(candidate || '').trim();
-  if (!SESSION_SECRET || !token || !token.includes('.') || token.length > 1200) return false;
+  if (!SESSION_SECRET || !token || !token.includes('.') || token.length > 1600) return null;
   const [encoded, signature] = token.split('.');
-  if (!encoded || !signature) return false;
+  if (!encoded || !signature) return null;
   const expected = createHmac('sha256', SESSION_SECRET).update(`review:${encoded}`).digest('base64url');
   try {
     const left = Buffer.from(signature);
     const right = Buffer.from(expected);
-    if (left.length !== right.length || !timingSafeEqual(left, right)) return false;
+    if (left.length !== right.length || !timingSafeEqual(left, right)) return null;
     const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
-    return payload?.kind === 'xph-review' && Number(payload.exp) > Date.now();
+    if (payload?.kind !== 'xph-review' || Number(payload.exp) <= Date.now()) return null;
+    return payload;
   } catch (_) {
-    return false;
+    return null;
   }
 }
 
-function validToken(candidate) {
-  return validSignedToken(candidate) || validLegacyToken(candidate);
+function reviewInvitation(candidate) {
+  const signed = signedTokenPayload(candidate);
+  if (signed) return { valid: true, eventType: cleanText(signed.eventType, 60) };
+  if (legacyTokenValid(candidate)) return { valid: true, eventType: '' };
+  return { valid: false, eventType: '' };
 }
 
 function rateLimit(req) {
@@ -86,11 +90,7 @@ function integrationUrl(action) {
 }
 
 async function loadConfig() {
-  const response = await fetch(integrationUrl('loadConfig'), {
-    method: 'GET',
-    headers: { Accept: 'application/json' },
-    redirect: 'follow',
-  });
+  const response = await fetch(integrationUrl('loadConfig'), { method: 'GET', headers: { Accept: 'application/json' }, redirect: 'follow' });
   const text = await response.text();
   let parsed;
   try { parsed = JSON.parse(text); } catch (_) { throw new Error('La base privada devolvió una respuesta no válida.'); }
@@ -99,27 +99,22 @@ async function loadConfig() {
 }
 
 async function saveTestimonials(testimonials) {
-  const body = JSON.stringify({
-    action: 'saveConfig',
-    apiSecret: APPS_SCRIPT_SHARED_SECRET,
-    configData: JSON.stringify({ testimonials }),
-    auditType: 'TESTIMONIO_CLIENTE_PUBLICADO',
-    auditDetails: 'Opinión publicada automáticamente desde liga privada de clientes',
-  });
   const response = await fetch(APPS_SCRIPT_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body,
+    body: JSON.stringify({
+      action: 'saveConfig',
+      apiSecret: APPS_SCRIPT_SHARED_SECRET,
+      configData: JSON.stringify({ testimonials }),
+      auditType: 'TESTIMONIO_CLIENTE_PUBLICADO',
+      auditDetails: 'Opinión publicada automáticamente desde liga privada de clientes',
+    }),
     redirect: 'follow',
   });
   const text = await response.text();
   let parsed;
   try { parsed = JSON.parse(text); } catch (_) { throw new Error('La base privada no confirmó el guardado.'); }
   if (!response.ok || parsed?.status !== 'success') throw new Error(parsed?.message || 'No se pudo guardar la opinión.');
-}
-
-function cleanText(value, maxLength) {
-  return String(value || '').replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, maxLength);
 }
 
 function parseBody(req) {
@@ -135,8 +130,9 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
 
   if (req.method === 'GET') {
-    if (!validToken(req.query?.token)) return res.status(404).json({ status: 'error', message: 'La liga no es válida o ya no está disponible.' });
-    return res.status(200).json({ status: 'success', valid: true });
+    const invitation = reviewInvitation(req.query?.token);
+    if (!invitation.valid) return res.status(404).json({ status: 'error', message: 'La liga no es válida o ya no está disponible.' });
+    return res.status(200).json({ status: 'success', valid: true, eventType: invitation.eventType });
   }
 
   if (req.method !== 'POST') {
@@ -149,10 +145,10 @@ export default async function handler(req, res) {
 
   try {
     const submitted = parseBody(req);
-    if (!validToken(submitted.token)) return res.status(404).json({ status: 'error', message: 'La liga no es válida o ya no está disponible.' });
+    const invitation = reviewInvitation(submitted.token);
+    if (!invitation.valid) return res.status(404).json({ status: 'error', message: 'La liga no es válida o ya no está disponible.' });
 
     const name = cleanText(submitted.name, 80);
-    const eventType = cleanText(submitted.eventType, 60);
     const comment = cleanText(submitted.comment, 1500);
     const rating = Math.round(Number(submitted.rating || 0));
 
@@ -166,7 +162,7 @@ export default async function handler(req, res) {
       id: `review-${randomUUID()}`,
       name,
       author: name,
-      eventType,
+      eventType: invitation.eventType,
       rating,
       comment,
       text: comment,
@@ -177,9 +173,7 @@ export default async function handler(req, res) {
       createdAt: new Date().toISOString(),
     };
 
-    const testimonials = [...current, review].slice(-MAX_TESTIMONIALS);
-    await saveTestimonials(testimonials);
-
+    await saveTestimonials([...current, review].slice(-MAX_TESTIMONIALS));
     return res.status(200).json({ status: 'success', reviewId: review.id, published: true });
   } catch (error) {
     console.error('[XPH Reviews] Error:', error);
