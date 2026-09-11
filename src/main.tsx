@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { Analytics } from '@vercel/analytics/react';
 import AppV2 from './AppV2';
 import { ClientGalleryPage } from './components/ClientGalleryPage';
+import { ClientReviewPage } from './components/ClientReviewPage';
 import { PrivateGalleryDownloadSettings } from './components/PrivateGalleryDownloadSettings';
 import { UnifiedAdminDashboard } from './components/UnifiedAdminDashboard';
 import { AdminExitHomeEnhancer } from './components/AdminExitHomeEnhancer';
@@ -33,6 +34,7 @@ const params = new URLSearchParams(window.location.search);
 const adminMode = params.get('xph-admin');
 const gallerySlug = params.get('galeria') || '';
 const galleryToken = params.get('k') || '';
+const reviewToken = params.get('xph-review') || '';
 const signingMatch = window.location.pathname.match(/^\/firmar\/([^/]+)\/?$/);
 const signingToken = signingMatch ? decodeURIComponent(signingMatch[1]) : '';
 
@@ -40,6 +42,8 @@ let content = <AppV2 />;
 
 if (signingToken) {
   content = <MobileContractSigningPage token={signingToken} />;
+} else if (reviewToken) {
+  content = <ClientReviewPage token={reviewToken} />;
 } else if (adminMode === 'panel' || adminMode === 'crm' || adminMode === 'galeria' || adminMode === 'portadas' || adminMode === 'promociones' || adminMode === 'analitica') {
   content = (
     <>
@@ -54,7 +58,7 @@ if (signingToken) {
   content = <ClientGalleryPage slug={gallerySlug} token={galleryToken} />;
 }
 
-const publicView = !adminMode && !(gallerySlug && galleryToken) && !signingToken;
+const publicView = !adminMode && !(gallerySlug && galleryToken) && !signingToken && !reviewToken;
 if (!publicView) {
   const robots = document.querySelector('meta[name="robots"]') || document.createElement('meta');
   robots.setAttribute('name', 'robots');
