@@ -11,6 +11,10 @@ function noStore(res) {
   res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
 }
 
+function cleanText(value, maxLength) {
+  return String(value || '').replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, maxLength);
+}
+
 function b64url(value) {
   return Buffer.from(value).toString('base64url');
 }
@@ -47,11 +51,7 @@ function verifyAdminSession(req) {
 function isSameOrigin(req) {
   const origin = String(req.headers?.origin || '');
   if (!origin) return true;
-  try {
-    return new URL(origin).host === String(req.headers?.host || '');
-  } catch (_) {
-    return false;
-  }
+  try { return new URL(origin).host === String(req.headers?.host || ''); } catch (_) { return false; }
 }
 
 function integrationUrl(action) {
@@ -73,11 +73,7 @@ function normalizeConfig(payload) {
 }
 
 async function loadConfig() {
-  const response = await fetch(integrationUrl('loadConfig'), {
-    method: 'GET',
-    headers: { Accept: 'application/json' },
-    redirect: 'follow',
-  });
+  const response = await fetch(integrationUrl('loadConfig'), { method: 'GET', headers: { Accept: 'application/json' }, redirect: 'follow' });
   const text = await response.text();
   let parsed;
   try { parsed = JSON.parse(text); } catch (_) { throw new Error('La base privada devolvió una respuesta no válida.'); }
@@ -137,10 +133,10 @@ function safeReviews(config) {
     .sort((a, b) => Date.parse(b.createdAt || '') - Date.parse(a.createdAt || ''));
 }
 
-function signReviewToken() {
+function signReviewToken(eventType) {
   if (!SESSION_SECRET) throw new Error('El secreto de sesión no está configurado.');
   const expiresAt = Date.now() + REVIEW_LINK_DAYS * 24 * 60 * 60 * 1000;
-  const encoded = b64url(JSON.stringify({ kind: 'xph-review', nonce: randomUUID(), exp: expiresAt }));
+  const encoded = b64url(JSON.stringify({ kind: 'xph-review', nonce: randomUUID(), eventType: cleanText(eventType, 60), exp: expiresAt }));
   const signature = createHmac('sha256', SESSION_SECRET).update(`review:${encoded}`).digest('base64url');
   return { token: `${encoded}.${signature}`, expiresAt };
 }
@@ -164,9 +160,11 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'POST') {
-      const { token, expiresAt } = signReviewToken();
+      const submitted = parseBody(req);
+      const eventType = cleanText(submitted.eventType, 60);
+      const { token, expiresAt } = signReviewToken(eventType);
       const url = `${requestOrigin(req)}/?xph-review=${encodeURIComponent(token)}`;
-      return res.status(200).json({ status: 'success', url, expiresAt: new Date(expiresAt).toISOString() });
+      return res.status(200).json({ status: 'success', url, eventType, expiresAt: new Date(expiresAt).toISOString() });
     }
 
     if (req.method === 'DELETE') {
