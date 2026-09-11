@@ -85,6 +85,33 @@ async function loadConfig() {
   return normalizeConfig(parsed);
 }
 
+async function saveTestimonials(testimonials, auditDetails) {
+  const response = await fetch(APPS_SCRIPT_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({
+      action: 'saveConfig',
+      apiSecret: APPS_SCRIPT_SHARED_SECRET,
+      configData: JSON.stringify({ testimonials }),
+      auditType: 'TESTIMONIO_CLIENTE_ELIMINADO',
+      auditDetails: auditDetails || 'Reseña eliminada desde el administrador',
+    }),
+    redirect: 'follow',
+  });
+  const text = await response.text();
+  let parsed;
+  try { parsed = JSON.parse(text); } catch (_) { throw new Error('La base privada no confirmó la eliminación.'); }
+  if (!response.ok || parsed?.status !== 'success') throw new Error(parsed?.message || 'No se pudo eliminar la reseña.');
+}
+
+function parseBody(req) {
+  if (req.body && typeof req.body === 'object') return req.body;
+  if (typeof req.body === 'string') {
+    try { return JSON.parse(req.body); } catch (_) { return {}; }
+  }
+  return {};
+}
+
 function ratingFor(item) {
   const direct = Number(item?.rating || 0);
   if (direct >= 1 && direct <= 5) return direct;
@@ -142,10 +169,26 @@ export default async function handler(req, res) {
       return res.status(200).json({ status: 'success', url, expiresAt: new Date(expiresAt).toISOString() });
     }
 
-    res.setHeader('Allow', 'GET, POST, OPTIONS');
+    if (req.method === 'DELETE') {
+      const submitted = parseBody(req);
+      const reviewId = String(submitted.reviewId || '').trim();
+      if (!reviewId || reviewId.length > 160) return res.status(400).json({ status: 'error', message: 'La reseña seleccionada no es válida.' });
+
+      const config = await loadConfig();
+      const current = Array.isArray(config.testimonials) ? config.testimonials : [];
+      const target = current.find((item) => String(item?.id || '') === reviewId);
+      if (!target) return res.status(404).json({ status: 'error', message: 'La reseña ya no existe.' });
+
+      const testimonials = current.filter((item) => String(item?.id || '') !== reviewId);
+      const author = String(target?.name || target?.author || 'Cliente XPH').slice(0, 80);
+      await saveTestimonials(testimonials, `Reseña de ${author} eliminada por ${session.email}`);
+      return res.status(200).json({ status: 'success', deletedId: reviewId });
+    }
+
+    res.setHeader('Allow', 'GET, POST, DELETE, OPTIONS');
     return res.status(405).json({ status: 'error', message: 'Método no permitido.' });
   } catch (error) {
     console.error('[XPH Review Admin] Error:', error);
-    return res.status(500).json({ status: 'error', message: 'No se pudo cargar el módulo de reseñas.' });
+    return res.status(500).json({ status: 'error', message: req.method === 'DELETE' ? 'No se pudo eliminar la reseña.' : 'No se pudo cargar el módulo de reseñas.' });
   }
 }
