@@ -10,6 +10,8 @@ type PublicReview = {
   createdAt?: string;
 };
 
+const RETRY_DELAYS_MS = [0, 900, 2500, 5000];
+
 const ReviewStars: React.FC<{ rating: number }> = ({ rating }) => (
   <div className="flex items-center gap-1" aria-label={`${rating} de 5 estrellas`}>
     {[1, 2, 3, 4, 5].map((value) => (
@@ -18,18 +20,34 @@ const ReviewStars: React.FC<{ rating: number }> = ({ rating }) => (
   </div>
 );
 
+const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
 export const TestimonialsSection: React.FC = () => {
   const [reviews, setReviews] = useState<PublicReview[]>([]);
 
   useEffect(() => {
     let active = true;
-    fetch('/api/public-reviews', { cache: 'no-store' })
-      .then((response) => response.json())
-      .then((data) => {
+
+    const loadReviews = async () => {
+      for (let index = 0; index < RETRY_DELAYS_MS.length && active; index += 1) {
+        if (RETRY_DELAYS_MS[index]) await wait(RETRY_DELAYS_MS[index]);
         if (!active) return;
-        setReviews(Array.isArray(data?.reviews) ? data.reviews : []);
-      })
-      .catch(() => active && setReviews([]));
+
+        try {
+          const response = await fetch(`/api/public-reviews?_t=${Date.now()}`, { cache: 'no-store' });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok || data?.status !== 'success' || !Array.isArray(data?.reviews)) {
+            throw new Error(data?.message || 'No se pudieron cargar las reseñas.');
+          }
+          if (active) setReviews(data.reviews);
+          return;
+        } catch (_) {
+          if (index === RETRY_DELAYS_MS.length - 1 && active) setReviews([]);
+        }
+      }
+    };
+
+    loadReviews();
     return () => { active = false; };
   }, []);
 
