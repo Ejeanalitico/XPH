@@ -366,6 +366,11 @@ export async function assignClientPackage(input: { clientId: string; category: s
   return await adminBusinessRequest('adminClientPackageAssign', input);
 }
 
+export async function removeProspectPackage(clientId: string, packageId: string): Promise<CrmClient> {
+  const data = await adminBusinessRequest<{ client: CrmClient }>('adminProspectPackageRemove', { clientId, packageId });
+  return data.client;
+}
+
 export async function saveContractedService(service: Partial<ContractedService>): Promise<ContractedService> {
   const data = await adminBusinessRequest<{ service: ContractedService }>('adminServiceUpsert', { service });
   return data.service;
