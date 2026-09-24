@@ -1219,6 +1219,21 @@ async function renderContractSnapshotPdf(snapshot, contract) {
   const marginX = 42;
   const contentWidth = pageWidth - marginX * 2;
   const folio = String(contract?.folio || '');
+  const documentPackages = Array.isArray(snapshot.packageOptions) && snapshot.packageOptions.length
+    ? snapshot.packageOptions
+    : [{
+        packageSnapshotId: '',
+        packageId: '',
+        category: '',
+        packageName: snapshot.commercial?.packageName || 'Servicio personalizado',
+        basePrice: Number(snapshot.commercial?.packageBase || 0),
+        discount: Number(snapshot.commercial?.discount || 0),
+        promotion: snapshot.commercial?.promotion || '',
+        packageTotal: Math.max(0, Number(snapshot.commercial?.packageBase || 0) - Number(snapshot.commercial?.discount || 0)),
+        total: Number(snapshot.commercial?.total || 0),
+        services: Array.isArray(snapshot.services) ? snapshot.services : [],
+      }];
+  const multiPackageQuote = snapshot.documentType === 'COTIZACION' && documentPackages.length > 1;
   let page;
   let y;
 
@@ -1345,36 +1360,53 @@ async function renderContractSnapshotPdf(snapshot, contract) {
     return height;
   };
   const drawServices = () => {
-    const packageName = safeText(snapshot.commercial?.packageName || 'Servicio personalizado').toUpperCase();
-    const price = money(snapshot.commercial?.packageBase);
-    ensure(37);
-    page.drawText(packageName, { x: marginX, y, size: 7.6, font: bold, color: black });
-    const priceWidth = bold.widthOfTextAtSize(price, 7.6);
-    page.drawText(price, { x: pageWidth - marginX - priceWidth, y, size: 7.6, font: bold, color: black });
-    page.drawLine({ start: { x: marginX, y: y - 7 }, end: { x: pageWidth - marginX, y: y - 7 }, thickness: 0.7, color: black });
-    y -= 20;
-    const services = Array.isArray(snapshot.services) ? snapshot.services : [];
-    if (!services.length) {
-      ensure(32);
-      page.drawRectangle({ x: marginX, y: y - 28, width: contentWidth, height: 28, borderWidth: 0.55, borderColor: borderGray });
-      page.drawText('Servicios por especificar.', { x: marginX + 9, y: y - 18, size: 7.5, font: regular, color: gray });
-      y -= 38;
-      return;
-    }
     const gap = 7;
     const cardWidth = (contentWidth - gap) / 2;
-    for (let index = 0; index < services.length; index += 2) {
-      const leftLines = wrap(safeText(`${services[index]?.concept || ''}${Number(services[index]?.quantity || 0) > 1 ? ` (${services[index].quantity})` : ''}${services[index]?.notes ? ` - ${services[index].notes}` : ''}`), cardWidth - 31, regular, 7.5);
-      const right = services[index + 1];
-      const rightLines = right ? wrap(safeText(`${right.concept || ''}${Number(right.quantity || 0) > 1 ? ` (${right.quantity})` : ''}${right.notes ? ` - ${right.notes}` : ''}`), cardWidth - 31, regular, 7.5) : [];
-      const rowHeight = Math.max(30, 15 + Math.max(leftLines.length, rightLines.length) * 9);
-      ensure(rowHeight + 8);
-      serviceCard(marginX, y, cardWidth, services[index]);
-      if (right) serviceCard(marginX + cardWidth + gap, y, cardWidth, right);
-      y -= rowHeight + 7;
-    }
-    y -= 4;
+    documentPackages.forEach((pkg, packageIndex) => {
+      if (multiPackageQuote) {
+        ensure(24);
+        page.drawText(`OPCIÓN ${packageIndex + 1}`, { x: marginX, y, size: 6.3, font: bold, color: gray });
+        y -= 13;
+      }
+      const packageName = safeText(pkg.packageName || 'Servicio personalizado').toUpperCase();
+      const price = money(pkg.basePrice);
+      ensure(37);
+      page.drawText(packageName, { x: marginX, y, size: 7.6, font: bold, color: black });
+      const priceWidth = bold.widthOfTextAtSize(price, 7.6);
+      page.drawText(price, { x: pageWidth - marginX - priceWidth, y, size: 7.6, font: bold, color: black });
+      page.drawLine({ start: { x: marginX, y: y - 7 }, end: { x: pageWidth - marginX, y: y - 7 }, thickness: 0.7, color: black });
+      y -= 20;
+      const services = Array.isArray(pkg.services) ? pkg.services : [];
+      if (!services.length) {
+        ensure(32);
+        page.drawRectangle({ x: marginX, y: y - 28, width: contentWidth, height: 28, borderWidth: 0.55, borderColor: borderGray });
+        page.drawText('Servicios por especificar.', { x: marginX + 9, y: y - 18, size: 7.5, font: regular, color: gray });
+        y -= 36;
+      } else {
+        for (let index = 0; index < services.length; index += 2) {
+          const leftLines = wrap(safeText(`${services[index]?.concept || ''}${Number(services[index]?.quantity || 0) > 1 ? ` (${services[index].quantity})` : ''}${services[index]?.notes ? ` - ${services[index].notes}` : ''}`), cardWidth - 31, regular, 7.5);
+          const right = services[index + 1];
+          const rightLines = right ? wrap(safeText(`${right.concept || ''}${Number(right.quantity || 0) > 1 ? ` (${right.quantity})` : ''}${right.notes ? ` - ${right.notes}` : ''}`), cardWidth - 31, regular, 7.5) : [];
+          const rowHeight = Math.max(30, 15 + Math.max(leftLines.length, rightLines.length) * 9);
+          ensure(rowHeight + 8);
+          serviceCard(marginX, y, cardWidth, services[index]);
+          if (right) serviceCard(marginX + cardWidth + gap, y, cardWidth, right);
+          y -= rowHeight + 7;
+        }
+      }
+      if (pkg.promotion || Number(pkg.discount || 0) > 0 || multiPackageQuote) {
+        ensure(26);
+        const promo = pkg.promotion ? `Promoción: ${safeText(pkg.promotion)}` : Number(pkg.discount || 0) > 0 ? `Descuento: ${money(pkg.discount)}` : 'Sin descuento';
+        page.drawText(promo.slice(0, 90), { x: marginX, y, size: 6.5, font: regular, color: gray });
+        const totalLabel = `Total de esta opción: ${money(pkg.total)}`;
+        const totalWidth = bold.widthOfTextAtSize(totalLabel, 6.5);
+        page.drawText(totalLabel, { x: pageWidth - marginX - totalWidth, y, size: 6.5, font: bold, color: black });
+        y -= 18;
+      }
+      y -= multiPackageQuote ? 7 : 4;
+    });
   };
+
   const drawSimpleTable = (rows, emphasisLast = false) => {
     const rowHeight = 24;
     ensure(rows.length * rowHeight + 8);
@@ -1425,6 +1457,33 @@ async function renderContractSnapshotPdf(snapshot, contract) {
     });
     y -= 12;
   };
+  const drawMultiOptionPaymentTable = () => {
+    const headers = ['Opción', '40% apartado', '30% intermedio', '30% finiquito', 'Total'];
+    const widths = [contentWidth * .30, contentWidth * .17, contentWidth * .17, contentWidth * .17, contentWidth * .19];
+    const drawRow = (values, header = false) => {
+      const font = header ? bold : regular;
+      const size = header ? 5.8 : 6.2;
+      const lineSets = values.map((value, index) => wrap(value, widths[index] - 8, font, size));
+      const rowHeight = header ? 23 : Math.max(27, 11 + Math.max(...lineSets.map((set) => set.length)) * 8);
+      ensure(rowHeight + 2);
+      let x = marginX;
+      values.forEach((value, index) => {
+        page.drawRectangle({ x, y: y - rowHeight, width: widths[index], height: rowHeight, color: header ? lightGray : undefined, borderWidth: 0.6, borderColor: black });
+        lineSets[index].forEach((line, lineIndex) => page.drawText(line, { x: x + 4, y: y - 15 - lineIndex * 8, size, font, color: black }));
+        x += widths[index];
+      });
+      y -= rowHeight;
+    };
+    drawRow(headers, true);
+    documentPackages.forEach((pkg) => drawRow([
+      pkg.packageName || 'Opción',
+      money(Number(pkg.total || 0) * .4),
+      money(Number(pkg.total || 0) * .3),
+      money(Number(pkg.total || 0) * .3),
+      money(pkg.total),
+    ]));
+    y -= 12;
+  };
   const drawTerms = () => {
     const terms = Array.isArray(snapshot.terms) ? snapshot.terms : [];
     terms.forEach((term, index) => {
@@ -1454,7 +1513,7 @@ async function renderContractSnapshotPdf(snapshot, contract) {
   sectionHeading('1.', 'Datos del cliente y del evento');
   drawInfoGrid();
 
-  sectionHeading('2.', 'Servicios y productos incluidos');
+  sectionHeading('2.', multiPackageQuote ? 'Opciones de paquete, servicios y productos incluidos' : 'Servicios y productos incluidos');
   drawServices();
 
   let sectionNumber = 3;
@@ -1465,24 +1524,43 @@ async function renderContractSnapshotPdf(snapshot, contract) {
     sectionNumber += 1;
   }
 
-  sectionHeading(`${sectionNumber}.`, 'Resumen financiero');
-  const summaryRows = [
-    ['Paquete base', money(snapshot.commercial?.packageBase)],
-    ...((snapshot.addons || []).length ? [['Servicios adicionales', money(snapshot.commercial?.additions)]] : []),
-    ...(Number(snapshot.commercial?.discount || 0) > 0 ? [['Descuento / promoción', `- ${money(snapshot.commercial.discount)}`]] : []),
-    ['Total contratado', money(snapshot.commercial?.total)],
-  ];
-  drawSimpleTable(summaryRows, true);
-  if (snapshot.commercial?.promotion) {
-    const promoLines = wrap(`Promoción aplicada: ${snapshot.commercial.promotion}`, contentWidth, regular, 6.8);
-    ensure(promoLines.length * 8 + 9);
-    promoLines.forEach((line, index) => page.drawText(line, { x: marginX, y: y - index * 8, size: 6.8, font: regular, color: gray }));
-    y -= promoLines.length * 8 + 10;
+  sectionHeading(`${sectionNumber}.`, multiPackageQuote ? 'Resumen de opciones' : 'Resumen financiero');
+  if (multiPackageQuote) {
+    drawSimpleTable(documentPackages.map((pkg) => [pkg.packageName || 'Opción', money(pkg.total)]), false);
+    if ((snapshot.addons || []).length) {
+      const noteLines = wrap('Los totales de cada opción incluyen los servicios adicionales compartidos.', contentWidth, regular, 6.5);
+      ensure(noteLines.length * 8 + 8);
+      noteLines.forEach((line, index) => page.drawText(line, { x: marginX, y: y - index * 8, size: 6.5, font: regular, color: gray }));
+      y -= noteLines.length * 8 + 8;
+    }
+  } else {
+    const summaryRows = [
+      ['Paquete base', money(snapshot.commercial?.packageBase)],
+      ...((snapshot.addons || []).length ? [['Servicios adicionales', money(snapshot.commercial?.additions)]] : []),
+      ...(Number(snapshot.commercial?.discount || 0) > 0 ? [['Descuento / promoción', `- ${money(snapshot.commercial.discount)}`]] : []),
+      ['Total contratado', money(snapshot.commercial?.total)],
+    ];
+    drawSimpleTable(summaryRows, true);
+    if (snapshot.commercial?.promotion) {
+      const promoLines = wrap(`Promoción aplicada: ${snapshot.commercial.promotion}`, contentWidth, regular, 6.8);
+      ensure(promoLines.length * 8 + 9);
+      promoLines.forEach((line, index) => page.drawText(line, { x: marginX, y: y - index * 8, size: 6.8, font: regular, color: gray }));
+      y -= promoLines.length * 8 + 10;
+    }
   }
   sectionNumber += 1;
 
-  sectionHeading(`${sectionNumber}.`, 'Calendario de pagos programado');
-  drawPaymentTable();
+  sectionHeading(`${sectionNumber}.`, multiPackageQuote ? 'Esquema de pagos por opción' : 'Calendario de pagos programado');
+  if (multiPackageQuote && snapshot.paymentPolicy === '40-30-30') {
+    drawMultiOptionPaymentTable();
+  } else if (multiPackageQuote) {
+    const noteLines = wrap('El plan personalizado se definirá sobre la opción elegida antes de formalizar el contrato.', contentWidth, regular, 7);
+    ensure(noteLines.length * 9 + 12);
+    noteLines.forEach((line, index) => page.drawText(line, { x: marginX, y: y - index * 9, size: 7, font: regular, color: black }));
+    y -= noteLines.length * 9 + 12;
+  } else {
+    drawPaymentTable();
+  }
 
   if (snapshot.documentType === 'CONTRATO') {
     sectionNumber += 1;
@@ -1586,6 +1664,18 @@ function normalizeContractDocumentSnapshot(input, documentType = 'CONTRATO') {
     client: { name: text(client.name, 180), phone: text(client.phone, 40), email: text(client.email, 180), address: text(client.address, 600), honoreeName: text(client.honoreeName, 240) },
     event: { type: text(event.type, 120), date: text(event.date, 40), time: text(event.time, 20), location: text(event.location, 600), serviceHours: Math.max(0, Number(event.serviceHours || 0)) },
     commercial: { packageName: text(commercial.packageName, 180), packageBase: amount(commercial.packageBase), additions: amount(commercial.additions), discount: amount(commercial.discount), total: amount(commercial.total), promotion: text(commercial.promotion, 500) },
+    packageOptions: (Array.isArray(source.packageOptions) ? source.packageOptions : []).slice(0, 20).map((item) => ({
+      packageSnapshotId: text(item?.packageSnapshotId, 120),
+      packageId: text(item?.packageId, 120),
+      category: text(item?.category, 100),
+      packageName: text(item?.packageName, 180),
+      basePrice: amount(item?.basePrice),
+      discount: amount(item?.discount),
+      promotion: text(item?.promotion, 500),
+      packageTotal: amount(item?.packageTotal),
+      total: amount(item?.total),
+      services: (Array.isArray(item?.services) ? item.services : []).slice(0, 100).map((service) => ({ concept: text(service?.concept, 240), quantity: Math.max(0, Number(service?.quantity || 0)), notes: text(service?.notes, 500) })).filter((service) => service.concept),
+    })).filter((item) => item.packageName),
     services: (Array.isArray(source.services) ? source.services : []).slice(0, 100).map((item) => ({ concept: text(item?.concept, 240), quantity: Math.max(0, Number(item?.quantity || 0)), notes: text(item?.notes, 500) })).filter((item) => item.concept),
     addons: (Array.isArray(source.addons) ? source.addons : []).slice(0, 100).map((item) => ({ concept: text(item?.concept, 240), quantity: Math.max(0, Number(item?.quantity || 0)), unitPrice: amount(item?.unitPrice), total: amount(item?.total), notes: text(item?.notes, 500) })).filter((item) => item.concept),
     payments: (Array.isArray(source.payments) ? source.payments : []).slice(0, 20).map((item) => ({ concept: text(item?.concept, 180), percentage: Math.max(0, Number(item?.percentage || 0)), amount: amount(item?.amount), dueDate: text(item?.dueDate, 40), status: text(item?.status || 'Pendiente', 40) })).filter((item) => item.concept),
