@@ -419,6 +419,18 @@ export interface ContractDocumentSnapshot {
     total: number;
     promotion: string;
   };
+  packageOptions?: Array<{
+    packageSnapshotId: string;
+    packageId: string;
+    category: string;
+    packageName: string;
+    basePrice: number;
+    discount: number;
+    promotion: string;
+    packageTotal: number;
+    total: number;
+    services: Array<{ concept: string; quantity: number; notes: string }>;
+  }>;
   services: Array<{ concept: string; quantity: number; notes: string }>;
   addons: Array<{ concept: string; quantity: number; unitPrice: number; total: number; notes: string }>;
   payments: Array<{ concept: string; percentage: number; amount: number; dueDate: string; status: string }>;
