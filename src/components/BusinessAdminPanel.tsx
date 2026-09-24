@@ -68,6 +68,7 @@ import {
   FinancialAdjustmentCategory,
   InternalCalendarEvent,
   ContractDocumentSnapshot,
+  ContractedService,
 } from '../types/business';
 import { SignaturePad } from './SignaturePad';
 import { ClientOperationsPanel } from './ClientOperationsPanel';
@@ -138,6 +139,28 @@ const localDateKey = (date: Date) => `${monthKey(date)}-${String(date.getDate())
 const monthLabel = (date: Date) => new Intl.DateTimeFormat('es-MX', { month: 'long', year: 'numeric' }).format(date);
 const money = (value: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(Number(value) || 0);
 const roundContractMoney = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
+const normalizeContractServiceKey = (value: string) =>
+  String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+const contractServicesForPackage = (services: ContractedService[], clientId: string, packageSnapshotId?: string) => {
+  const scoped = services.filter((item) => {
+    if (item.clientId !== clientId || !item.included || ['No incluido', 'Anulado'].includes(item.status)) return false;
+    if (!packageSnapshotId) return true;
+    return item.packageSnapshotId === packageSnapshotId || (item.source === 'MANUAL' && !item.packageSnapshotId);
+  });
+  const unique = new Map<string, ContractedService>();
+  scoped.forEach((item) => {
+    const key = normalizeContractServiceKey(item.concept);
+    if (!key) return;
+    const current = unique.get(key);
+    if (!current || (current.source === 'MANUAL' && item.source === 'PAQUETE')) unique.set(key, item);
+  });
+  return [...unique.values()];
+};
 const contractAddonAmount = (item: { quantity?: number; unitPrice?: number; total?: number }) => {
   const quantity = Math.max(0, Number(item.quantity || 0));
   const unitPrice = Math.max(0, Number(item.unitPrice || 0));
@@ -1090,8 +1113,10 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
 
   const getContractDataChecklist = (client?: CrmClient) => {
     if (!client) return [];
-    const activePackage = snapshot.packageSnapshots.find((item) => item.clientId === client.id && item.status === 'ACTIVO');
-    const activeServices = snapshot.services.filter((item) => item.clientId === client.id && item.included && item.status !== 'Anulado');
+    const activePackage = snapshot.packageSnapshots
+      .filter((item) => item.clientId === client.id && item.status === 'ACTIVO')
+      .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))[0];
+    const activeServices = contractServicesForPackage(snapshot.services, client.id, activePackage?.id);
     const activePayments = snapshot.payments.filter((item) => item.clientId === client.id && item.status !== 'Anulado');
     const isContract = contractDraft.documentType === 'CONTRATO';
     return [
@@ -1111,8 +1136,10 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
   };
 
   const buildContractSnapshot = (client: CrmClient): ContractDocumentSnapshot => {
-    const packageSnapshot = snapshot.packageSnapshots.find((item) => item.clientId === client.id && item.status === 'ACTIVO');
-    const services = snapshot.services.filter((item) => item.clientId === client.id && item.included && item.status !== 'Anulado');
+    const packageSnapshot = snapshot.packageSnapshots
+      .filter((item) => item.clientId === client.id && item.status === 'ACTIVO')
+      .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))[0];
+    const services = contractServicesForPackage(snapshot.services, client.id, packageSnapshot?.id);
     const addons = snapshot.addons.filter((item) => item.clientId === client.id && item.status !== 'Anulado');
     const registeredPayments = snapshot.payments.filter((item) => item.clientId === client.id && item.status !== 'Anulado').sort((a, b) => Number(a.installmentNumber || 0) - Number(b.installmentNumber || 0));
     const additions = roundContractMoney(addons.reduce((sum, item) => sum + contractAddonAmount(item), 0));

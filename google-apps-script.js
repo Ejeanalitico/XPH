@@ -2407,12 +2407,17 @@ function handleBusinessAction(ss, action, payload) {
     var packageTimestamp = businessNow();
     var currentSnapshots = readBusinessRecords(ss, 'Paquetes_Cliente', BUSINESS_HEADERS.packageSnapshots)
       .filter(function(item) { return String(item.clientId) === String(packageClient.id) && String(item.status) === 'ACTIVO'; });
-    var currentSnapshot = currentSnapshots.length ? currentSnapshots[0] : null;
-    if (currentSnapshot && String(currentSnapshot.packageId) !== String(packageInput.id || '')) {
-      currentSnapshot.status = 'REEMPLAZADO';
-      currentSnapshot.updatedAt = packageTimestamp;
-      upsertBusinessRecord(ss, 'Paquetes_Cliente', BUSINESS_HEADERS.packageSnapshots, currentSnapshot);
-      currentSnapshot = null;
+    var keepProspectAlternatives = String(packageClient.recordType) === 'Prospecto';
+    var currentSnapshot = currentSnapshots.find(function(item) {
+      return String(item.packageId) === String(packageInput.id || '');
+    }) || null;
+    if (!keepProspectAlternatives) {
+      currentSnapshots.forEach(function(item) {
+        if (currentSnapshot && String(item.id) === String(currentSnapshot.id)) return;
+        item.status = 'REEMPLAZADO';
+        item.updatedAt = packageTimestamp;
+        upsertBusinessRecord(ss, 'Paquetes_Cliente', BUSINESS_HEADERS.packageSnapshots, item);
+      });
     }
     var packageSnapshot = {
       id: cleanBusinessText((currentSnapshot && currentSnapshot.id) || businessId('paquete-cliente'), 120),

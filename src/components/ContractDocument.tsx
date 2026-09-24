@@ -62,9 +62,9 @@ export const ContractDocument = ({ snapshot, folio }: { snapshot: ContractDocume
         {!isQuote && snapshot.client.address && <Info label="Domicilio del cliente" value={snapshot.client.address} wide />}
       </div></Section>
 
-      <Section number="2" title="Servicios contratados">
-        <div className="mb-3 flex items-end justify-between gap-4 border-b border-black pb-2"><strong className="uppercase">{snapshot.commercial.packageName || 'Servicio personalizado'}</strong><strong className="whitespace-nowrap">{money(snapshot.commercial.packageBase)}</strong></div>
-        <ul className="grid gap-x-7 gap-y-1.5 sm:grid-cols-2">{snapshot.services.map((service, index) => <li key={`${service.concept}-${index}`} className="flex gap-2"><b>✓</b><span>{service.concept}{service.quantity > 1 ? ` (${service.quantity})` : ''}{service.notes ? ` — ${service.notes}` : ''}</span></li>)}{!snapshot.services.length && <li>Servicios por especificar.</li>}</ul>
+      <Section number="2" title="Servicios y productos incluidos">
+        <div className="mb-4 flex items-end justify-between gap-4 border-b border-black pb-2"><strong className="uppercase">{snapshot.commercial.packageName || 'Servicio personalizado'}</strong><strong className="whitespace-nowrap">{money(snapshot.commercial.packageBase)}</strong></div>
+        <div className="grid gap-2 sm:grid-cols-2">{snapshot.services.map((service, index) => <div key={`${service.concept}-${index}`} className="flex items-start gap-2.5 rounded-md border border-black/15 px-3 py-2.5"><span className="mt-[1px] inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-black text-[10px] font-bold">✓</span><span className="leading-5">{service.concept}{service.quantity > 1 ? ` (${service.quantity})` : ''}{service.notes ? ` — ${service.notes}` : ''}</span></div>)}{!snapshot.services.length && <div className="rounded-md border border-dashed border-black/20 px-3 py-3">Servicios por especificar.</div>}</div>
       </Section>
 
       {!!snapshot.addons.length && <Section number="3" title="Servicios adicionales"><Table><thead><tr><Th>Concepto</Th><Th>Cantidad</Th><Th>Precio unitario</Th><Th right>Importe</Th></tr></thead><tbody>{snapshot.addons.map((addon, index) => <tr key={`${addon.concept}-${index}`}><Td>{addon.concept}</Td><Td>{addon.quantity}</Td><Td>{money(addon.unitPrice)}</Td><Td right>{money(addon.total)}</Td></tr>)}</tbody></Table></Section>}

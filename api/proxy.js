@@ -559,6 +559,75 @@ function operationalClientRecord(item) {
   };
 }
 
+const PROSPECT_PACKAGE_META_START = '[[XPH_PROSPECT_PACKAGES_V1]]';
+const PROSPECT_PACKAGE_META_END = '[[/XPH_PROSPECT_PACKAGES_V1]]';
+
+function splitProspectPackageMetadata(notes) {
+  const raw = String(notes || '');
+  const start = raw.indexOf(PROSPECT_PACKAGE_META_START);
+  const end = raw.indexOf(PROSPECT_PACKAGE_META_END);
+  if (start < 0 || end < start) return { notes: raw, options: [] };
+  const before = raw.slice(0, start).trimEnd();
+  const after = raw.slice(end + PROSPECT_PACKAGE_META_END.length).trimStart();
+  let options = [];
+  try {
+    const parsed = JSON.parse(raw.slice(start + PROSPECT_PACKAGE_META_START.length, end));
+    if (Array.isArray(parsed)) options = parsed;
+  } catch (_) {}
+  return { notes: [before, after].filter(Boolean).join('\n').trim(), options };
+}
+
+function normalizeProspectPackageOptions(options, clientId = '', eventId = '') {
+  const seen = new Set();
+  return (Array.isArray(options) ? options : [])
+    .slice(-20)
+    .reverse()
+    .filter((item) => {
+      const id = String(item?.packageId || item?.id || '').trim();
+      if (!id || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    })
+    .reverse()
+    .map((item) => ({
+      id: String(item.id || ('prospect-package-' + String(item.packageId || ''))).slice(0, 120),
+      clientId: String(item.clientId || clientId || '').slice(0, 120),
+      eventId: String(item.eventId || eventId || '').slice(0, 120),
+      packageId: String(item.packageId || item.id || '').slice(0, 120),
+      category: String(item.category || '').slice(0, 100),
+      packageName: String(item.packageName || item.name || '').slice(0, 200),
+      basePrice: Math.max(0, Number(item.basePrice ?? item.price ?? 0) || 0),
+      discount: Math.max(0, Number(item.discount || 0) || 0),
+      promotion: String(item.promotion || '').slice(0, 500),
+      finalTotal: Math.max(0, Number(item.finalTotal ?? item.basePrice ?? item.price ?? 0) || 0),
+      originalJson: '',
+      status: 'ACTIVO',
+      createdAt: String(item.createdAt || item.updatedAt || new Date().toISOString()).slice(0, 40),
+      updatedAt: String(item.updatedAt || new Date().toISOString()).slice(0, 40),
+    }))
+    .filter((item) => item.packageId && item.packageName);
+}
+
+function attachProspectPackageMetadata(notes, options, clientId = '', eventId = '') {
+  const clean = splitProspectPackageMetadata(notes).notes;
+  const normalized = normalizeProspectPackageOptions(options, clientId, eventId);
+  if (!normalized.length) return clean;
+  const meta = PROSPECT_PACKAGE_META_START + JSON.stringify(normalized) + PROSPECT_PACKAGE_META_END;
+  return [clean, meta].filter(Boolean).join('\n');
+}
+
+function exposeProspectPackageOptions(client) {
+  if (!client || typeof client !== 'object') return client;
+  const split = splitProspectPackageMetadata(client.internalNotes);
+  return {
+    ...client,
+    internalNotes: split.notes,
+    prospectPackageOptions: String(client.recordType) === 'Prospecto'
+      ? normalizeProspectPackageOptions(split.options, client.id, client.eventId)
+      : [],
+  };
+}
+
 const PROMOTION_META_ID = 'xph-promotion-popup-config';
 
 function promotionPopupFromGallery(items) {
@@ -1180,7 +1249,7 @@ async function renderContractSnapshotPdf(snapshot, contract) {
   row('Evento', snapshot.event?.type || contract.eventType);
   row('Fecha y hora', `${snapshot.event?.date || 'Por confirmar'} · ${snapshot.event?.time || 'Por confirmar'}`);
   row('Lugar', snapshot.event?.location || 'Por confirmar');
-  heading('Servicio contratado');
+  heading('Servicios y productos incluidos');
   row('Paquete', `${snapshot.commercial?.packageName || 'Servicio personalizado'} · ${money(snapshot.commercial?.packageBase)}`);
   (snapshot.services || []).forEach((item) => bullet(`${item.concept}${Number(item.quantity || 0) > 1 ? ` · ${item.quantity}` : ''}${item.notes ? ` — ${item.notes}` : ''}`));
   if ((snapshot.addons || []).length) {
@@ -1742,6 +1811,7 @@ export default async function handler(req, res) {
       if (action === 'adminBusinessSnapshot') {
         const result = await forwardTransientBusinessAction('businessSnapshot', {}, 5);
         result.snapshot = filterDeletedContractsFromSnapshot(result.snapshot);
+        result.snapshot.clients = (result.snapshot?.clients || []).map(exposeProspectPackageOptions);
         if (session.role !== 'SUPER_ADMIN') {
           const assignments = (result.snapshot?.assignments || []).filter((item) => String(item.userId) === String(session.userId) && item.status !== 'CANCELADA');
           const allowedClientIds = new Set(assignments.map((item) => String(item.clientId)));
@@ -1774,7 +1844,7 @@ export default async function handler(req, res) {
       }
       if (action === 'adminBusinessClients') {
         const result = await forwardBusinessAction('businessClients');
-        result.clients = withoutContractDeleteStateClient(result.clients);
+        result.clients = withoutContractDeleteStateClient(result.clients).map(exposeProspectPackageOptions);
         if (session.role === 'SUPER_ADMIN') return res.status(200).json({ status: 'success', clients: Array.isArray(result.clients) ? result.clients : [] });
         const snapshotResult = await forwardTransientBusinessAction('businessSnapshot');
         const assignedIds = new Set((snapshotResult.snapshot?.assignments || []).filter((item) => String(item.userId) === String(session.userId) && item.status !== 'CANCELADA').map((item) => String(item.clientId)));
@@ -1849,8 +1919,16 @@ export default async function handler(req, res) {
             client.totalAmount = existing?.totalAmount || 0; client.paidAmount = existing?.paidAmount || 0; client.estimatedCost = existing?.estimatedCost || 0; client.allocatedAdCost = existing?.allocatedAdCost || 0; client.internalNotes = existing?.internalNotes || '';
           } else if (!hasPermission(session, 'CRM_WRITE')) return res.status(403).json({ status: 'error', message: 'No tienes permiso para editar prospectos.' });
         }
+        if (client.id && String(client.recordType || 'Prospecto') === 'Prospecto') {
+          const existingResult = await forwardTransientBusinessAction('businessClients');
+          const existingClient = (existingResult.clients || []).find((item) => String(item.id) === String(client.id));
+          const existingMeta = splitProspectPackageMetadata(existingClient?.internalNotes);
+          if (existingMeta.options.length) {
+            client.internalNotes = attachProspectPackageMetadata(client.internalNotes, existingMeta.options, client.id, client.eventId || existingClient?.eventId || '');
+          }
+        }
         const result = await forwardBusinessAction('crmUpsert', { client });
-        return res.status(200).json({ status: 'success', client: result.client });
+        return res.status(200).json({ status: 'success', client: exposeProspectPackageOptions(result.client) });
       }
       if (action === 'adminFollowUpCreate') {
         const followUp = submitted.followUp || {};
@@ -1940,9 +2018,10 @@ export default async function handler(req, res) {
         if (!clientId || !String(selectedPackage.id || '').trim() || !String(selectedPackage.name || '').trim() || Number(selectedPackage.price || 0) < 0 || !Array.isArray(selectedPackage.features)) {
           return res.status(400).json({ status: 'error', message: 'Selecciona un cliente y un paquete válido.' });
         }
+        const packageSnapshotBefore = await forwardTransientBusinessAction('businessSnapshot');
+        const packageClientBefore = (packageSnapshotBefore.snapshot?.clients || []).find((item) => String(item.id) === clientId);
         if (session.role !== 'SUPER_ADMIN') {
-          const snapshotResult = await forwardTransientBusinessAction('businessSnapshot');
-          const assigned = (snapshotResult.snapshot?.assignments || []).some((item) => String(item.userId) === String(session.userId) && String(item.clientId) === clientId && item.status !== 'CANCELADA');
+          const assigned = (packageSnapshotBefore.snapshot?.assignments || []).some((item) => String(item.userId) === String(session.userId) && String(item.clientId) === clientId && item.status !== 'CANCELADA');
           if (!assigned) return res.status(403).json({ status: 'error', message: 'No puedes modificar el paquete de un cliente no asignado.' });
         }
         const safePackage = {
@@ -1960,7 +2039,45 @@ export default async function handler(req, res) {
           discount: Math.max(0, Number(submitted.discount) || 0),
           promotion: String(submitted.promotion || '').slice(0, 500),
         });
-        return res.status(200).json({ status: 'success', packageSnapshot: result.packageSnapshot, services: result.services, client: result.client });
+        if (String(packageClientBefore?.recordType || result.client?.recordType || '') === 'Prospecto') {
+          const storedMeta = splitProspectPackageMetadata(packageClientBefore?.internalNotes);
+          const existingOptions = storedMeta.options.length
+            ? storedMeta.options
+            : (packageSnapshotBefore.snapshot?.packageSnapshots || [])
+                .filter((item) => String(item.clientId) === clientId && String(item.status) === 'ACTIVO');
+          const nextOption = {
+            ...(result.packageSnapshot || {}),
+            clientId,
+            eventId: result.client?.eventId || packageClientBefore?.eventId || '',
+            packageId: safePackage.id,
+            category: String(submitted.category || '').slice(0, 100),
+            packageName: safePackage.name,
+            basePrice: safePackage.price,
+            discount: Math.max(0, Number(submitted.discount) || 0),
+            promotion: String(submitted.promotion || '').slice(0, 500),
+            finalTotal: Math.max(0, safePackage.price - Math.max(0, Number(submitted.discount) || 0)),
+            status: 'ACTIVO',
+            updatedAt: new Date().toISOString(),
+          };
+          const mergedOptions = normalizeProspectPackageOptions(
+            [...existingOptions.filter((item) => String(item.packageId) !== String(safePackage.id)), nextOption],
+            clientId,
+            result.client?.eventId || packageClientBefore?.eventId || '',
+          );
+          const savedClient = await forwardBusinessAction('crmUpsert', {
+            client: {
+              ...result.client,
+              internalNotes: attachProspectPackageMetadata(
+                packageClientBefore?.internalNotes || result.client?.internalNotes || '',
+                mergedOptions,
+                clientId,
+                result.client?.eventId || packageClientBefore?.eventId || '',
+              ),
+            },
+          });
+          result.client = savedClient.client;
+        }
+        return res.status(200).json({ status: 'success', packageSnapshot: result.packageSnapshot, services: result.services, client: exposeProspectPackageOptions(result.client) });
       }
       if (action === 'adminServiceUpsert') {
         const service = submitted.service || {};
