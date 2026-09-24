@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { BellRing, CheckCircle2, ClipboardCheck, ClipboardCopy, FolderOpen, Images, Loader2, PackagePlus, Plus, Save, Sparkles, Trash2, Upload, UserPlus } from 'lucide-react';
 import { AddOnOption, PackageOption } from '../types';
-import { BusinessSnapshot, ClientAddon, ContractedService, CrmClient, CrmNotification, TeamAssignment } from '../types/business';
+import { BusinessSnapshot, ClientAddon, ClientPackageSnapshot, ContractedService, CrmClient, CrmNotification, TeamAssignment } from '../types/business';
 import { assignClientPackage, createClientGallery, loadAdminConfig, markNotification, removeProspectPackage, saveClientAddon, saveContractedService, saveTeamAssignment, updateClientGalleryStatus, uploadClientGalleryPhoto } from '../utils/adminApi';
 
 const money = (value: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(Number(value) || 0);
