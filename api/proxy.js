@@ -566,15 +566,21 @@ function splitProspectPackageMetadata(notes) {
   const raw = String(notes || '');
   const start = raw.indexOf(PROSPECT_PACKAGE_META_START);
   const end = raw.indexOf(PROSPECT_PACKAGE_META_END);
-  if (start < 0 || end < start) return { notes: raw, options: [] };
+  if (start < 0 || end < start) return { notes: raw, options: [], explicit: false };
   const before = raw.slice(0, start).trimEnd();
   const after = raw.slice(end + PROSPECT_PACKAGE_META_END.length).trimStart();
   let options = [];
+  let explicit = false;
   try {
     const parsed = JSON.parse(raw.slice(start + PROSPECT_PACKAGE_META_START.length, end));
-    if (Array.isArray(parsed)) options = parsed;
+    if (Array.isArray(parsed)) {
+      options = parsed;
+    } else if (parsed && typeof parsed === 'object') {
+      options = Array.isArray(parsed.options) ? parsed.options : [];
+      explicit = parsed.explicit === true;
+    }
   } catch (_) {}
-  return { notes: [before, after].filter(Boolean).join('\n').trim(), options };
+  return { notes: [before, after].filter(Boolean).join('\n').trim(), options, explicit };
 }
 
 function normalizeProspectPackageOptions(options, clientId = '', eventId = '') {
@@ -608,11 +614,12 @@ function normalizeProspectPackageOptions(options, clientId = '', eventId = '') {
     .filter((item) => item.packageId && item.packageName);
 }
 
-function attachProspectPackageMetadata(notes, options, clientId = '', eventId = '') {
+function attachProspectPackageMetadata(notes, options, clientId = '', eventId = '', explicit = false) {
   const clean = splitProspectPackageMetadata(notes).notes;
   const normalized = normalizeProspectPackageOptions(options, clientId, eventId);
-  if (!normalized.length) return clean;
-  const meta = PROSPECT_PACKAGE_META_START + JSON.stringify(normalized) + PROSPECT_PACKAGE_META_END;
+  if (!normalized.length && !explicit) return clean;
+  const payload = explicit ? { version: 2, explicit: true, options: normalized } : normalized;
+  const meta = PROSPECT_PACKAGE_META_START + JSON.stringify(payload) + PROSPECT_PACKAGE_META_END;
   return [clean, meta].filter(Boolean).join('\n');
 }
 
@@ -631,6 +638,13 @@ function exposeProspectPackageOptions(client) {
 function exposeProspectPackageOptionsWithHistory(client, packageSnapshots) {
   const exposed = exposeProspectPackageOptions(client);
   if (!exposed || String(exposed.recordType || '') !== 'Prospecto') return exposed;
+  const split = splitProspectPackageMetadata(client?.internalNotes);
+  if (split.explicit) {
+    return {
+      ...exposed,
+      prospectPackageOptions: normalizeProspectPackageOptions(split.options, exposed.id, exposed.eventId),
+    };
+  }
   const historical = (Array.isArray(packageSnapshots) ? packageSnapshots : [])
     .filter((item) => String(item?.clientId || '') === String(exposed.id || ''));
   return {
@@ -2040,6 +2054,7 @@ export default async function handler(req, res) {
       'adminPaymentUpsert',
       'adminAdjustmentUpsert',
       'adminClientPackageAssign',
+      'adminProspectPackageRemove',
       'adminServiceUpsert',
       'adminAddonUpsert',
       'adminTeamFunctionUpsert',
@@ -2084,7 +2099,7 @@ export default async function handler(req, res) {
         adminCrmUpsert: 'CRM_OR_CLIENT_WRITE', adminFollowUpCreate: 'CRM_WRITE', adminProspectConvert: 'CRM_WRITE',
         adminCalendarSync: 'CALENDAR', adminCalendarSyncAll: 'CALENDAR',
         adminExpenseUpsert: 'FINANCE', adminPaymentUpsert: 'FINANCE', adminAdjustmentUpsert: 'FINANCE',
-        adminClientPackageAssign: 'CLIENTS_WRITE', adminServiceUpsert: 'CLIENTS_WRITE', adminAddonUpsert: 'CLIENTS_WRITE',
+        adminClientPackageAssign: 'CLIENTS_WRITE', adminProspectPackageRemove: 'CLIENTS_WRITE', adminServiceUpsert: 'CLIENTS_WRITE', adminAddonUpsert: 'CLIENTS_WRITE',
         adminContractUpload: 'CONTRACTS', adminContractUploadInit: 'CONTRACTS', adminDriveUploadBody: uploadPermissionByKind[uploadKind] || 'SUPER_ADMIN', adminContractUploadFinalize: 'CONTRACTS', adminContractGenerate: 'CONTRACTS', adminContractDocument: 'CONTRACTS', adminContractCreateLink: 'CONTRACTS', adminOwnerSignatureSave: 'CONTRACTS', adminContractFinalize: 'CONTRACTS', adminContractEmailFinal: 'CONTRACTS', adminContractDelete: 'SUPER_ADMIN',
         adminUploadInit: 'GALLERIES', adminUploadFinalize: 'GALLERIES', adminDriveFolderImport: 'GALLERIES', adminManagedMediaDelete: 'GALLERIES',
         adminTeamFunctionUpsert: 'USERS_ADMIN', adminTeamUserUpsert: 'USERS_ADMIN', adminTeamInviteCreate: 'USERS_ADMIN',
@@ -2260,12 +2275,12 @@ export default async function handler(req, res) {
           const historicalOptions = (existingResult.snapshot?.packageSnapshots || [])
             .filter((item) => String(item.clientId || '') === String(client.id));
           const preservedOptions = normalizeProspectPackageOptions(
-            [...historicalOptions, ...existingMeta.options],
+            existingMeta.explicit ? existingMeta.options : [...historicalOptions, ...existingMeta.options],
             client.id,
             client.eventId || existingClient?.eventId || '',
           );
-          if (preservedOptions.length) {
-            client.internalNotes = attachProspectPackageMetadata(client.internalNotes, preservedOptions, client.id, client.eventId || existingClient?.eventId || '');
+          if (preservedOptions.length || existingMeta.explicit) {
+            client.internalNotes = attachProspectPackageMetadata(client.internalNotes, preservedOptions, client.id, client.eventId || existingClient?.eventId || '', existingMeta.explicit);
           }
         }
         const result = await forwardBusinessAction('crmUpsert', { client });
@@ -2385,7 +2400,7 @@ export default async function handler(req, res) {
           const historicalOptions = (packageSnapshotBefore.snapshot?.packageSnapshots || [])
             .filter((item) => String(item.clientId) === clientId);
           const existingOptions = normalizeProspectPackageOptions(
-            [...historicalOptions, ...storedMeta.options],
+            storedMeta.explicit ? storedMeta.options : [...historicalOptions, ...storedMeta.options],
             clientId,
             packageClientBefore?.eventId || '',
           );
@@ -2416,6 +2431,7 @@ export default async function handler(req, res) {
                 mergedOptions,
                 clientId,
                 result.client?.eventId || packageClientBefore?.eventId || '',
+                true,
               ),
             },
           });
@@ -2423,6 +2439,46 @@ export default async function handler(req, res) {
         }
         return res.status(200).json({ status: 'success', packageSnapshot: result.packageSnapshot, services: result.services, client: exposeProspectPackageOptions(result.client) });
       }
+      if (action === 'adminProspectPackageRemove') {
+        const clientId = String(submitted.clientId || '').trim().slice(0, 120);
+        const packageId = String(submitted.packageId || '').trim().slice(0, 120);
+        if (!clientId || !packageId) return res.status(400).json({ status: 'error', message: 'No se identificó el prospecto o el paquete.' });
+
+        const snapshotResult = await forwardTransientBusinessAction('businessSnapshot');
+        const rawClient = (snapshotResult.snapshot?.clients || []).find((item) => String(item.id) === clientId);
+        if (!rawClient || String(rawClient.recordType || '') !== 'Prospecto') {
+          return res.status(400).json({ status: 'error', message: 'Solo se pueden quitar opciones de paquete de un prospecto.' });
+        }
+        if (session.role !== 'SUPER_ADMIN' && !hasPermission(session, 'CRM_WRITE')) {
+          return res.status(403).json({ status: 'error', message: 'No tienes permiso para modificar este prospecto.' });
+        }
+
+        const exposedClient = exposeProspectPackageOptionsWithHistory(rawClient, snapshotResult.snapshot?.packageSnapshots || []);
+        const currentOptions = Array.isArray(exposedClient.prospectPackageOptions) ? exposedClient.prospectPackageOptions : [];
+        const remainingOptions = currentOptions.filter((item) => String(item.packageId || item.id || '') !== packageId);
+        if (remainingOptions.length === currentOptions.length) {
+          return res.status(404).json({ status: 'error', message: 'Ese paquete ya no está seleccionado en el prospecto.' });
+        }
+
+        const primary = [...remainingOptions].sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))[0] || null;
+        const saved = await forwardBusinessAction('crmUpsert', {
+          client: {
+            ...rawClient,
+            packageName: primary?.packageName || '',
+            totalAmount: primary ? Math.max(0, Number(primary.finalTotal ?? primary.basePrice ?? 0) || 0) : 0,
+            internalNotes: attachProspectPackageMetadata(
+              rawClient.internalNotes || '',
+              remainingOptions,
+              clientId,
+              rawClient.eventId || '',
+              true,
+            ),
+          },
+        });
+        const client = exposeProspectPackageOptionsWithHistory(saved.client, snapshotResult.snapshot?.packageSnapshots || []);
+        return res.status(200).json({ status: 'success', client, removedPackageId: packageId });
+      }
+
       if (action === 'adminServiceUpsert') {
         const service = submitted.service || {};
         if (!service.clientId || !String(service.concept || '').trim() || Number(service.quantity || 0) <= 0 || !['PAQUETE', 'MANUAL'].includes(String(service.source || 'MANUAL'))) {
