@@ -1249,7 +1249,7 @@ async function renderContractSnapshotPdf(snapshot, contract) {
   row('Evento', snapshot.event?.type || contract.eventType);
   row('Fecha y hora', `${snapshot.event?.date || 'Por confirmar'} · ${snapshot.event?.time || 'Por confirmar'}`);
   row('Lugar', snapshot.event?.location || 'Por confirmar');
-  heading('Servicio contratado');
+  heading('Servicios y productos incluidos');
   row('Paquete', `${snapshot.commercial?.packageName || 'Servicio personalizado'} · ${money(snapshot.commercial?.packageBase)}`);
   (snapshot.services || []).forEach((item) => bullet(`${item.concept}${Number(item.quantity || 0) > 1 ? ` · ${item.quantity}` : ''}${item.notes ? ` — ${item.notes}` : ''}`));
   if ((snapshot.addons || []).length) {
