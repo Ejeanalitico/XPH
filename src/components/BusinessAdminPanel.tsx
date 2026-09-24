@@ -1090,7 +1090,9 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
 
   const getContractDataChecklist = (client?: CrmClient) => {
     if (!client) return [];
-    const activePackage = snapshot.packageSnapshots.find((item) => item.clientId === client.id && item.status === 'ACTIVO');
+    const activePackage = snapshot.packageSnapshots
+      .filter((item) => item.clientId === client.id && item.status === 'ACTIVO')
+      .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))[0];
     const activeServices = snapshot.services.filter((item) => item.clientId === client.id && item.included && item.status !== 'Anulado');
     const activePayments = snapshot.payments.filter((item) => item.clientId === client.id && item.status !== 'Anulado');
     const isContract = contractDraft.documentType === 'CONTRATO';
@@ -1111,7 +1113,9 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
   };
 
   const buildContractSnapshot = (client: CrmClient): ContractDocumentSnapshot => {
-    const packageSnapshot = snapshot.packageSnapshots.find((item) => item.clientId === client.id && item.status === 'ACTIVO');
+    const packageSnapshot = snapshot.packageSnapshots
+      .filter((item) => item.clientId === client.id && item.status === 'ACTIVO')
+      .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))[0];
     const services = snapshot.services.filter((item) => item.clientId === client.id && item.included && item.status !== 'Anulado');
     const addons = snapshot.addons.filter((item) => item.clientId === client.id && item.status !== 'Anulado');
     const registeredPayments = snapshot.payments.filter((item) => item.clientId === client.id && item.status !== 'Anulado').sort((a, b) => Number(a.installmentNumber || 0) - Number(b.installmentNumber || 0));
