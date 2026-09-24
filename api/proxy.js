@@ -628,6 +628,21 @@ function exposeProspectPackageOptions(client) {
   };
 }
 
+function exposeProspectPackageOptionsWithHistory(client, packageSnapshots) {
+  const exposed = exposeProspectPackageOptions(client);
+  if (!exposed || String(exposed.recordType || '') !== 'Prospecto') return exposed;
+  const historical = (Array.isArray(packageSnapshots) ? packageSnapshots : [])
+    .filter((item) => String(item?.clientId || '') === String(exposed.id || ''));
+  return {
+    ...exposed,
+    prospectPackageOptions: normalizeProspectPackageOptions(
+      [...historical, ...(Array.isArray(exposed.prospectPackageOptions) ? exposed.prospectPackageOptions : [])],
+      exposed.id,
+      exposed.eventId,
+    ),
+  };
+}
+
 const PROMOTION_META_ID = 'xph-promotion-popup-config';
 
 function promotionPopupFromGallery(items) {
@@ -2129,7 +2144,8 @@ export default async function handler(req, res) {
       if (action === 'adminBusinessSnapshot') {
         const result = await forwardTransientBusinessAction('businessSnapshot', {}, 5);
         result.snapshot = filterDeletedContractsFromSnapshot(result.snapshot);
-        result.snapshot.clients = (result.snapshot?.clients || []).map(exposeProspectPackageOptions);
+        const packageHistory = result.snapshot?.packageSnapshots || [];
+        result.snapshot.clients = (result.snapshot?.clients || []).map((client) => exposeProspectPackageOptionsWithHistory(client, packageHistory));
         if (session.role !== 'SUPER_ADMIN') {
           const assignments = (result.snapshot?.assignments || []).filter((item) => String(item.userId) === String(session.userId) && item.status !== 'CANCELADA');
           const allowedClientIds = new Set(assignments.map((item) => String(item.clientId)));
@@ -2238,11 +2254,18 @@ export default async function handler(req, res) {
           } else if (!hasPermission(session, 'CRM_WRITE')) return res.status(403).json({ status: 'error', message: 'No tienes permiso para editar prospectos.' });
         }
         if (client.id && String(client.recordType || 'Prospecto') === 'Prospecto') {
-          const existingResult = await forwardTransientBusinessAction('businessClients');
-          const existingClient = (existingResult.clients || []).find((item) => String(item.id) === String(client.id));
+          const existingResult = await forwardTransientBusinessAction('businessSnapshot');
+          const existingClient = (existingResult.snapshot?.clients || []).find((item) => String(item.id) === String(client.id));
           const existingMeta = splitProspectPackageMetadata(existingClient?.internalNotes);
-          if (existingMeta.options.length) {
-            client.internalNotes = attachProspectPackageMetadata(client.internalNotes, existingMeta.options, client.id, client.eventId || existingClient?.eventId || '');
+          const historicalOptions = (existingResult.snapshot?.packageSnapshots || [])
+            .filter((item) => String(item.clientId || '') === String(client.id));
+          const preservedOptions = normalizeProspectPackageOptions(
+            [...historicalOptions, ...existingMeta.options],
+            client.id,
+            client.eventId || existingClient?.eventId || '',
+          );
+          if (preservedOptions.length) {
+            client.internalNotes = attachProspectPackageMetadata(client.internalNotes, preservedOptions, client.id, client.eventId || existingClient?.eventId || '');
           }
         }
         const result = await forwardBusinessAction('crmUpsert', { client });
@@ -2359,10 +2382,13 @@ export default async function handler(req, res) {
         });
         if (String(packageClientBefore?.recordType || result.client?.recordType || '') === 'Prospecto') {
           const storedMeta = splitProspectPackageMetadata(packageClientBefore?.internalNotes);
-          const existingOptions = storedMeta.options.length
-            ? storedMeta.options
-            : (packageSnapshotBefore.snapshot?.packageSnapshots || [])
-                .filter((item) => String(item.clientId) === clientId && String(item.status) === 'ACTIVO');
+          const historicalOptions = (packageSnapshotBefore.snapshot?.packageSnapshots || [])
+            .filter((item) => String(item.clientId) === clientId);
+          const existingOptions = normalizeProspectPackageOptions(
+            [...historicalOptions, ...storedMeta.options],
+            clientId,
+            packageClientBefore?.eventId || '',
+          );
           const nextOption = {
             ...(result.packageSnapshot || {}),
             clientId,
