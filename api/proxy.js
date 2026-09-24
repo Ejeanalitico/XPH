@@ -1209,92 +1209,320 @@ async function renderContractSnapshotPdf(snapshot, contract) {
   const pdf = await PDFDocument.create();
   const regular = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
-  const gold = rgb(0.83, 0.68, 0.22);
-  const dark = rgb(0.07, 0.09, 0.13);
+  const serifBold = await pdf.embedFont(StandardFonts.TimesRomanBold);
+  const black = rgb(0.07, 0.07, 0.07);
+  const gray = rgb(0.34, 0.34, 0.34);
+  const lightGray = rgb(0.94, 0.94, 0.93);
+  const borderGray = rgb(0.78, 0.78, 0.76);
+  const pageWidth = 595.28;
+  const pageHeight = 841.89;
+  const marginX = 42;
+  const contentWidth = pageWidth - marginX * 2;
+  const folio = String(contract?.folio || '');
   let page;
   let y;
-  const addPage = () => {
-    page = pdf.addPage([595.28, 841.89]);
-    page.drawRectangle({ x: 0, y: 775, width: 595.28, height: 66.89, color: dark });
-    page.drawRectangle({ x: 0, y: 770, width: 595.28, height: 5, color: gold });
-    page.drawText('XAVI.PH', { x: 42, y: 810, size: 13, font: bold, color: gold });
-    page.drawText('FOTOGRAFIA & PRODUCCION AUDIOVISUAL', { x: 42, y: 792, size: 8, font: regular, color: rgb(.85, .85, .85) });
-    page.drawText(snapshot.documentType === 'COTIZACION' ? 'COTIZACION' : 'CONTRATO DE SERVICIOS', { x: 334, y: 806, size: 16, font: bold, color: rgb(1, 1, 1) });
-    page.drawText(`Folio ${String(contract.folio || '')}`, { x: 430, y: 787, size: 9, font: regular, color: rgb(.85, .85, .85) });
-    y = 742;
+
+  const safeText = (value) => String(value ?? '')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2013\u2014]/g, ' - ')
+    .replace(/\u2026/g, '...')
+    .replace(/\u2022/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const money = (value) => '$' + Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const displayDate = (value) => {
+    const match = safeText(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return match ? `${match[3]}/${match[2]}/${match[1]}` : safeText(value) || 'Por confirmar';
   };
-  const ensure = (height = 40) => { if (y - height < 52) addPage(); };
-  const lines = (text, maxChars = 88) => {
-    const words = String(text || '').replace(/\s+/g, ' ').trim().split(' ');
-    const output = [];
+  const displayTime = (value) => {
+    const match = safeText(value).match(/^(\d{1,2}):(\d{2})/);
+    if (!match) return safeText(value) || 'Por confirmar';
+    const hour = Number(match[1]);
+    return `${hour % 12 || 12}:${match[2]} ${hour >= 12 ? 'p. m.' : 'a. m.'}`;
+  };
+  const wrap = (value, width, font = regular, size = 9) => {
+    const words = safeText(value).split(' ').filter(Boolean);
+    if (!words.length) return [''];
+    const lines = [];
     let current = '';
     words.forEach((word) => {
-      const next = current ? `${current} ${word}` : word;
-      if (next.length > maxChars && current) { output.push(current); current = word; } else current = next;
+      const candidate = current ? `${current} ${word}` : word;
+      if (font.widthOfTextAtSize(candidate, size) <= width || !current) current = candidate;
+      else {
+        lines.push(current);
+        current = word;
+      }
     });
-    if (current) output.push(current);
-    return output.length ? output : [''];
+    if (current) lines.push(current);
+    return lines;
   };
-  const heading = (label) => { ensure(36); page.drawText(label.toUpperCase(), { x: 42, y, size: 13, font: bold, color: dark }); page.drawLine({ start: { x: 42, y: y - 7 }, end: { x: 553, y: y - 7 }, thickness: 1.5, color: gold }); y -= 30; };
-  const row = (label, value) => { ensure(32); page.drawText(String(label), { x: 42, y, size: 9, font: bold, color: rgb(.35, .35, .35) }); const wrapped = lines(value, 70); wrapped.forEach((line, index) => page.drawText(line, { x: 168, y: y - index * 13, size: 10, font: regular, color: dark })); y -= Math.max(23, wrapped.length * 13 + 7); };
-  const bullet = (value) => { const wrapped = lines(value, 84); ensure(wrapped.length * 14 + 8); page.drawText('•', { x: 48, y, size: 12, font: bold, color: gold }); wrapped.forEach((line, index) => page.drawText(line, { x: 62, y: y - index * 14, size: 10, font: regular, color: dark })); y -= wrapped.length * 14 + 5; };
-  const money = (value) => `$${Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN`;
+  const drawFooter = (target) => {
+    target.drawLine({ start: { x: marginX, y: 34 }, end: { x: pageWidth - marginX, y: 34 }, thickness: 0.55, color: borderGray });
+    target.drawText(safeText(`XPH Fotografía & Video · Documento digital · Folio ${folio}`), { x: marginX, y: 20, size: 6.8, font: regular, color: gray });
+  };
+  const drawHeader = (target) => {
+    target.drawText('XPH', { x: marginX, y: 797, size: 27, font: bold, color: black });
+    target.drawText('FOTOGRAFÍA & VIDEO', { x: marginX + 59, y: 803, size: 10.5, font: bold, color: black });
+    target.drawLine({ start: { x: marginX + 59, y: 798 }, end: { x: marginX + 190, y: 798 }, thickness: 0.6, color: black });
+    target.drawText('FOTOGRAFÍA & PRODUCCIÓN AUDIOVISUAL', { x: marginX, y: 776, size: 6.9, font: bold, color: black });
+
+    const title = snapshot.documentType === 'COTIZACION' ? 'COTIZACIÓN DE SERVICIOS' : 'CONTRATO DE SERVICIOS';
+    const titleSize = 16.5;
+    const titleWidth = serifBold.widthOfTextAtSize(title, titleSize);
+    target.drawText(title, { x: pageWidth - marginX - titleWidth, y: 798, size: titleSize, font: serifBold, color: black });
+    const eventLabel = safeText(snapshot.event?.type || contract?.eventType || 'Evento').toUpperCase();
+    const eventWidth = bold.widthOfTextAtSize(eventLabel, 7.5);
+    target.drawText(eventLabel, { x: pageWidth - marginX - eventWidth, y: 779, size: 7.5, font: bold, color: black });
+    const folioLabel = safeText(`Folio ${folio}`);
+    const folioWidth = regular.widthOfTextAtSize(folioLabel, 7);
+    target.drawText(folioLabel, { x: pageWidth - marginX - folioWidth, y: 766, size: 7, font: regular, color: gray });
+    target.drawLine({ start: { x: marginX, y: 752 }, end: { x: pageWidth - marginX, y: 752 }, thickness: 2.1, color: black });
+    drawFooter(target);
+  };
+  const addPage = () => {
+    page = pdf.addPage([pageWidth, pageHeight]);
+    drawHeader(page);
+    y = 728;
+  };
+  const ensure = (height = 44) => {
+    if (y - height < 52) addPage();
+  };
+  const sectionHeading = (number, title) => {
+    ensure(34);
+    page.drawText(String(number), { x: marginX, y, size: 12.5, font: serifBold, color: black });
+    page.drawText(safeText(title).toUpperCase(), { x: marginX + 17, y, size: 11, font: serifBold, color: black });
+    page.drawLine({ start: { x: marginX, y: y - 6 }, end: { x: pageWidth - marginX, y: y - 6 }, thickness: 0.8, color: black });
+    y -= 22;
+  };
+  const infoCell = (x, top, width, height, label, value) => {
+    page.drawRectangle({ x, y: top - height, width, height, borderWidth: 0.65, borderColor: black });
+    page.drawText(safeText(label).toUpperCase(), { x: x + 7, y: top - 13, size: 5.8, font: bold, color: black });
+    const valueLines = wrap(value || 'No registrado', width - 14, regular, 7.4).slice(0, 3);
+    valueLines.forEach((line, index) => page.drawText(line, { x: x + 7, y: top - 28 - index * 9, size: 7.4, font: regular, color: black }));
+  };
+  const drawInfoGrid = () => {
+    const col = contentWidth / 3;
+    const rowHeight = 47;
+    const rows = [
+      [
+        ['Cliente', snapshot.client?.name || contract?.clientName || 'No registrado'],
+        ['Teléfono', snapshot.client?.phone || 'No registrado'],
+        ['Correo', snapshot.client?.email || 'No registrado'],
+      ],
+      [
+        ['Tipo de evento', snapshot.event?.type || contract?.eventType || 'Evento'],
+        ['Festejado(s)', snapshot.client?.honoreeName || 'No aplica'],
+        ['Fecha de emisión', displayDate(snapshot.issuedAt)],
+      ],
+      [
+        ['Fecha y hora', `${displayDate(snapshot.event?.date)} · ${displayTime(snapshot.event?.time)}`],
+        ['Cobertura', snapshot.event?.serviceHours ? `${Number(snapshot.event.serviceHours)} horas continuas` : 'Por confirmar'],
+        ['Lugar', snapshot.event?.location || 'Por confirmar'],
+      ],
+    ];
+    ensure(rowHeight * rows.length + (snapshot.documentType === 'CONTRATO' && snapshot.client?.address ? rowHeight : 0) + 8);
+    let top = y;
+    rows.forEach((row) => {
+      row.forEach((cell, index) => infoCell(marginX + index * col, top, col, rowHeight, cell[0], cell[1]));
+      top -= rowHeight;
+    });
+    if (snapshot.documentType === 'CONTRATO' && snapshot.client?.address) {
+      infoCell(marginX, top, contentWidth, rowHeight, 'Domicilio del cliente', snapshot.client.address);
+      top -= rowHeight;
+    }
+    y = top - 12;
+  };
+  const serviceCard = (x, top, width, service) => {
+    const text = safeText(`${service.concept || ''}${Number(service.quantity || 0) > 1 ? ` (${service.quantity})` : ''}${service.notes ? ` - ${service.notes}` : ''}`);
+    const lines = wrap(text, width - 31, regular, 7.5);
+    const height = Math.max(30, 15 + lines.length * 9);
+    page.drawRectangle({ x, y: top - height, width, height, borderWidth: 0.55, borderColor: borderGray });
+    page.drawCircle({ x: x + 12, y: top - 15, size: 5.5, borderWidth: 0.7, borderColor: black });
+    page.drawCircle({ x: x + 12, y: top - 15, size: 1.8, color: black });
+    lines.forEach((line, index) => page.drawText(line, { x: x + 23, y: top - 18 - index * 9, size: 7.5, font: regular, color: black }));
+    return height;
+  };
+  const drawServices = () => {
+    const packageName = safeText(snapshot.commercial?.packageName || 'Servicio personalizado').toUpperCase();
+    const price = money(snapshot.commercial?.packageBase);
+    ensure(37);
+    page.drawText(packageName, { x: marginX, y, size: 7.6, font: bold, color: black });
+    const priceWidth = bold.widthOfTextAtSize(price, 7.6);
+    page.drawText(price, { x: pageWidth - marginX - priceWidth, y, size: 7.6, font: bold, color: black });
+    page.drawLine({ start: { x: marginX, y: y - 7 }, end: { x: pageWidth - marginX, y: y - 7 }, thickness: 0.7, color: black });
+    y -= 20;
+    const services = Array.isArray(snapshot.services) ? snapshot.services : [];
+    if (!services.length) {
+      ensure(32);
+      page.drawRectangle({ x: marginX, y: y - 28, width: contentWidth, height: 28, borderWidth: 0.55, borderColor: borderGray });
+      page.drawText('Servicios por especificar.', { x: marginX + 9, y: y - 18, size: 7.5, font: regular, color: gray });
+      y -= 38;
+      return;
+    }
+    const gap = 7;
+    const cardWidth = (contentWidth - gap) / 2;
+    for (let index = 0; index < services.length; index += 2) {
+      const leftLines = wrap(safeText(`${services[index]?.concept || ''}${Number(services[index]?.quantity || 0) > 1 ? ` (${services[index].quantity})` : ''}${services[index]?.notes ? ` - ${services[index].notes}` : ''}`), cardWidth - 31, regular, 7.5);
+      const right = services[index + 1];
+      const rightLines = right ? wrap(safeText(`${right.concept || ''}${Number(right.quantity || 0) > 1 ? ` (${right.quantity})` : ''}${right.notes ? ` - ${right.notes}` : ''}`), cardWidth - 31, regular, 7.5) : [];
+      const rowHeight = Math.max(30, 15 + Math.max(leftLines.length, rightLines.length) * 9);
+      ensure(rowHeight + 8);
+      serviceCard(marginX, y, cardWidth, services[index]);
+      if (right) serviceCard(marginX + cardWidth + gap, y, cardWidth, right);
+      y -= rowHeight + 7;
+    }
+    y -= 4;
+  };
+  const drawSimpleTable = (rows, emphasisLast = false) => {
+    const rowHeight = 24;
+    ensure(rows.length * rowHeight + 8);
+    rows.forEach((row, index) => {
+      const top = y;
+      page.drawRectangle({ x: marginX, y: top - rowHeight, width: contentWidth, height: rowHeight, borderWidth: 0.6, borderColor: black });
+      page.drawLine({ start: { x: marginX + contentWidth * 0.72, y: top }, end: { x: marginX + contentWidth * 0.72, y: top - rowHeight }, thickness: 0.6, color: black });
+      const isLast = emphasisLast && index === rows.length - 1;
+      page.drawText(safeText(row[0]), { x: marginX + 7, y: top - 16, size: 7.5, font: isLast ? bold : regular, color: black });
+      const value = safeText(row[1]);
+      const valueFont = isLast ? bold : regular;
+      const valueWidth = valueFont.widthOfTextAtSize(value, 7.5);
+      page.drawText(value, { x: pageWidth - marginX - 7 - valueWidth, y: top - 16, size: 7.5, font: valueFont, color: black });
+      y -= rowHeight;
+    });
+    y -= 12;
+  };
+  const drawPaymentTable = () => {
+    const headers = ['Etapa / pago', 'Porcentaje', 'Monto', 'Fecha límite de pago'];
+    const widths = [contentWidth * .31, contentWidth * .15, contentWidth * .20, contentWidth * .34];
+    const drawRow = (values, header = false) => {
+      const font = header ? bold : regular;
+      const size = header ? 6.1 : 6.6;
+      const lineSets = values.map((value, index) => wrap(value, widths[index] - 10, font, size));
+      const rowHeight = header ? 23 : Math.max(27, 11 + Math.max(...lineSets.map((set) => set.length)) * 8);
+      ensure(rowHeight + 2);
+      let x = marginX;
+      values.forEach((value, index) => {
+        page.drawRectangle({ x, y: y - rowHeight, width: widths[index], height: rowHeight, color: header ? lightGray : undefined, borderWidth: 0.6, borderColor: black });
+        lineSets[index].forEach((line, lineIndex) => page.drawText(line, { x: x + 5, y: y - 15 - lineIndex * 8, size, font, color: black }));
+        x += widths[index];
+      });
+      y -= rowHeight;
+    };
+    drawRow(headers, true);
+    (snapshot.payments || []).forEach((payment, index) => {
+      const due = payment.dueDate
+        ? (index === 1 ? `A más tardar el ${displayDate(payment.dueDate)}, antes de iniciar la cobertura` : displayDate(payment.dueDate))
+        : index === 0
+          ? 'A la firma del contrato para reservar la fecha'
+          : 'Contra entrega de los materiales y entregables contratados';
+      drawRow([
+        payment.concept || `Pago ${index + 1}`,
+        payment.percentage ? `${payment.percentage}%` : '-',
+        `${money(payment.amount)} MXN`,
+        due,
+      ]);
+    });
+    y -= 12;
+  };
+  const drawTerms = () => {
+    const terms = Array.isArray(snapshot.terms) ? snapshot.terms : [];
+    terms.forEach((term, index) => {
+      const source = safeText(term);
+      const colon = source.indexOf(':');
+      const title = colon > 0 ? source.slice(0, colon) : `Cláusula ${index + 1}`;
+      const body = colon > 0 ? source.slice(colon + 1).trim() : source;
+      const titlePrefix = `${index + 1}. ${title}.`;
+      const titleLines = wrap(titlePrefix, contentWidth, bold, 7.2);
+      const bodyLines = wrap(body, contentWidth, regular, 7.2);
+      ensure((titleLines.length + bodyLines.length) * 9 + 10);
+      titleLines.forEach((line, lineIndex) => page.drawText(line, { x: marginX, y: y - lineIndex * 9, size: 7.2, font: bold, color: black }));
+      y -= titleLines.length * 9;
+      bodyLines.forEach((line, lineIndex) => page.drawText(line, { x: marginX, y: y - lineIndex * 9, size: 7.2, font: regular, color: black }));
+      y -= bodyLines.length * 9 + 8;
+    });
+  };
 
   addPage();
-  heading('Datos del cliente');
-  row('Cliente', snapshot.client?.name || contract.clientName);
-  row('Telefono / correo', `${snapshot.client?.phone || 'No registrado'} · ${snapshot.client?.email || 'No registrado'}`);
-  if (snapshot.client?.honoreeName) row('Festejado(s)', snapshot.client.honoreeName);
-  heading('Informacion del evento');
-  row('Evento', snapshot.event?.type || contract.eventType);
-  row('Fecha y hora', `${snapshot.event?.date || 'Por confirmar'} · ${snapshot.event?.time || 'Por confirmar'}`);
-  row('Lugar', snapshot.event?.location || 'Por confirmar');
-  heading('Servicios y productos incluidos');
-  row('Paquete', `${snapshot.commercial?.packageName || 'Servicio personalizado'} · ${money(snapshot.commercial?.packageBase)}`);
-  (snapshot.services || []).forEach((item) => bullet(`${item.concept}${Number(item.quantity || 0) > 1 ? ` · ${item.quantity}` : ''}${item.notes ? ` — ${item.notes}` : ''}`));
+  if (snapshot.documentType === 'CONTRATO') {
+    const intro = safeText(`Conste por el presente documento el CONTRATO DE PRESTACIÓN DE SERVICIOS FOTOGRÁFICOS Y AUDIOVISUALES que celebran XAVI.PH y ${snapshot.client?.name || contract?.clientName || 'EL CLIENTE'}.`);
+    const introLines = wrap(intro, contentWidth, regular, 7.4);
+    introLines.forEach((line, index) => page.drawText(line, { x: marginX, y: y - index * 9, size: 7.4, font: regular, color: black }));
+    y -= introLines.length * 9 + 12;
+  }
+
+  sectionHeading('1.', 'Datos del cliente y del evento');
+  drawInfoGrid();
+
+  sectionHeading('2.', 'Servicios y productos incluidos');
+  drawServices();
+
+  let sectionNumber = 3;
   if ((snapshot.addons || []).length) {
-    heading('Adicionales');
-    snapshot.addons.forEach((item) => row(`${item.concept} · ${item.quantity}`, money(item.total)));
-  }
-  heading('Inversion');
-  row('Paquete', money(snapshot.commercial?.packageBase));
-  row('Adicionales', money(snapshot.commercial?.additions));
-  if (Number(snapshot.commercial?.discount || 0)) row('Descuento', `-${money(snapshot.commercial.discount)}`);
-  row('Total contratado', money(snapshot.commercial?.total));
-  heading(`Plan de pagos · ${snapshot.paymentPolicy === '40-30-30' ? '40 / 30 / 30' : 'personalizado'}`);
-  (snapshot.payments || []).forEach((item) => row(`${item.concept}${item.percentage ? ` · ${item.percentage}%` : ''}`, `${money(item.amount)} · ${item.dueDate || 'Fecha por acordar'}`));
-  if (snapshot.documentType === 'CONTRATO') {
-    heading('Terminos y condiciones');
-    (snapshot.terms || []).forEach((term, index) => bullet(`${index + 1}. ${term}`));
+    sectionHeading(`${sectionNumber}.`, 'Servicios adicionales');
+    const addonRows = snapshot.addons.map((item) => [`${item.concept} × ${item.quantity}`, money(item.total)]);
+    drawSimpleTable(addonRows, false);
+    sectionNumber += 1;
   }
 
+  sectionHeading(`${sectionNumber}.`, 'Resumen financiero');
+  const summaryRows = [
+    ['Paquete base', money(snapshot.commercial?.packageBase)],
+    ...((snapshot.addons || []).length ? [['Servicios adicionales', money(snapshot.commercial?.additions)]] : []),
+    ...(Number(snapshot.commercial?.discount || 0) > 0 ? [['Descuento / promoción', `- ${money(snapshot.commercial.discount)}`]] : []),
+    ['Total contratado', money(snapshot.commercial?.total)],
+  ];
+  drawSimpleTable(summaryRows, true);
+  if (snapshot.commercial?.promotion) {
+    const promoLines = wrap(`Promoción aplicada: ${snapshot.commercial.promotion}`, contentWidth, regular, 6.8);
+    ensure(promoLines.length * 8 + 9);
+    promoLines.forEach((line, index) => page.drawText(line, { x: marginX, y: y - index * 8, size: 6.8, font: regular, color: gray }));
+    y -= promoLines.length * 8 + 10;
+  }
+  sectionNumber += 1;
+
+  sectionHeading(`${sectionNumber}.`, 'Calendario de pagos programado');
+  drawPaymentTable();
+
   if (snapshot.documentType === 'CONTRATO') {
-    // Todo contrato generado por XPH incluye su página de firmas dentro del PDF original.
-    // Esto también unifica contratos generados antes de canonical-v3 que aún no han sido firmados.
-    // Las firmas se insertan después sobre ESTA MISMA página; nunca se cambia de diseño.
+    sectionNumber += 1;
+    sectionHeading(`${sectionNumber}.`, 'Términos y condiciones generales');
+    drawTerms();
+
+    sectionNumber += 1;
+    sectionHeading(`${sectionNumber}.`, 'Uso comercial, licencia y derechos de imagen');
+    const rights = [
+      ['Licencia de uso personal para EL CLIENTE.', 'EL CLIENTE recibe una licencia personal, no exclusiva y de duración indefinida para imprimir, reproducir y compartir las fotografías y videos entregados en sus redes sociales y ámbito familiar privado.'],
+      ['Uso promocional por XAVI.PH.', 'Cuando EL CLIENTE lo autorice, XAVI.PH podrá utilizar fragmentos del video e imágenes del evento en su portafolio, sitio oficial, redes sociales, muestrarios impresos y material publicitario.'],
+      ['Derechos de autor.', 'EL PRESTADOR DEL SERVICIO conserva los derechos morales y de autor sobre la obra fotográfica y audiovisual conforme a la legislación aplicable.'],
+      ['Privacidad exclusiva.', 'Si EL CLIENTE requiere que el material no sea publicado en redes, portafolios o promociones, deberá indicarlo antes de la firma del contrato.'],
+    ];
+    rights.forEach(([title, body], index) => {
+      const titleLines = wrap(`${index + 1}. ${title}`, contentWidth, bold, 7.2);
+      const bodyLines = wrap(body, contentWidth, regular, 7.2);
+      ensure((titleLines.length + bodyLines.length) * 9 + 10);
+      titleLines.forEach((line, lineIndex) => page.drawText(line, { x: marginX, y: y - lineIndex * 9, size: 7.2, font: bold, color: black }));
+      y -= titleLines.length * 9;
+      bodyLines.forEach((line, lineIndex) => page.drawText(line, { x: marginX, y: y - lineIndex * 9, size: 7.2, font: regular, color: black }));
+      y -= bodyLines.length * 9 + 8;
+    });
+
     addPage();
-    heading('Firmas y aceptacion');
-    page.drawText('Las partes manifiestan que leyeron y aceptan el contenido completo de este contrato.', { x: 42, y: 675, size: 10, font: regular, color: dark });
-    page.drawText('La firma electrónica se integra directamente a esta misma versión del documento.', { x: 42, y: 658, size: 10, font: regular, color: dark });
-    page.drawText(`Folio ${String(contract.folio || '')}`, { x: 42, y: 628, size: 9, font: bold, color: rgb(.35, .35, .35) });
-
-    const signatureRightX = page.getWidth() / 2 + 18;
-    page.drawText('EL PRESTADOR DEL SERVICIO', { x: 42, y: 540, size: 9, font: bold, color: dark });
-    page.drawText('EL CLIENTE', { x: signatureRightX, y: 540, size: 9, font: bold, color: dark });
-    page.drawLine({ start: { x: 42, y: 400 }, end: { x: 270, y: 400 }, thickness: 0.9, color: dark });
-    page.drawLine({ start: { x: signatureRightX, y: 400 }, end: { x: 553, y: 400 }, thickness: 0.9, color: dark });
-    page.drawText('Javier García', { x: 42, y: 382, size: 9, font: bold, color: dark });
-    page.drawText('Prestador del servicio', { x: 42, y: 367, size: 8, font: regular, color: rgb(.35, .35, .35) });
-    page.drawText(String(snapshot.client?.name || contract.clientName || 'Cliente').slice(0, 42), { x: signatureRightX, y: 382, size: 9, font: bold, color: dark });
-    page.drawText('Cliente / Contratante', { x: signatureRightX, y: 367, size: 8, font: regular, color: rgb(.35, .35, .35) });
-    page.drawText('Documento original de XPH. Las firmas posteriores no alteran el contenido comercial ni las cláusulas.', { x: 42, y: 270, size: 8, font: regular, color: rgb(.4, .4, .4) });
-    y = 220;
+    sectionHeading('7.', 'Firmas y aceptación');
+    page.drawText('Las partes manifiestan que leyeron y aceptan el contenido completo de este contrato.', { x: marginX, y: 675, size: 8, font: regular, color: black });
+    page.drawText('La firma electrónica se integra directamente a esta misma versión del documento.', { x: marginX, y: 660, size: 8, font: regular, color: black });
+    page.drawText(safeText(`Folio ${folio}`), { x: marginX, y: 630, size: 7.5, font: bold, color: gray });
+    const rightX = page.getWidth() / 2 + 18;
+    page.drawText('EL PRESTADOR DEL SERVICIO', { x: marginX, y: 540, size: 7.2, font: bold, color: black });
+    page.drawText('EL CLIENTE', { x: rightX, y: 540, size: 7.2, font: bold, color: black });
+    page.drawLine({ start: { x: marginX, y: 400 }, end: { x: 270, y: 400 }, thickness: 0.8, color: black });
+    page.drawLine({ start: { x: rightX, y: 400 }, end: { x: 553, y: 400 }, thickness: 0.8, color: black });
+    page.drawText('Javier García', { x: marginX, y: 382, size: 7.5, font: bold, color: black });
+    page.drawText('Prestador del servicio', { x: marginX, y: 368, size: 7, font: regular, color: gray });
+    page.drawText(safeText(snapshot.client?.name || contract?.clientName || 'Cliente').slice(0, 56), { x: rightX, y: 382, size: 7.5, font: bold, color: black });
+    page.drawText('Cliente / Contratante', { x: rightX, y: 368, size: 7, font: regular, color: gray });
   }
 
-  ensure(50);
-  y -= 12;
-  page.drawLine({ start: { x: 42, y }, end: { x: 553, y }, thickness: 1, color: rgb(.82, .82, .82) });
-  page.drawText('XPH Fotografia & Video · Version congelada al momento de su emision', { x: 42, y: y - 20, size: 8, font: regular, color: rgb(.4, .4, .4) });
   return Buffer.from(await pdf.save()).toString('base64');
 }
 
@@ -2423,17 +2651,26 @@ export default async function handler(req, res) {
       let result = null;
       let contractMeta = null;
       let pdfBase64 = '';
-      try {
-        result = await forwardTransientBusinessAction('contractAdminPdfData', { contractId, version }, 4);
-        pdfBase64 = String(result?.pdfBase64 || '');
-      } catch (error) {
-        const message = String(error?.message || error);
-        if (!/versión solicitada.*no está disponible|version solicitada.*no esta disponible|respuesta no válida|solicitud no autorizada|bad gateway|temporarily unavailable/i.test(message)) throw error;
-        const documentResult = await forwardTransientBusinessAction('contractDocument', { contractId }, 5);
-        contractMeta = documentResult?.contract || null;
-        if (!contractMeta?.documentSnapshot) throw error;
+      const documentResult = await forwardTransientBusinessAction('contractDocument', { contractId }, 5).catch(() => null);
+      contractMeta = documentResult?.contract || null;
+      const canRenderCanonical = Boolean(contractMeta?.documentSnapshot);
+      const status = String(contractMeta?.status || '');
+      const unsignedVersion = version === 'original' || (version === 'latest' && !['Firmado por cliente', 'Finalizado'].includes(status));
+      const quoteVersion = String(contractMeta?.documentType || contractMeta?.documentSnapshot?.documentType || '').toUpperCase() === 'COTIZACION';
+      if (canRenderCanonical && (unsignedVersion || quoteVersion)) {
         pdfBase64 = await renderContractSnapshotPdf(contractMeta.documentSnapshot, contractMeta);
-        result = { folio: contractMeta.folio || contractMeta.id, documentType: contractMeta.documentType || '' };
+        result = { folio: contractMeta.folio || contractMeta.id, documentType: contractMeta.documentType || contractMeta.documentSnapshot?.documentType || '' };
+      } else {
+        try {
+          result = await forwardTransientBusinessAction('contractAdminPdfData', { contractId, version }, 4);
+          pdfBase64 = String(result?.pdfBase64 || '');
+        } catch (error) {
+          const message = String(error?.message || error);
+          if (!/versión solicitada.*no está disponible|version solicitada.*no esta disponible|respuesta no válida|solicitud no autorizada|bad gateway|temporarily unavailable/i.test(message)) throw error;
+          if (!canRenderCanonical) throw error;
+          pdfBase64 = await renderContractSnapshotPdf(contractMeta.documentSnapshot, contractMeta);
+          result = { folio: contractMeta.folio || contractMeta.id, documentType: contractMeta.documentType || '' };
+        }
       }
       const pdf = Buffer.from(cleanBase64(pdfBase64), 'base64');
       if (pdf.subarray(0, 5).toString('ascii') !== '%PDF-') throw new Error('El documento privado no contiene un PDF válido.');
@@ -2450,7 +2687,9 @@ export default async function handler(req, res) {
       const sessionId = String(req.query?.sessionId || '').trim().slice(0, 120);
       const result = await forwardBusinessAction('contractResolve', { token, sessionId, includePdf: action === 'contractPdf', markViewed: action === 'contractView' });
       if (action === 'contractPdf') {
-        const pdfBase64 = result.pdfBase64 || (result.contract?.documentSnapshot ? await renderContractSnapshotPdf(result.contract.documentSnapshot, result.contract) : '');
+        const pdfBase64 = result.contract?.documentSnapshot
+          ? await renderContractSnapshotPdf(result.contract.documentSnapshot, result.contract)
+          : result.pdfBase64 || '';
         const pdf = Buffer.from(cleanBase64(pdfBase64), 'base64');
         setPrivatePdfHeaders(res, `contrato-${String(result.contract?.folio || 'xaviph').replace(/[^a-z0-9-]/gi, '_')}.pdf`);
         return res.status(200).send(pdf);
@@ -2472,7 +2711,9 @@ export default async function handler(req, res) {
       if (Buffer.byteLength(signatureDataUrl, 'utf8') > 900_000) return res.status(413).json({ status: 'error', message: 'La firma excede el tamaño permitido.' });
       const material = await forwardBusinessAction('contractResolve', { token, includePdf: true, markViewed: false });
       const audit = signingAudit(req);
-      const originalPdfBase64 = material.pdfBase64 || (material.contract?.documentSnapshot ? await renderContractSnapshotPdf(material.contract.documentSnapshot, material.contract) : '');
+      const originalPdfBase64 = material.contract?.documentSnapshot
+        ? await renderContractSnapshotPdf(material.contract.documentSnapshot, material.contract)
+        : material.pdfBase64 || '';
       if (!originalPdfBase64) throw new Error('El documento original no está disponible.');
       const signedPdfBase64 = await appendClientSignature(originalPdfBase64, signatureDataUrl, material.contract, audit);
       const originalDocumentHash = createHash('sha256').update(Buffer.from(cleanBase64(originalPdfBase64), 'base64')).digest('hex');
