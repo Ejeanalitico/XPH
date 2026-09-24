@@ -83,10 +83,14 @@ export const ClientOperationsPanel: React.FC<Props> = ({ client, snapshot, onSna
   const packageOptions = useMemo(() => (Object.entries(catalog) as [string, PackageOption[]][]).flatMap(([category, packages]) =>
     (packages || []).map((item) => ({ category, item, key: `${category}::${item.id}` }))), [catalog]);
   const selectedPackage = packageOptions.find((option) => option.key === packageKey);
-  const activePackages = snapshot.packageSnapshots
+  const activePackageSnapshots = snapshot.packageSnapshots
     .filter((item) => item.clientId === client.id && item.status === 'ACTIVO')
     .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
-  const currentPackage = activePackages[0];
+  const prospectPackageOptions = Array.isArray(client.prospectPackageOptions)
+    ? [...client.prospectPackageOptions].sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))
+    : [];
+  const activePackages = preContractMode && prospectPackageOptions.length ? prospectPackageOptions : activePackageSnapshots;
+  const currentPackage = activePackageSnapshots[0] || activePackages[0];
   const selectedPackageIsAssigned = Boolean(selectedPackage && activePackages.some((item) => String(item.packageId) === String(selectedPackage.item.id)));
   const clientServices = snapshot.services.filter((item) => item.clientId === client.id && item.status !== 'Anulado');
   const clientAddons = snapshot.addons.filter((item) => item.clientId === client.id && item.status !== 'Anulado');
