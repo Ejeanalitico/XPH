@@ -70,6 +70,7 @@ export interface CrmClient {
   calendarSyncError: string;
   reminder7DaysSent: boolean;
   reminder1DaySent: boolean;
+  prospectPackageOptions?: ClientPackageSnapshot[];
 }
 
 export interface CrmFollowUp {
