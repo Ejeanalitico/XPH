@@ -477,7 +477,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
   const [realBalance, setRealBalance] = useState('');
   const [adjustmentCategory, setAdjustmentCategory] = useState<FinancialAdjustmentCategory>('Pendiente por identificar');
   const [adjustmentNotes, setAdjustmentNotes] = useState('');
-  const [contractDraft, setContractDraft] = useState({ clientId: '', folio: '', eventType: '', eventDate: '', documentType: 'CONTRATO' as 'CONTRATO' | 'COTIZACION', paymentPolicy: '40-30-30' as '40-30-30' | 'PERSONALIZADA', file: null as File | null });
+  const [contractDraft, setContractDraft] = useState({ clientId: '', folio: '', eventType: '', eventDate: '', documentType: 'CONTRATO' as 'CONTRATO' | 'COTIZACION', paymentPolicy: '40-30-30' as '40-30-30' | 'PERSONALIZADA', packageOptionId: '', file: null as File | null });
   const [latestLink, setLatestLink] = useState('');
   const [contractPreview, setContractPreview] = useState<BusinessContract | null>(null);
   const [showInlineContractEditor, setShowInlineContractEditor] = useState(false);
@@ -1111,14 +1111,70 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
     finally { setBusy(false); }
   };
 
+  const documentPackageOptionsForClient = (client: CrmClient): NonNullable<ContractDocumentSnapshot['packageOptions']> => {
+    const prospectOptions = client.recordType === 'Prospecto' && Array.isArray(client.prospectPackageOptions) && client.prospectPackageOptions.length
+      ? [...client.prospectPackageOptions]
+      : [];
+    const sourceOptions = prospectOptions.length
+      ? prospectOptions
+      : snapshot.packageSnapshots.filter((item) => item.clientId === client.id && item.status === 'ACTIVO');
+    return sourceOptions
+      .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))
+      .map((option) => {
+        const matchedSnapshot = snapshot.packageSnapshots
+          .filter((item) => item.clientId === client.id && (
+            String(item.id) === String(option.id)
+            || String(item.packageId) === String(option.packageId)
+          ))
+          .sort((a, b) => {
+            if (String(a.id) === String(option.id)) return -1;
+            if (String(b.id) === String(option.id)) return 1;
+            return String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || ''));
+          })[0];
+        const packageSnapshotId = matchedSnapshot?.id || option.id;
+        const basePrice = roundContractMoney(Math.max(0, Number(option.basePrice ?? matchedSnapshot?.basePrice ?? 0)));
+        const discount = roundContractMoney(Math.max(0, Number(option.discount ?? matchedSnapshot?.discount ?? 0)));
+        const packageTotal = roundContractMoney(Math.max(0, basePrice - discount));
+        const services = contractServicesForPackage(snapshot.services, client.id, packageSnapshotId)
+          .map((item) => ({ concept: item.concept, quantity: Number(item.quantity || 0), notes: item.notes || '' }));
+        return {
+          packageSnapshotId,
+          packageId: String(option.packageId || matchedSnapshot?.packageId || ''),
+          category: String(option.category || matchedSnapshot?.category || ''),
+          packageName: String(option.packageName || matchedSnapshot?.packageName || client.packageName || ''),
+          basePrice,
+          discount,
+          promotion: String(option.promotion || matchedSnapshot?.promotion || ''),
+          packageTotal,
+          total: packageTotal,
+          services,
+        };
+      })
+      .filter((item) => item.packageName);
+  };
+
+  const selectedDocumentPackageOption = (client: CrmClient, options = documentPackageOptionsForClient(client)) => {
+    if (!options.length) return undefined;
+    if (contractDraft.documentType === 'COTIZACION') return options[0];
+    return options.find((item) =>
+      String(item.packageSnapshotId) === String(contractDraft.packageOptionId)
+      || String(item.packageId) === String(contractDraft.packageOptionId)
+    ) || options[0];
+  };
+
   const getContractDataChecklist = (client?: CrmClient) => {
     if (!client) return [];
-    const activePackage = snapshot.packageSnapshots
-      .filter((item) => item.clientId === client.id && item.status === 'ACTIVO')
-      .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))[0];
-    const activeServices = contractServicesForPackage(snapshot.services, client.id, activePackage?.id);
+    const packageOptions = documentPackageOptionsForClient(client);
+    const selectedPackage = selectedDocumentPackageOption(client, packageOptions);
     const activePayments = snapshot.payments.filter((item) => item.clientId === client.id && item.status !== 'Anulado');
     const isContract = contractDraft.documentType === 'CONTRATO';
+    const packageReady = isContract ? Boolean(selectedPackage?.packageName) : packageOptions.length > 0;
+    const totalReady = isContract
+      ? Number(selectedPackage?.packageTotal || 0) > 0
+      : packageOptions.length > 0 && packageOptions.every((item) => Number(item.packageTotal || 0) > 0);
+    const servicesReady = isContract
+      ? Boolean(selectedPackage?.services.length)
+      : packageOptions.length > 0 && packageOptions.every((item) => item.services.length > 0);
     return [
       { key: 'name', label: 'Nombre completo del contratante', complete: Boolean(String(client.name || '').trim()), required: true },
       { key: 'phone', label: 'Teléfono', complete: Boolean(String(client.phone || '').trim()), required: true },
@@ -1128,29 +1184,32 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
       { key: 'eventDate', label: 'Fecha del evento', complete: Boolean(dateValue(contractDraft.eventDate || client.eventDate)), required: true },
       { key: 'eventTime', label: 'Horario del evento', complete: Boolean(timeValue(client.eventTime)), required: isContract },
       { key: 'eventLocation', label: 'Lugar o dirección del evento', complete: Boolean(String(client.eventLocation || '').trim()), required: isContract },
-      { key: 'packageName', label: 'Paquete contratado', complete: Boolean(String(activePackage?.packageName || client.packageName || '').trim()), required: true },
-      { key: 'totalAmount', label: 'Total contratado', complete: Number(client.totalAmount || 0) > 0, required: true },
-      { key: 'services', label: 'Servicios incluidos', complete: activeServices.length > 0, required: true },
+      { key: 'packageName', label: isContract ? 'Paquete para el contrato' : 'Opciones de paquete', complete: packageReady, required: true },
+      { key: 'totalAmount', label: isContract ? 'Total contratado' : 'Importes de las opciones', complete: totalReady, required: true },
+      { key: 'services', label: isContract ? 'Servicios incluidos' : 'Servicios de cada opción', complete: servicesReady, required: true },
       { key: 'payments', label: contractDraft.paymentPolicy === 'PERSONALIZADA' ? 'Plan de pagos personalizado' : 'Plan 40% / 30% / 30%', complete: contractDraft.paymentPolicy === '40-30-30' || activePayments.length > 0, required: true },
     ];
   };
 
   const buildContractSnapshot = (client: CrmClient): ContractDocumentSnapshot => {
-    const packageSnapshot = snapshot.packageSnapshots
-      .filter((item) => item.clientId === client.id && item.status === 'ACTIVO')
-      .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))[0];
-    const services = contractServicesForPackage(snapshot.services, client.id, packageSnapshot?.id);
+    const rawOptions = documentPackageOptionsForClient(client);
     const addons = snapshot.addons.filter((item) => item.clientId === client.id && item.status !== 'Anulado');
     const registeredPayments = snapshot.payments.filter((item) => item.clientId === client.id && item.status !== 'Anulado').sort((a, b) => Number(a.installmentNumber || 0) - Number(b.installmentNumber || 0));
     const additions = roundContractMoney(addons.reduce((sum, item) => sum + contractAddonAmount(item), 0));
-    const discount = roundContractMoney(Math.max(0, Number(packageSnapshot?.discount || 0)));
+    const packageOptions = rawOptions.map((item) => ({
+      ...item,
+      total: roundContractMoney(Math.max(0, Number(item.packageTotal || 0) + additions)),
+    }));
+    const selectedPackage = selectedDocumentPackageOption(client, packageOptions);
+    const visiblePackageOptions = contractDraft.documentType === 'COTIZACION'
+      ? packageOptions
+      : selectedPackage ? [selectedPackage] : [];
     const clientTotal = roundContractMoney(Math.max(0, Number(client.totalAmount || 0)));
-    const storedPackageBase = roundContractMoney(Math.max(0, Number(packageSnapshot?.basePrice || 0)));
-    const packageBase = storedPackageBase > 0
-      ? storedPackageBase
-      : roundContractMoney(Math.max(0, clientTotal - additions + discount));
+    const packageBase = roundContractMoney(Math.max(0, Number(selectedPackage?.basePrice || 0)));
+    const discount = roundContractMoney(Math.max(0, Number(selectedPackage?.discount || 0)));
     const calculatedTotal = roundContractMoney(Math.max(0, packageBase + additions - discount));
-    const total = packageSnapshot ? calculatedTotal : (clientTotal > 0 ? clientTotal : calculatedTotal);
+    const total = selectedPackage ? calculatedTotal : (clientTotal > 0 ? clientTotal : calculatedTotal);
+    const services = selectedPackage?.services || [];
     const defaultPlan = standardContractPayments(total, contractDraft.eventDate || client.eventDate || '');
     const personalizedPlan = registeredPayments.map((item) => {
       const percentage = Math.max(0, Number(item.percentage || 0));
@@ -1161,12 +1220,13 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
     const payments = contractDraft.paymentPolicy === 'PERSONALIZADA' ? personalizedPlan : defaultPlan;
     return {
       documentType: contractDraft.documentType,
-      templateVersion: 'contrato-xph-canonical-v3',
+      templateVersion: 'contrato-xph-canonical-v4',
       issuedAt: now(),
       client: { name: client.name, phone: client.phone, email: client.email, address: client.address, honoreeName: client.honoreeName },
       event: { type: contractDraft.eventType || client.eventType, date: contractDraft.eventDate || client.eventDate, time: client.eventTime, location: client.eventLocation, serviceHours: Number(client.serviceHours || 0) },
-      commercial: { packageName: packageSnapshot?.packageName || client.packageName, packageBase, additions, discount, total, promotion: packageSnapshot?.promotion || '' },
-      services: services.map((item) => ({ concept: item.concept, quantity: Number(item.quantity || 0), notes: item.notes || '' })),
+      commercial: { packageName: selectedPackage?.packageName || client.packageName, packageBase, additions, discount, total, promotion: selectedPackage?.promotion || '' },
+      packageOptions: visiblePackageOptions,
+      services,
       addons: addons.map((item) => ({ concept: item.concept, quantity: Number(item.quantity || 0), unitPrice: Number(item.unitPrice || 0), total: contractAddonAmount(item), notes: item.notes || '' })),
       payments,
       paymentPolicy: contractDraft.paymentPolicy,
@@ -1179,7 +1239,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
         'Fuerza mayor, reprogramación y cancelación: En una cancelación unilateral de EL CLIENTE, el apartado inicial del 40% no será reembolsable por la reserva de fecha y gastos administrativos. Cuando exista fuerza mayor o caso fortuito comprobable, podrá reasignarse la fecha sujeto a disponibilidad y a los gastos ya realizados.',
         'Conservación y respaldo: EL CLIENTE deberá descargar y respaldar sus entregables dentro del periodo comunicado. La galería privada y los respaldos de producción no constituyen almacenamiento indefinido.',
         'Aceptación electrónica: La firma electrónica, la fecha y hora de aceptación, la versión congelada del documento y sus identificadores se conservarán como evidencia del acuerdo entre las partes.',
-      ],
+      ]
     };
   };
 
@@ -1191,6 +1251,9 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
     const compactDate = (eventDate || today()).replace(/-/g, '');
     const contractPrefix = /xv|15|quince/i.test(eventType) ? 'XVA' : 'BD';
     const prefix = documentType === 'COTIZACION' ? 'COT' : contractPrefix;
+    const options = documentPackageOptionsForClient(client);
+    const frozenPackage = String(frozen?.commercial?.packageName || '');
+    const matched = options.find((item) => frozenPackage && item.packageName === frozenPackage) || options[0];
     setContractDraft({
       clientId: client.id,
       folio: contract?.folio || `${prefix}-${compactDate}`,
@@ -1198,6 +1261,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
       eventDate,
       documentType,
       paymentPolicy: contract?.paymentPolicy || frozen?.paymentPolicy || '40-30-30',
+      packageOptionId: documentType === 'COTIZACION' ? 'ALL' : matched?.packageSnapshotId || '',
       file: null,
     });
     setShowInlineContractEditor(true);
@@ -1313,7 +1377,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
         file: contractDraft.file,
       });
       setSnapshot((prev) => ({ ...prev, contracts: [saved, ...prev.contracts.filter((item) => item.id !== saved.id)] }));
-      setContractDraft({ clientId: '', folio: '', eventType: '', eventDate: '', documentType: 'CONTRATO', paymentPolicy: '40-30-30', file: null });
+      setContractDraft({ clientId: '', folio: '', eventType: '', eventDate: '', documentType: 'CONTRATO', paymentPolicy: '40-30-30', packageOptionId: '', file: null });
       setModalNotice('Contrato guardado de forma privada.');
     } catch (error: any) { setModalNotice(error?.message || 'No se pudo guardar el contrato.'); }
     finally { setBusy(false); }
@@ -1388,11 +1452,14 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
   };
 
   const selectedContractClient = snapshot.clients.find((client) => client.id === contractDraft.clientId);
+  const selectedContractPackageOptions = selectedContractClient ? documentPackageOptionsForClient(selectedContractClient) : [];
+  const selectedClientPackageOptions = selectedClient ? documentPackageOptionsForClient(selectedClient) : [];
   const contractDataChecklist = getContractDataChecklist(selectedContractClient);
   const missingContractData = contractDataChecklist.filter((item) => item.required && !item.complete);
 
   return (
     <section className="space-y-5">
+      {(busy || refreshing || syncingAllCalendars || Boolean(syncingClientId) || importingCsv || Boolean(notificationPendingId)) && <div className="fixed inset-0 z-[250] grid place-items-center bg-black/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-live="assertive" aria-label="Procesando"><div className="w-full max-w-sm rounded-2xl border border-[#D4AF37]/30 bg-[#111722] p-6 text-center shadow-2xl"><Loader2 className="mx-auto h-9 w-9 animate-spin text-[#D4AF37]" /><h3 className="mt-4 text-base font-bold text-white">{refreshing ? 'Actualizando información' : importingCsv ? 'Cargando archivo' : syncingAllCalendars || syncingClientId ? 'Actualizando calendario' : 'Procesando cambios'}</h3><p className="mt-2 text-sm leading-6 text-gray-400">Espera un momento. No cierres esta ventana hasta que termine la operación.</p></div></div>}
       {(backgroundTasks.length > 0 || modalNotice) && <aside className="pointer-events-none fixed bottom-4 right-4 z-[120] w-[min(92vw,410px)] space-y-2" aria-live="polite" aria-label="Actividad en segundo plano">{backgroundTasks.slice(0, 5).map((task) => <div key={task.id} className={`pointer-events-auto overflow-hidden rounded-2xl border bg-[#161C28]/95 shadow-2xl shadow-black/40 backdrop-blur ${task.status === 'error' ? 'border-red-400/30' : task.status === 'success' ? 'border-emerald-400/25' : 'border-sky-300/25'}`}><div className="flex items-start gap-3 p-4"><div className="mt-0.5 shrink-0">{task.status === 'running' ? <Loader2 className="h-5 w-5 animate-spin text-sky-300" /> : task.status === 'success' ? <CheckCircle2 className="h-5 w-5 text-emerald-300" /> : <AlertTriangle className="h-5 w-5 text-red-300" />}</div><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><div><p className="text-sm font-bold text-white">{task.title}</p><p className="mt-1 break-words text-xs leading-5 text-gray-300">{task.detail}</p></div>{task.status !== 'running' && <button type="button" onClick={() => dismissBackgroundTask(task.id)} className="rounded-lg p-1 text-gray-500 hover:bg-white/10 hover:text-white" aria-label="Cerrar actividad"><X className="h-4 w-4" /></button>}</div>{task.status === 'running' && <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-sky-300 transition-all duration-300" style={{ width: `${Math.max(8, Math.min(100, task.progress || 18))}%` }} /></div>}</div></div></div>)}{modalNotice && <div className="pointer-events-auto flex items-start gap-3 rounded-2xl border border-[#D4AF37]/25 bg-[#161C28]/95 p-4 shadow-2xl shadow-black/40 backdrop-blur"><CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-[#D4AF37]" /><div className="min-w-0 flex-1"><p className="text-sm font-bold text-white">Aviso</p><p className="mt-1 break-words text-xs leading-5 text-gray-300">{modalNotice}</p></div><button type="button" onClick={() => setModalNotice('')} className="rounded-lg p-1 text-gray-500 hover:bg-white/10 hover:text-white" aria-label="Cerrar aviso"><X className="h-4 w-4" /></button></div>}</aside>}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
@@ -1502,10 +1569,12 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
                 </div>
                 {showInlineContractEditor && <form onSubmit={generateInlineContractDocument} className="mt-4 grid gap-3 rounded-xl border border-[#D4AF37]/20 bg-black/15 p-4 sm:grid-cols-2 lg:grid-cols-4">
                   <div className="sm:col-span-2 lg:col-span-4"><p className="text-sm font-semibold text-white">{contractDraft.documentType === 'COTIZACION' ? (selectedClientQuote ? 'Modificar cotización / crear nueva versión' : 'Crear cotización') : (selectedClientContract ? 'Modificar contrato / crear nueva versión' : 'Crear contrato')}</p><p className="mt-1 text-xs text-gray-400">Paquete, servicios, adicionales, totales y datos del evento se toman de esta ficha. La versión anterior permanece en el historial.</p></div>
-                  <label className="text-xs text-gray-300">Tipo de documento<select value={contractDraft.documentType} onChange={(event) => setContractDraft((prev) => ({ ...prev, documentType: event.target.value as 'CONTRATO' | 'COTIZACION' }))} className={`${inputClass} mt-1`}><option value="COTIZACION">Cotización</option><option value="CONTRATO">Contrato</option></select></label>
+                  <label className="text-xs text-gray-300">Tipo de documento<select value={contractDraft.documentType} onChange={(event) => { const nextType = event.target.value as 'CONTRATO' | 'COTIZACION'; setContractDraft((prev) => ({ ...prev, documentType: nextType, packageOptionId: nextType === 'COTIZACION' ? 'ALL' : (selectedClientPackageOptions[0]?.packageSnapshotId || '') })); }} className={`${inputClass} mt-1`}><option value="COTIZACION">Cotización</option><option value="CONTRATO">Contrato</option></select></label>
                   <label className="text-xs text-gray-300">Folio<input value={contractDraft.folio} onChange={(event) => setContractDraft((prev) => ({ ...prev, folio: event.target.value }))} className={`${inputClass} mt-1`} required /></label>
                   <label className="text-xs text-gray-300">Tipo de evento<input value={contractDraft.eventType} onChange={(event) => setContractDraft((prev) => ({ ...prev, eventType: event.target.value }))} className={`${inputClass} mt-1`} required /></label>
                   <label className="text-xs text-gray-300">Fecha del evento<input type="date" value={contractDraft.eventDate} onChange={(event) => setContractDraft((prev) => ({ ...prev, eventDate: event.target.value }))} className={`${inputClass} mt-1`} required /></label>
+                  {contractDraft.documentType === 'COTIZACION' && selectedClientPackageOptions.length > 1 && <div className="rounded-xl border border-sky-300/20 bg-sky-400/5 p-3 text-xs text-sky-100 sm:col-span-2 lg:col-span-4">La cotización incluirá las <strong>{selectedClientPackageOptions.length} opciones de paquete</strong>, cada una con sus servicios y precio.</div>}
+                  {contractDraft.documentType === 'CONTRATO' && selectedClientPackageOptions.length > 0 && <label className="text-xs text-gray-300 sm:col-span-2">Paquete para este contrato<select value={contractDraft.packageOptionId || selectedClientPackageOptions[0]?.packageSnapshotId || ''} onChange={(event) => setContractDraft((prev) => ({ ...prev, packageOptionId: event.target.value }))} className={`${inputClass} mt-1`} required>{selectedClientPackageOptions.map((item) => <option key={item.packageSnapshotId || item.packageId} value={item.packageSnapshotId}>{item.packageName} · {money(item.packageTotal)}</option>)}</select></label>}
                   <label className="text-xs text-gray-300">Plan de pagos<select value={contractDraft.paymentPolicy} onChange={(event) => setContractDraft((prev) => ({ ...prev, paymentPolicy: event.target.value as '40-30-30' | 'PERSONALIZADA' }))} className={`${inputClass} mt-1`}><option value="40-30-30">40% / 30% / 30%</option><option value="PERSONALIZADA">Personalizado</option></select></label>
                   <div className="flex flex-wrap gap-2 sm:col-span-2 lg:col-span-4"><button type="button" onClick={() => setShowInlineContractEditor(false)} className="rounded-lg border border-white/15 px-4 py-2.5 text-sm text-gray-200">Cancelar</button><button type="submit" disabled={busy} className="rounded-lg bg-[#D4AF37] px-5 py-2.5 text-sm font-bold text-black disabled:opacity-40">{busy ? 'Generando…' : contractDraft.documentType === 'COTIZACION' ? 'Guardar cotización' : 'Guardar contrato'}</button><button type="button" onClick={() => { setShowInlineContractEditor(false); setClientDraft(selectedClient); setShowClientForm(true); }} className="rounded-lg border border-sky-300/30 bg-sky-400/10 px-4 py-2.5 text-sm font-semibold text-sky-100">Editar datos del contacto</button></div>
                 </form>}
@@ -1607,12 +1676,14 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
           <form onSubmit={generateContractDocument} className="rounded-2xl border border-[#D4AF37]/30 bg-[#161C28] p-5">
             <div className="mb-4"><p className="text-xs font-semibold uppercase tracking-[.18em] text-[#D4AF37]">Nuevo documento digital</p><h3 className="mt-1 text-xl font-bold">Generar desde el CRM</h3><p className="mt-1 text-sm text-gray-400">Crea una versión HTML rápida y congela los datos actuales sin modificar el paquete base.</p></div>
             <div className="grid gap-3 lg:grid-cols-3">
-              <select value={contractDraft.documentType} onChange={(event) => setContractDraft((prev) => ({ ...prev, documentType: event.target.value as 'CONTRATO' | 'COTIZACION' }))} className={inputClass}><option value="CONTRATO">Contrato</option><option value="COTIZACION">Cotización</option></select>
-              <select value={contractDraft.clientId} onChange={(event) => { const client = snapshot.clients.find((item) => item.id === event.target.value); setContractDraft((prev) => ({ ...prev, clientId: event.target.value, eventType: client?.eventType || '', eventDate: client?.eventDate || '' })); }} className={inputClass} required><option value="">Selecciona prospecto o cliente</option>{snapshot.clients.map((client) => <option key={client.id} value={client.id}>{client.name} · {client.recordType}</option>)}</select>
+              <select value={contractDraft.documentType} onChange={(event) => { const nextType = event.target.value as 'CONTRATO' | 'COTIZACION'; setContractDraft((prev) => ({ ...prev, documentType: nextType, packageOptionId: nextType === 'COTIZACION' ? 'ALL' : (selectedContractPackageOptions[0]?.packageSnapshotId || '') })); }} className={inputClass}><option value="CONTRATO">Contrato</option><option value="COTIZACION">Cotización</option></select>
+              <select value={contractDraft.clientId} onChange={(event) => { const client = snapshot.clients.find((item) => item.id === event.target.value); const options = client ? documentPackageOptionsForClient(client) : []; setContractDraft((prev) => ({ ...prev, clientId: event.target.value, eventType: client?.eventType || '', eventDate: client?.eventDate || '', packageOptionId: prev.documentType === 'COTIZACION' ? 'ALL' : (options[0]?.packageSnapshotId || '') })); }} className={inputClass} required><option value="">Selecciona prospecto o cliente</option>{snapshot.clients.map((client) => <option key={client.id} value={client.id}>{client.name} · {client.recordType}</option>)}</select>
               <input value={contractDraft.folio} onChange={(event) => setContractDraft((prev) => ({ ...prev, folio: event.target.value }))} placeholder="Folio" className={inputClass} required />
               <input value={contractDraft.eventType} onChange={(event) => setContractDraft((prev) => ({ ...prev, eventType: event.target.value }))} placeholder="Tipo de evento" className={inputClass} required />
               <input type="date" value={contractDraft.eventDate} onChange={(event) => setContractDraft((prev) => ({ ...prev, eventDate: event.target.value }))} className={inputClass} required />
               <select value={contractDraft.paymentPolicy} onChange={(event) => setContractDraft((prev) => ({ ...prev, paymentPolicy: event.target.value as '40-30-30' | 'PERSONALIZADA' }))} className={inputClass}><option value="40-30-30">Política normal 40% / 30% / 30%</option><option value="PERSONALIZADA">Excepción / plan personalizado registrado</option></select>
+              {selectedContractClient && contractDraft.documentType === 'COTIZACION' && selectedContractPackageOptions.length > 1 && <div className="rounded-xl border border-sky-300/20 bg-sky-400/5 p-3 text-xs text-sky-100 lg:col-span-3">Se incluirán las <strong>{selectedContractPackageOptions.length} opciones de paquete</strong> en la misma cotización.</div>}
+              {selectedContractClient && contractDraft.documentType === 'CONTRATO' && selectedContractPackageOptions.length > 0 && <label className="text-xs text-gray-300 lg:col-span-3">Paquete que se contratará<select value={contractDraft.packageOptionId || selectedContractPackageOptions[0]?.packageSnapshotId || ''} onChange={(event) => setContractDraft((prev) => ({ ...prev, packageOptionId: event.target.value }))} className={`${inputClass} mt-1`} required>{selectedContractPackageOptions.map((item) => <option key={item.packageSnapshotId || item.packageId} value={item.packageSnapshotId}>{item.packageName} · {money(item.packageTotal)}</option>)}</select></label>}
             </div>
             {selectedContractClient ? <section className={`mt-4 rounded-xl border p-4 ${missingContractData.length ? 'border-amber-400/30 bg-amber-400/[.06]' : 'border-emerald-400/30 bg-emerald-400/[.06]'}`} aria-live="polite">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h4 className="text-sm font-bold text-white">Datos necesarios para generar</h4><p className={`mt-1 text-xs ${missingContractData.length ? 'text-amber-200' : 'text-emerald-200'}`}>{missingContractData.length ? `Faltan ${missingContractData.length} ${missingContractData.length === 1 ? 'dato' : 'datos'}. Completa la ficha antes de continuar. Los adicionales son opcionales.` : 'La información obligatoria está completa. Puedes generar el documento sin adicionales.'}</p></div><button type="button" onClick={() => openClientDetails(selectedContractClient)} className="shrink-0 rounded-lg bg-white px-3 py-2 text-xs font-bold text-black">{missingContractData.length ? 'Completar ficha' : 'Editar paquete y servicios'}</button></div>
