@@ -860,7 +860,8 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
   };
 
   const saveInlineClient = async (patch: Partial<CrmClient>) => {
-    if (!selectedClient) return;
+    if (!selectedClient || busy) return;
+    setBusy(true);
     const before = selectedClient;
     const optimistic = { ...selectedClient, ...patch, updatedAt: now() };
     setSnapshot((previous) => {
@@ -899,16 +900,22 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
         return { ...previous, clients };
       });
       setModalNotice(error?.message || 'No se pudieron actualizar los datos.');
+    } finally {
+      setBusy(false);
     }
   };
 
   const sendClientWhatsApp = async (client: CrmClient, message: string) => {
+    if (busy) return;
+    setBusy(true);
     try {
       await sendWhatsAppMessage(client.id, message);
       notify(`Mensaje enviado por WhatsApp a ${client.name || client.phone}.`);
       await refresh(true);
     } catch (error: any) {
       notify(error?.message || 'No se pudo enviar el mensaje por WhatsApp.');
+    } finally {
+      setBusy(false);
     }
   };
 
