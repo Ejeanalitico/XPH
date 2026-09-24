@@ -1119,14 +1119,24 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
   };
 
   const documentPackageOptionsForClient = (client: CrmClient): NonNullable<ContractDocumentSnapshot['packageOptions']> => {
-    const prospectOptions = client.recordType === 'Prospecto' && Array.isArray(client.prospectPackageOptions) && client.prospectPackageOptions.length
+    const storedProspectOptions = client.recordType === 'Prospecto' && Array.isArray(client.prospectPackageOptions)
       ? [...client.prospectPackageOptions]
       : [];
-    const sourceOptions = prospectOptions.length
-      ? prospectOptions
+    const historicalProspectOptions = client.recordType === 'Prospecto'
+      ? snapshot.packageSnapshots.filter((item) => item.clientId === client.id)
+      : [];
+    const sourceOptions = client.recordType === 'Prospecto'
+      ? [...historicalProspectOptions, ...storedProspectOptions]
       : snapshot.packageSnapshots.filter((item) => item.clientId === client.id && item.status === 'ACTIVO');
+    const seenPackageIds = new Set<string>();
     return sourceOptions
       .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))
+      .filter((option) => {
+        const packageId = String(option.packageId || option.id || '');
+        if (!packageId || seenPackageIds.has(packageId)) return false;
+        seenPackageIds.add(packageId);
+        return true;
+      })
       .map((option) => {
         const matchedSnapshot = snapshot.packageSnapshots
           .filter((item) => item.clientId === client.id && (

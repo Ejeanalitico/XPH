@@ -86,10 +86,21 @@ export const ClientOperationsPanel: React.FC<Props> = ({ client, snapshot, onSna
   const activePackageSnapshots = snapshot.packageSnapshots
     .filter((item) => item.clientId === client.id && item.status === 'ACTIVO')
     .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
-  const prospectPackageOptions = Array.isArray(client.prospectPackageOptions)
-    ? [...client.prospectPackageOptions].sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))
-    : [];
-  const activePackages = preContractMode && prospectPackageOptions.length ? prospectPackageOptions : activePackageSnapshots;
+  const prospectPackageOptions = (() => {
+    if (!preContractMode) return [];
+    const source = [
+      ...snapshot.packageSnapshots.filter((item) => item.clientId === client.id),
+      ...(Array.isArray(client.prospectPackageOptions) ? client.prospectPackageOptions : []),
+    ].sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
+    const seen = new Set<string>();
+    return source.filter((item) => {
+      const packageId = String(item.packageId || item.id || '');
+      if (!packageId || seen.has(packageId)) return false;
+      seen.add(packageId);
+      return true;
+    });
+  })();
+  const activePackages = preContractMode ? prospectPackageOptions : activePackageSnapshots;
   const currentPackage = activePackageSnapshots[0] || activePackages[0];
   const selectedPackageIsAssigned = Boolean(selectedPackage && activePackages.some((item) => String(item.packageId) === String(selectedPackage.item.id)));
   const clientServices = snapshot.services.filter((item) => item.clientId === client.id && item.status !== 'Anulado');
