@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { BellRing, CheckCircle2, ClipboardCheck, ClipboardCopy, FolderOpen, Images, Loader2, PackagePlus, Plus, Save, Sparkles, Trash2, Upload, UserPlus } from 'lucide-react';
 import { AddOnOption, PackageOption } from '../types';
 import { BusinessSnapshot, ClientAddon, ContractedService, CrmClient, CrmNotification, TeamAssignment } from '../types/business';
-import { assignClientPackage, createClientGallery, loadAdminConfig, markNotification, saveClientAddon, saveContractedService, saveTeamAssignment, updateClientGalleryStatus, uploadClientGalleryPhoto } from '../utils/adminApi';
+import { assignClientPackage, createClientGallery, loadAdminConfig, markNotification, removeProspectPackage, saveClientAddon, saveContractedService, saveTeamAssignment, updateClientGalleryStatus, uploadClientGalleryPhoto } from '../utils/adminApi';
 
 const money = (value: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(Number(value) || 0);
 const today = () => new Date().toISOString().slice(0, 10);
@@ -86,24 +86,18 @@ export const ClientOperationsPanel: React.FC<Props> = ({ client, snapshot, onSna
   const activePackageSnapshots = snapshot.packageSnapshots
     .filter((item) => item.clientId === client.id && item.status === 'ACTIVO')
     .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
-  const prospectPackageOptions = (() => {
-    if (!preContractMode) return [];
-    const source = [
-      ...snapshot.packageSnapshots.filter((item) => item.clientId === client.id),
-      ...(Array.isArray(client.prospectPackageOptions) ? client.prospectPackageOptions : []),
-    ].sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
-    const seen = new Set<string>();
-    return source.filter((item) => {
-      const packageId = String(item.packageId || item.id || '');
-      if (!packageId || seen.has(packageId)) return false;
-      seen.add(packageId);
-      return true;
-    });
-  })();
+  const prospectPackageOptions = preContractMode && Array.isArray(client.prospectPackageOptions)
+    ? [...client.prospectPackageOptions].sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))
+    : [];
   const activePackages = preContractMode ? prospectPackageOptions : activePackageSnapshots;
   const currentPackage = activePackageSnapshots[0] || activePackages[0];
   const selectedPackageIsAssigned = Boolean(selectedPackage && activePackages.some((item) => String(item.packageId) === String(selectedPackage.item.id)));
-  const clientServices = snapshot.services.filter((item) => item.clientId === client.id && item.status !== 'Anulado');
+  const selectedProspectSnapshotIds = new Set(activePackages.map((item) => String(item.id || '')).filter(Boolean));
+  const clientServices = snapshot.services.filter((item) => {
+    if (item.clientId !== client.id || item.status === 'Anulado') return false;
+    if (!preContractMode || item.source === 'MANUAL' || !item.packageSnapshotId) return true;
+    return selectedProspectSnapshotIds.has(String(item.packageSnapshotId));
+  });
   const clientAddons = snapshot.addons.filter((item) => item.clientId === client.id && item.status !== 'Anulado');
   const activeAddons = clientAddons;
   const addonTotal = activeAddons.reduce((sum, item) => sum + Number(item.total || 0), 0);
@@ -138,6 +132,27 @@ export const ClientOperationsPanel: React.FC<Props> = ({ client, snapshot, onSna
         : 'Paquete copiado al cliente. Los cambios posteriores ya no modifican la plantilla base.');
     } catch (error: any) { notify(error?.message || 'No se pudo asignar el paquete.'); }
     finally { setBusy(false); }
+  };
+
+  const removePackageOption = async (pkg: ClientPackageSnapshot) => {
+    if (!preContractMode || busy) return;
+    const packageId = String(pkg.packageId || pkg.id || '');
+    if (!packageId) return;
+    const confirmed = window.confirm(`¿Quitar “${pkg.packageName}” de las opciones de este prospecto? Ya no aparecerá en cotizaciones ni contratos nuevos.`);
+    if (!confirmed) return;
+    setBusy(true);
+    try {
+      const savedClient = await removeProspectPackage(client.id, packageId);
+      onSnapshotChange((previous) => ({
+        ...previous,
+        clients: previous.clients.map((item) => item.id === savedClient.id ? savedClient : item),
+      }));
+      notify(`Se quitó “${pkg.packageName}” de las opciones del prospecto.`);
+    } catch (error: any) {
+      notify(error?.message || 'No se pudo quitar el paquete.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const persistService = async (event: React.FormEvent) => {
@@ -339,7 +354,7 @@ export const ClientOperationsPanel: React.FC<Props> = ({ client, snapshot, onSna
     <section className="rounded-2xl border border-white/10 bg-[#161C28] p-5">
       <div className="flex items-center gap-2"><PackagePlus className="h-5 w-5 text-[#D4AF37]" /><h3 className="font-semibold">{preContractMode ? 'Opciones de paquete' : 'Paquete contratado'}</h3></div>
       {preContractMode && <p className="mt-1 text-xs text-gray-400">Un prospecto puede conservar varias opciones activas. Al convertirlo en cliente podrás dejar un solo paquete contratado.</p>}
-      {activePackages.length > 0 && <div className="mt-4 space-y-3">{activePackages.map((pkg, index) => <div key={pkg.id} className="grid gap-3 rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-4 sm:grid-cols-4"><div><div className="text-xs text-gray-400">{preContractMode ? `Opción ${index + 1}` : 'Copia del paquete original'}</div><div className="mt-1 font-semibold">{pkg.packageName}</div></div><div><div className="text-xs text-gray-400">Precio base</div><div className="mt-1 font-semibold">{money(pkg.basePrice)}</div></div><div><div className="text-xs text-gray-400">Descuento</div><div className="mt-1 font-semibold">{money(pkg.discount)}</div></div><div><div className="text-xs text-gray-400">{preContractMode ? 'Total de esta opción' : 'Total contratado'}</div><div className="mt-1 font-semibold text-emerald-300">{money(pkg.finalTotal)}</div></div></div>)}</div>}
+      {activePackages.length > 0 && <div className="mt-4 space-y-3">{activePackages.map((pkg, index) => <div key={pkg.id} className="grid gap-3 rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-4 sm:grid-cols-[1.4fr_1fr_1fr_1fr_auto] sm:items-center"><div><div className="text-xs text-gray-400">{preContractMode ? `Opción ${index + 1}` : 'Copia del paquete original'}</div><div className="mt-1 font-semibold">{pkg.packageName}</div></div><div><div className="text-xs text-gray-400">Precio base</div><div className="mt-1 font-semibold">{money(pkg.basePrice)}</div></div><div><div className="text-xs text-gray-400">Descuento</div><div className="mt-1 font-semibold">{money(pkg.discount)}</div></div><div><div className="text-xs text-gray-400">{preContractMode ? 'Total de esta opción' : 'Total contratado'}</div><div className="mt-1 font-semibold text-emerald-300">{money(pkg.finalTotal)}</div></div>{preContractMode && <button type="button" disabled={busy} onClick={() => removePackageOption(pkg)} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-red-400/25 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-200 disabled:opacity-40" title="Quitar esta opción"><Trash2 className="h-3.5 w-3.5" />Quitar</button>}</div>)}</div>}
       <form onSubmit={assignPackage} className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><label className="text-xs text-gray-300">Plantilla comercial<select value={packageKey} onChange={(event) => setPackageKey(event.target.value)} className={`${inputClass} mt-1`} required><option value="">Selecciona un paquete</option>{packageOptions.map((option) => <option key={option.key} value={option.key}>{option.category} · {option.item.name} · {money(option.item.price)}</option>)}</select></label><label className="text-xs text-gray-300">Descuento o promoción<input type="number" min="0" step="0.01" value={discount} onChange={(event) => setDiscount(Number(event.target.value))} className={`${inputClass} mt-1`} /></label><label className="text-xs text-gray-300 lg:col-span-2">Detalle de promoción<input value={promotion} onChange={(event) => setPromotion(event.target.value)} placeholder="Motivo o condiciones" className={`${inputClass} mt-1`} /></label><button disabled={busy || !packageKey} className="rounded-xl bg-[#D4AF37] px-4 py-3 text-sm font-bold text-black sm:col-span-2 lg:col-span-4">{preContractMode ? (selectedPackageIsAssigned ? 'Actualizar esta opción' : 'Agregar opción de paquete') : (currentPackage ? 'Actualizar copia contratada' : 'Asignar y copiar paquete')}</button></form>
     </section>
 
