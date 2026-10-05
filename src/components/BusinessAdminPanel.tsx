@@ -537,13 +537,28 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
     else setTab('account');
   }, [session.role]);
 
+  const packageNamesForClient = (client: CrmClient) => {
+    const source = client.recordType === 'Prospecto'
+      ? (Array.isArray(client.prospectPackageOptions) ? client.prospectPackageOptions : [])
+      : snapshot.packageSnapshots.filter((item) => item.clientId === client.id && item.status === 'ACTIVO');
+    return Array.from(new Set([
+      ...source.map((item) => String(item.packageName || '').trim()),
+      String(client.packageName || '').trim(),
+    ].filter(Boolean)));
+  };
+
   const filteredClients = useMemo(() => {
     const term = query.trim().toLowerCase();
     const records = snapshot.clients.filter((client) => tab === 'prospects' ? client.recordType === 'Prospecto' : client.recordType === 'Cliente');
     if (!term) return records;
-    return records.filter((client) => [client.name, client.phone, client.eventType, client.packageName, client.status]
-      .some((value) => String(value || '').toLowerCase().includes(term)));
-  }, [query, snapshot.clients, tab]);
+    return records.filter((client) => [
+      client.name,
+      client.phone,
+      client.eventType,
+      client.status,
+      ...packageNamesForClient(client),
+    ].some((value) => String(value || '').toLowerCase().includes(term)));
+  }, [query, snapshot.clients, snapshot.packageSnapshots, tab]);
 
   const financials = useMemo(() => calculateFinancialSummary(snapshot), [snapshot]);
   const dashboardStats = useMemo(() => {
@@ -1605,17 +1620,21 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
           {showClientForm && canCreateCurrentType && <ClientForm draft={clientDraft} onChange={setClientDraft} onSubmit={saveClient} onCancel={() => setShowClientForm(false)} busy={busy} />}
           <div className="overflow-x-auto rounded-2xl border border-white/10 bg-[#161C28]">
             <table className="min-w-full text-left text-sm">
-              <thead className="bg-black/20 text-xs uppercase tracking-wider text-[#D4AF37]"><tr><th className="p-4">Contacto</th><th className="p-4">Evento</th><th className="p-4">Estado</th><th className="p-4">Importes</th><th className="p-4">Próxima acción</th><th className="p-4"></th></tr></thead>
+              <thead className="bg-black/20 text-xs uppercase tracking-wider text-[#D4AF37]"><tr><th className="p-4">Contacto</th><th className="p-4">Evento</th><th className="p-4">Paquetes</th><th className="p-4">Estado</th><th className="p-4">Importes</th><th className="p-4">Próxima acción</th><th className="p-4"></th></tr></thead>
               <tbody className="divide-y divide-white/5">
-                {filteredClients.map((client) => <tr key={client.id} className="align-top">
+                {filteredClients.map((client) => {
+                  const packageNames = packageNamesForClient(client);
+                  return <tr key={client.id} className="align-top">
                   <td className="p-4"><button onClick={() => openClientDetails(client)} className="text-left font-semibold text-white hover:text-[#D4AF37]">{client.name || 'Sin nombre'}</button><div className="text-xs text-gray-400">{client.phone || 'Sin teléfono'} · {client.recordType}</div></td>
                   <td className="p-4"><div>{client.eventType || 'Por confirmar'}</div><div className="text-xs text-gray-400">{dateValue(client.eventDate) || 'Sin fecha'} · {client.eventLocation || 'Sin lugar'}</div></td>
+                  <td className="p-4"><div className="flex max-w-[260px] flex-wrap gap-1.5">{packageNames.length ? packageNames.map((name) => <span key={name} className="rounded-full border border-sky-300/20 bg-sky-400/10 px-2.5 py-1 text-xs text-sky-100">{name}</span>) : <span className="text-xs text-gray-500">Sin paquete</span>}</div></td>
                   <td className="p-4"><span className="rounded-full border border-[#D4AF37]/30 bg-[#D4AF37]/10 px-2.5 py-1 text-xs text-[#F5D76E]">{client.status}</span></td>
                   <td className="p-4"><div>{money(client.totalAmount)}</div><div className="text-xs text-emerald-300">Pagado {money(paidForClient(client))}</div><div className="text-xs text-amber-300">Pendiente {money(Math.max(0, client.totalAmount - paidForClient(client)))}</div></td>
                   <td className="p-4"><div>{client.nextAction || 'Sin acción'}</div><div className="text-xs text-gray-400">{dateTimeDisplay(client.nextActionAt) || 'Sin fecha'}</div></td>
                   <td className="p-4"><button onClick={() => openClientDetails(client)} className="text-left text-xs text-[#D4AF37]">Ver detalles</button></td>
-                </tr>)}
-                {!filteredClients.length && <tr><td colSpan={6} className="p-10 text-center text-gray-500">Aún no hay registros. Agrega el primer prospecto o cliente.</td></tr>}
+                </tr>;
+                })}
+                {!filteredClients.length && <tr><td colSpan={7} className="p-10 text-center text-gray-500">Aún no hay registros. Agrega el primer prospecto o cliente.</td></tr>}
               </tbody>
             </table>
           </div>
