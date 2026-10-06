@@ -658,8 +658,6 @@ function exposeProspectPackageOptionsWithHistory(client, packageSnapshots) {
 }
 
 const PROMOTION_META_ID = 'xph-promotion-popup-config';
-const TEMP_PUBLIC_GALLERY_RECOVERY = [{"id":"1JQzl07PBUnIzyL_6o7jL_dNr8G-fmaFa","title":"PROMO MES PATRIO XPH","category":"empresarial","location":"Promoción XPH","visibility":"public","mediaType":"image"},{"id":"1RXOfm0DxvtnutBqwNs5VjOm19YW7ZWRU","title":"1","category":"categoria-1787867613819","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"1P6K4C0x1vb1LClJQ3cgMnl-MG1TKdou-","title":"2","category":"categoria-1787867613819","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"1GMlDGBurQVlzv0xuFeqqipmk7i_9d5wF","title":"3","category":"categoria-1787867613819","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"1VwI66_PaRB1U_XKHsyGgteiwMOywUin1","title":"4","category":"categoria-1787867613819","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"1W1uxPEq2XgFv0DgfNMD2PMgvSlnx_olF","title":"5","category":"categoria-1787867613819","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"1lEDDEMw-XHIfTe0VOtK70tNKuhYxBJ4d","title":"6","category":"categoria-1787867613819","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"15iw0LOUvb_hdKDmEhNGr-uGurm-laxYo","title":"1","category":"categoria-1787867613819","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"1hlNxFt1hZfqVvkkEGZp4-q3wi-G30c9j","title":"2","category":"categoria-1787867613819","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"15sodxHJ83Zu3EINpVNiaOmksRvN-1mwN","title":"5","category":"categoria-1787867613819","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"1M-ifjUUbegIPsFUpdu_eUDy5_W7BMvac","title":"6","category":"categoria-1787867613819","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"1-mPFbkTdDwjV1m5-hhEaCe30tFQFUH9A","title":"7","category":"categoria-1787867613819","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"1KotC8ySNDgMplvESalvZ5dtCaweL0NPA","title":"XPH0159","category":"bautizos","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"1hgtSRbsC1qQImdG8lMPgfBnQXIKbs8wn","title":"XPH0152","category":"bautizos","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"1hW-M66WJkAoAFO1JnfvxR0RRuFJ8iYth","title":"XPH0508","category":"bautizos","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"11WT4hWPFu4GVKXICZiK2wkmWaAT0xhYl","title":"XPH0150","category":"bautizos","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"cover-empresarial","title":"EMPRESARIAL & BRANDING","category":"empresarial","url":"https://lh3.googleusercontent.com/d/18v7Czq2Xl6Oddpn271le-EoLFjTZYikS","location":"Portada XPH","visibility":"cover","mediaType":"cover-meta","heroFor":"empresarial","heroLabel":"EMPRESARIAL & BRANDING","heroDescription":"Contenido visual para tu marca, equipo y negocio.","positionX":50,"positionY":18,"zoom":100,"createdAt":"2026-08-14T23:53:35.758Z"},{"id":"cover-bautizos","title":"BAUTIZOS & FAMILIA","category":"bautizos","url":"https://lh3.googleusercontent.com/d/1bexkE4mwyFOh3jHk7wXBrXwFSQoVxet2","location":"Portada XPH","visibility":"cover","mediaType":"cover-meta","heroFor":"bautizos","heroLabel":"BAUTIZOS & FAMILIA","heroDescription":"Fotografía cercana para celebraciones familiares.","positionX":50,"positionY":50,"zoom":100,"createdAt":"2026-08-14T23:53:35.758Z"},{"id":"cover-retratos","title":"RETRATOS & EDITORIAL","category":"retratos","url":"https://lh3.googleusercontent.com/d/1VY4V4fw0i12e6tf1KUeuZL2pbZLIzv9Z","location":"Portada XPH","visibility":"cover","mediaType":"cover-meta","heroFor":"retratos","heroLabel":"RETRATOS & EDITORIAL","heroDescription":"Sesiones personales, creativas y editoriales.","positionX":50,"positionY":18,"zoom":100,"createdAt":"2026-08-14T23:53:35.758Z"},{"id":"1U9t49FRaDbXJOadxYjciUw2JTW17ubrZ","title":"DSC 6718","category":"retratos","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"1VqJ6hMPzi4UM83SjmArLIg_RQzLxvxT9","title":"IMG 2978 Copy","category":"retratos","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"1VY4V4fw0i12e6tf1KUeuZL2pbZLIzv9Z","title":"IMG 2952 Copy","category":"retratos","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"1w_ql94D60AC4OvUQC21yJoltKzLSBz03","title":"IMG 2917 Copy","category":"retratos","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"1YYtv-LS7cjSYsLYamXMFRQOttsRzpbL9","title":"IMG 2914","category":"retratos","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"1F9ccrDIZuYjBTd_E8EG0oPQLDMgEiPGS","title":"IMG 2907 Copy","category":"retratos","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"1s0McAjc73xHQSMauQT1Fepe5kZ7iTXwE","title":"IMG 2906","category":"retratos","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"18v7Czq2Xl6Oddpn271le-EoLFjTZYikS","title":"IMG 2892 Copy","category":"retratos","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"cover-inicio","title":"XPH | Capturamos tu historia como debe ser contada ","category":"bodas","url":"https://lh3.googleusercontent.com/d/17NPYk01FpBNWg_zVHUynmYunvN4f3XSs","location":"Portada XPH","visibility":"cover","mediaType":"cover-meta","heroFor":"inicio","heroLabel":"XPH | Capturamos tu historia como debe ser contada ","heroDescription":"Fotografía | Video | Maquillaje & Peinados","positionX":50,"positionY":50,"zoom":100,"createdAt":"2026-08-14T23:53:35.758Z"},{"id":"cover-xv-anos","title":"Quinceañeras ","category":"xv-anos","url":"https://lh3.googleusercontent.com/d/18BiedzUB0psC91ChAQdCr7E2YRP9gNPM","location":"Portada XPH","visibility":"cover","mediaType":"cover-meta","heroFor":"xv-anos","heroLabel":"Quinceañeras ","heroDescription":"Noche de Estrellas para ese día tan especial, fotografía profesional ","positionX":50,"positionY":100,"zoom":100,"createdAt":"2026-08-14T23:53:35.758Z"},{"id":"cover-bodas","title":"Bodas","category":"bodas","url":"https://lh3.googleusercontent.com/d/1bP3IG0tc_jSrxm16i1Cm8Zs6tdhyhRbF","location":"Portada XPH","visibility":"cover","mediaType":"cover-meta","heroFor":"bodas","heroLabel":"Bodas","heroDescription":"Nos enfocamos en la esencia del compromiso sin distracciones, capturando la pureza del momento","positionX":50,"positionY":50,"zoom":100,"createdAt":"2026-08-14T23:53:35.758Z"},{"id":"1QZjDxh6q-TAKfFXbs58yM7GzoCc2kjJt","title":"205861","category":"xv-anos","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"1O2uibEkjHPWvRC6VuJnX4_H1jnK6YIR7","title":"37426","category":"xv-anos","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"18BiedzUB0psC91ChAQdCr7E2YRP9gNPM","title":"204335","category":"xv-anos","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"1nCk---7eKCXHd1CH5cttoWWaIMMvDYV9","title":"205903","category":"xv-anos","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"1Jy9BUirRAnqydlAvelqgKlhKeq8vsB1x","title":"205892","category":"xv-anos","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"1dBTBkkXD7vzQ7YQjqQniCeHLfYs1rgwx","title":"205869","category":"categoria-1787867613819","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"1qvqWrIddrtGVNTap05i-jCJtdrZHEHAG","title":"205863","category":"xv-anos","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"1t1qxjRaSO7NIM3V1jVDY2SeSrGdnthOR","title":"205890","category":"xv-anos","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"1YPivtV-SB6SjPCtkZ6t6jdkrJhzs9l9q","title":"205882","category":"xv-anos","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"1aM6kQrFFgLs0P8MPAQr99oalin3g_URQ","title":"4","category":"categoria-1787867613819","location":"Polanco, CDMX","visibility":"public","mediaType":"image"},{"id":"17NPYk01FpBNWg_zVHUynmYunvN4f3XSs","title":"184068","category":"bodas","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"1WQVOEe5NmpQdZKUxkPbD3FkMybZ5WBul","title":"184075","category":"bodas","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"1i8kjbUXsUAM6iZUCBznLh0nMNkfXgSGm","title":"205867","category":"bodas","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"1hqdT4QI4kNlL7PRAq0fbsQyN6fc_6i7C","title":"205896","category":"bodas","location":"CDMX","visibility":"public","mediaType":"image"},{"id":"1bP3IG0tc_jSrxm16i1Cm8Zs6tdhyhRbF","title":"205894","category":"bodas","location":"CDMX","visibility":"public","mediaType":"image"}];
-
 function galleryConfigScope(item) {
   if (!item) return 'other';
   if (item.visibility === 'private') return 'private';
@@ -685,16 +683,6 @@ function mergeGalleryPatchByAudit(currentItems, incomingItems, auditType) {
   }
   return incomingItems;
 }
-
-function mergeTemporaryPublicGalleryRecovery(currentItems) {
-  const current = Array.isArray(currentItems) ? currentItems : [];
-  const existingIds = new Set(current.map((item) => String(item?.id || '')));
-  return [
-    ...TEMP_PUBLIC_GALLERY_RECOVERY.filter((item) => !existingIds.has(String(item?.id || ''))),
-    ...current,
-  ];
-}
-
 
 function promotionPopupFromGallery(items) {
   if (!Array.isArray(items)) return null;
@@ -3077,33 +3065,6 @@ export default async function handler(req, res) {
         clientName: meta.galleryClient || 'Cliente XPH',
         allowDownloads: meta.galleryAllowDownloads !== false,
         media,
-      });
-    }
-
-    if (req.method === 'GET' && action === 'repairPublicGalleryOnce') {
-      const payload = await fetchConfigFromScript();
-      const config = normalizeConfig(payload);
-      const currentItems = Array.isArray(config.galleryImages) ? config.galleryImages : [];
-      const publicCountBefore = currentItems.filter((item) => galleryConfigScope(item) === 'public').length;
-      const coverCountBefore = currentItems.filter((item) => item?.mediaType === 'cover-meta').length;
-      let repaired = false;
-      if (publicCountBefore === 0 || coverCountBefore < 6) {
-        await forwardSaveConfig(
-          { galleryImages: mergeTemporaryPublicGalleryRecovery(currentItems) },
-          'REPARACION_GALERIA_PUBLICA',
-          'Restauración idempotente de fotografías públicas y portadas desde respaldo verificado.'
-        );
-        repaired = true;
-      }
-      const confirmedPayload = await fetchConfigFromScript();
-      const confirmed = normalizeConfig(confirmedPayload);
-      const confirmedItems = Array.isArray(confirmed.galleryImages) ? confirmed.galleryImages : [];
-      return res.status(200).json({
-        status: 'success',
-        repaired,
-        publicCount: confirmedItems.filter((item) => galleryConfigScope(item) === 'public').length,
-        coverCount: confirmedItems.filter((item) => item?.mediaType === 'cover-meta').length,
-        privateGalleryCount: confirmedItems.filter((item) => item?.visibility === 'private' && item?.mediaType === 'gallery-meta').length,
       });
     }
 
