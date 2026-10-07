@@ -45,6 +45,8 @@
     { "source": "/bautizos", "destination": "/bautizos/index.html" },
     { "source": "/retratos", "destination": "/retratos/index.html" },
     { "source": "/empresarial", "destination": "/empresarial/index.html" },
+    { "source": "/terminos-y-condiciones", "destination": "/index.html" },
+    { "source": "/terminos-y-condiciones/", "destination": "/index.html" },
     { "source": "/:category", "destination": "/api/category-page?slug=:category" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
