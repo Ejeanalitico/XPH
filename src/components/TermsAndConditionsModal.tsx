@@ -106,9 +106,8 @@ const sections = [
     ],
   },
   {
-    title: '13. Servicios con dron, música y restricciones técnicas',
+    title: '13. Música y restricciones técnicas',
     body: [
-      'Las tomas con dron, cuando estén incluidas, dependen del clima, seguridad operacional, restricciones del espacio aéreo, permisos, ubicación y condiciones de la locación. Su imposibilidad por una restricción legal o de seguridad ajena a XPH no garantiza por sí misma una sustitución idéntica de tomas.',
       'La música incluida en videos se seleccionará procurando contar con licencias o usos compatibles con el destino de la obra. El cliente es responsable de cualquier contenido musical o audiovisual que solicite incorporar y respecto del cual afirme contar con derechos o autorización.',
     ],
   },
