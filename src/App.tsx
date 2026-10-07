@@ -24,6 +24,7 @@ import { InPersonConsultation } from './components/InPersonConsultation';
 import { Navbar } from './components/Navbar';
 import { PricingQuoteEngine } from './components/PricingQuoteEngine';
 import { ToastContainer } from './components/Toast';
+import { TermsAndConditionsPage } from './components/TermsAndConditionsPage';
 import { WhatsAppFloatingButton } from './components/WhatsAppFloatingButton';
 
 const COMMERCIAL_WHATSAPP = '525516342663';
@@ -40,6 +41,7 @@ const FOOTER_CONTACT: FooterContact = {
 
 export default function App() {
   const [currentRoute, setCurrentRoute] = useState<RoutePath>('inicio');
+  const [isTermsPage, setIsTermsPage] = useState(false);
   const [packagesState] = useState<Record<EventType, PackageOption[]>>(PACKAGES_BY_EVENT);
   const [addonsState] = useState<AddOnOption[]>(ADDONS_CATALOG);
   const [galleryImages] = useState<GalleryImage[]>(GALLERY_IMAGES);
@@ -68,6 +70,13 @@ export default function App() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#/', '').replace('#', '');
+      if (hash === 'terminos-y-condiciones') {
+        setIsTermsPage(true);
+        window.scrollTo({ top: 0 });
+        return;
+      }
+
+      setIsTermsPage(false);
       const validRoutes: RoutePath[] = [
         'inicio',
         'bodas',
@@ -125,6 +134,7 @@ export default function App() {
   };
 
   const handleNavigateRoute = (route: RoutePath) => {
+    setIsTermsPage(false);
     setCurrentRoute(route);
     window.history.pushState({}, '', `#/${route}`);
 
@@ -236,46 +246,54 @@ export default function App() {
         onToggleTheme={() => setIsDarkMode((prev) => !prev)}
       />
 
-      <Hero
-        currentRoute={currentRoute}
-        onQuoteClick={() => handleScrollTo('cotizador')}
-        onGalleryClick={() => handleScrollTo('galerias')}
-        onCitaClick={() => handleScrollTo('solicitud')}
-      />
-
-      <GallerySection
-        currentRoute={currentRoute}
-        images={galleryImages}
-        favorites={favorites}
-        onToggleFavorite={handleToggleFavorite}
-        onShowToast={showToast}
-      />
-
-      <PricingQuoteEngine
-        currentRoute={currentRoute}
-        bookingState={bookingState}
-        onUpdateBookingState={setBookingState}
-        onProceedToBooking={() => handleScrollTo('solicitud')}
-        packages={packagesState}
-        addons={addonsState}
-        onNavigateRoute={handleNavigateRoute}
-      />
-
-      <InPersonConsultation
-        bookingState={bookingState}
-        onSendWhatsApp={handleSendWhatsApp}
-        onNavigateToQuote={() => handleScrollTo('cotizador')}
-        onShowToast={showToast}
-      />
-
-      <BookingWizard
-        bookingState={bookingState}
-        onUpdateBookingState={setBookingState}
-        onShowToast={showToast}
-        onSendWhatsApp={handleSendWhatsApp}
-        packages={packagesState}
-        addons={addonsState}
-      />
+      {isTermsPage ? (
+        <TermsAndConditionsPage onBack={() => handleNavigateRoute('inicio')} />
+      ) : (
+        <>
+        <Hero
+          currentRoute={currentRoute}
+          onQuoteClick={() => handleScrollTo('cotizador')}
+          onGalleryClick={() => handleScrollTo('galerias')}
+          onCitaClick={() => handleScrollTo('solicitud')}
+        />
+  
+        <GallerySection
+          currentRoute={currentRoute}
+          images={galleryImages}
+          favorites={favorites}
+          onToggleFavorite={handleToggleFavorite}
+          onShowToast={showToast}
+        />
+  
+        <PricingQuoteEngine
+          currentRoute={currentRoute}
+          bookingState={bookingState}
+          onUpdateBookingState={setBookingState}
+          onProceedToBooking={() => handleScrollTo('solicitud')}
+          packages={packagesState}
+          addons={addonsState}
+          onNavigateRoute={handleNavigateRoute}
+        />
+  
+        <InPersonConsultation
+          bookingState={bookingState}
+          onSendWhatsApp={handleSendWhatsApp}
+          onNavigateToQuote={() => handleScrollTo('cotizador')}
+          onShowToast={showToast}
+        />
+  
+        <BookingWizard
+          bookingState={bookingState}
+          onUpdateBookingState={setBookingState}
+          onShowToast={showToast}
+          onSendWhatsApp={handleSendWhatsApp}
+          packages={packagesState}
+          addons={addonsState}
+        />
+  
+  
+        </>
+      )}
 
       <Footer onNavigateRoute={handleNavigateRoute} footerContact={FOOTER_CONTACT} />
 
