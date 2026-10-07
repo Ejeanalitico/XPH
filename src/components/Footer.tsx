@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Camera, MapPin, Mail, Phone, HeartHandshake, Clock, MessageSquare, Sparkles, FileText } from 'lucide-react';
 import { RoutePath, FooterContact } from '../types';
-import { TermsAndConditionsModal } from './TermsAndConditionsModal';
 
 interface FooterProps {
   onNavigateRoute: (route: RoutePath) => void;
@@ -9,7 +8,6 @@ interface FooterProps {
 }
 
 export const Footer: React.FC<FooterProps> = ({ onNavigateRoute, footerContact }) => {
-  const [showTerms, setShowTerms] = useState(false);
   const whatsappHref = `https://wa.me/${footerContact.whatsapp.replace(/\D/g, '')}`;
   const phoneHref = `tel:${footerContact.phone.replace(/[^+\d]/g, '')}`;
 
@@ -100,19 +98,17 @@ export const Footer: React.FC<FooterProps> = ({ onNavigateRoute, footerContact }
           <div className="pt-8 border-t border-white/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 text-[11px] text-gray-500 font-mono">
             <p>© 2026 XPH Fotografía & Video; Producción Audiovisual. Todos los derechos reservados.</p>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-              <button
-                onClick={() => setShowTerms(true)}
-                className="inline-flex items-center gap-1.5 text-gray-400 hover:text-[#D4AF37] transition-colors cursor-pointer"
+              <a
+                href="#/terminos-y-condiciones"
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-white/10 bg-white/5 text-gray-300 hover:text-[#D4AF37] hover:border-[#D4AF37]/30 transition-colors"
               >
                 <FileText className="w-3.5 h-3.5" />
                 Términos y condiciones
-              </button>
+              </a>
             </div>
           </div>
         </div>
       </footer>
-
-      <TermsAndConditionsModal isOpen={showTerms} onClose={() => setShowTerms(false)} />
     </>
   );
 };
