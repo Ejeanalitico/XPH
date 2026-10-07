@@ -435,6 +435,8 @@ export interface ContractDocumentSnapshot {
   addons: Array<{ concept: string; quantity: number; unitPrice: number; total: number; notes: string }>;
   payments: Array<{ concept: string; percentage: number; amount: number; dueDate: string; status: string }>;
   paymentPolicy: '40-30-30' | 'PERSONALIZADA';
+  commercialMediaConsent: 'AUTHORIZED' | 'NOT_AUTHORIZED';
+  includesMakeup: boolean;
   terms: string[];
 };
 
