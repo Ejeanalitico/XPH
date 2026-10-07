@@ -9,6 +9,7 @@ import { PrivateGalleryDownloadSettings } from './components/PrivateGalleryDownl
 import { UnifiedAdminDashboard } from './components/UnifiedAdminDashboard';
 import { AdminExitHomeEnhancer } from './components/AdminExitHomeEnhancer';
 import { MobileContractSigningPage } from './components/MobileContractSigningPage';
+import { TermsAndConditionsPage } from './components/TermsAndConditionsPage';
 import { isAnalyticsExcluded } from './utils/analyticsPrivacy';
 import './index.css';
 import './branding.css';
@@ -38,10 +39,13 @@ const galleryToken = params.get('k') || '';
 const reviewToken = params.get('xph-review') || '';
 const signingMatch = window.location.pathname.match(/^\/firmar\/([^/]+)\/?$/);
 const signingToken = signingMatch ? decodeURIComponent(signingMatch[1]) : '';
+const termsPage = /^\/terminos-y-condiciones\/?$/.test(window.location.pathname);
 
 let content = <AppV2 />;
 
-if (signingToken) {
+if (termsPage) {
+  content = <TermsAndConditionsPage onBack={() => { window.location.href = '/'; }} />;
+} else if (signingToken) {
   content = <MobileContractSigningPage token={signingToken} />;
 } else if (reviewToken) {
   content = <ClientReviewPage token={reviewToken} />;

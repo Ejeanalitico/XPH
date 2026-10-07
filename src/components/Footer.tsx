@@ -1,5 +1,5 @@
 import React from 'react';
-import { MapPin, Mail, Phone, Clock, MessageSquare, ExternalLink } from 'lucide-react';
+import { MapPin, Mail, Phone, Clock, MessageSquare, ExternalLink, FileText } from 'lucide-react';
 import { CatalogCategory, RoutePath, FooterContact } from '../types';
 import { DEFAULT_FOOTER_CONTACT, normalizeFooterContact } from '../footerConfig';
 import { DEFAULT_CATALOG_CATEGORIES } from '../utils/catalogCategories';
@@ -82,8 +82,15 @@ export const Footer: React.FC<FooterProps> = ({
           </div>
         </div>
 
-        <div className="pt-8 border-t border-white/10 text-[11px] text-gray-500 font-mono text-center sm:text-left">
+        <div className="pt-8 border-t border-white/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 text-[11px] text-gray-500 font-mono text-center sm:text-left">
           <p>{config.copyrightText}</p>
+          <a
+            href="/terminos-y-condiciones"
+            className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-white/10 bg-white/5 text-gray-300 hover:text-[#D4AF37] hover:border-[#D4AF37]/30 transition-colors"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>Términos y condiciones</span>
+          </a>
         </div>
       </div>
     </footer>
