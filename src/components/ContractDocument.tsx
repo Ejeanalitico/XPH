@@ -13,31 +13,24 @@ const time = (value: string) => {
   return `${hour % 12 || 12}:${match[2]} ${hour >= 12 ? 'p. m.' : 'a. m.'}`;
 };
 
-const standardTerms = [
-  ['Reserva y calendario de pagos', 'La fecha del evento queda formalmente reservada únicamente tras el pago del 40% inicial y la firma del contrato. El segundo pago del 30% deberá cubrirse, como fecha límite, antes de iniciar la cobertura el día del evento. El 30% restante se pagará contra entrega de los materiales contratados. Mientras no se refleje el apartado, la disponibilidad podrá ofrecerse a otro cliente.'],
-  ['Entregables', 'Se entregarán exclusivamente las fotografías editadas, la galería digital privada, el video resumen y los demás productos expresamente incluidos en el paquete. La entrega será digital y en alta resolución, dentro del plazo acordado entre ambas partes. Los archivos originales sin edición no forman parte de la entrega.'],
-  ['Edición y colorimetría', 'La selección final, corrección de exposición, balance de blancos, contraste, colorimetría y estilo de edición forman parte del criterio creativo de XPH. El resultado conservará la línea visual mostrada en su portafolio. No se entregan archivos RAW ni proyectos editables. Las diferencias de color producidas por pantallas, impresoras o laboratorios externos no se consideran defectos del material.'],
-  ['Puntualidad y cobertura', 'La cobertura inicia a la hora acordada y comprende únicamente las horas continuas indicadas en el paquete. Los retrasos imputables al itinerario, ceremonia, recepción o participantes no extienden el tiempo contratado; las horas adicionales requieren disponibilidad, cotización y autorización.'],
-  ['Cambios al servicio', 'Cualquier modificación de fecha, horario, sede, itinerario, cobertura, paquete o servicio adicional deberá solicitarse y aprobarse por escrito antes del evento. Los cargos de traslado, permisos o accesos no contemplados serán cubiertos por EL CLIENTE.'],
-  ['Fuerza mayor, reprogramación y cancelación', 'En una cancelación unilateral de EL CLIENTE, el apartado inicial del 40% no será reembolsable por la reserva de fecha y gastos administrativos. Cuando exista fuerza mayor o caso fortuito comprobable, podrá reasignarse la fecha sujeto a disponibilidad y a los gastos ya realizados.'],
-  ['Conservación y respaldo', 'EL CLIENTE deberá descargar y respaldar sus entregables dentro del periodo comunicado. La galería privada y los respaldos de producción no constituyen almacenamiento indefinido.'],
-  ['Aceptación electrónica', 'La firma electrónica, la fecha y hora de aceptación, la versión congelada del documento y sus identificadores se conservarán como evidencia del acuerdo entre las partes.'],
-];
-
-const completeTerms = (terms: string[]) => {
-  const saved = (terms || []).map((term, index) => {
-    const separator = term.indexOf(':');
-    return separator > 0 ? [term.slice(0, separator), term.slice(separator + 1).trim()] : [`Cláusula ${index + 1}`, term];
-  });
-  const normalizedTitle = (value: string) => value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  return standardTerms.map((fallback) => saved.find((item) => normalizedTitle(item[0]).includes(normalizedTitle(fallback[0]).split(',')[0])) || fallback);
-};
+const parseTerms = (terms: string[]) => (terms || []).map((term, index) => {
+  const separator = term.indexOf(':');
+  return separator > 0
+    ? [term.slice(0, separator), term.slice(separator + 1).trim()]
+    : [`Cláusula ${index + 1}`, term];
+});
 
 export const ContractDocument = ({ snapshot, folio }: { snapshot: ContractDocumentSnapshot; folio: string }) => {
   const isQuote = snapshot.documentType === 'COTIZACION';
-  // Los documentos históricos guardaron solo cuatro cláusulas. Al abrirlos se
-  // completan con el contrato vigente sin alterar sus datos comerciales.
-  const clauses = completeTerms(snapshot.terms || []);
+  // La versión firmada se conserva exactamente como fue generada. No se
+  // agregan cláusulas nuevas a contratos históricos.
+  const clauses = parseTerms(snapshot.terms || []);
+  const includesMakeup = snapshot.includesMakeup ?? [...(snapshot.services || []), ...(snapshot.addons || [])]
+    .some((item) => /\b(maquillaje|makeup|peinado|peinados)\b/i.test(String(item.concept || '')));
+  const serviceTitle = includesMakeup
+    ? 'SERVICIOS FOTOGRÁFICOS, AUDIOVISUALES Y MAQUILLAJE PROFESIONAL'
+    : 'SERVICIOS FOTOGRÁFICOS Y AUDIOVISUALES';
+  const mediaAuthorized = snapshot.commercialMediaConsent === 'AUTHORIZED';
   const documentPackages = snapshot.packageOptions?.length ? snapshot.packageOptions : [{
     packageSnapshotId: '',
     packageId: '',
@@ -66,7 +59,7 @@ export const ContractDocument = ({ snapshot, folio }: { snapshot: ContractDocume
 
     <div className="relative px-8 py-7 text-[12px] leading-[1.48] sm:px-12">
       <img aria-hidden="true" src="/xph-logo.png" className="pointer-events-none absolute left-1/2 top-[330px] w-[76%] -translate-x-1/2 opacity-[.035]" />
-      {!isQuote && <p className="relative mb-6 text-justify">Conste por el presente documento el <strong>CONTRATO DE PRESTACIÓN DE SERVICIOS FOTOGRÁFICOS Y AUDIOVISUALES</strong> que celebran, por una parte, <strong>XAVI.PH</strong> (en lo sucesivo “EL PRESTADOR DEL SERVICIO”), y por otra parte <strong>{snapshot.client.name}</strong> (en lo sucesivo “EL CLIENTE”). Domicilio de EL CLIENTE: {snapshot.client.address || 'no proporcionado'}.</p>}
+      {!isQuote && <p className="relative mb-6 text-justify">Conste por el presente documento el <strong>CONTRATO DE PRESTACIÓN DE {serviceTitle}</strong> que celebran, por una parte, <strong>XAVI.PH</strong>, representado por <strong>Fernando Javier García Flores</strong> (en lo sucesivo “EL PRESTADOR DEL SERVICIO”), y por otra parte <strong>{snapshot.client.name}</strong> (en lo sucesivo “EL CLIENTE”). Domicilio de EL CLIENTE: {snapshot.client.address || 'no proporcionado'}.</p>}
 
       <Section number="1" title="Datos del cliente y del evento"><div className="grid grid-cols-2 border border-black sm:grid-cols-3">
         <Info label="Cliente" value={snapshot.client.name} /><Info label="Teléfono" value={snapshot.client.phone || 'No registrado'} /><Info label="Correo" value={snapshot.client.email || 'No registrado'} />
@@ -90,7 +83,7 @@ export const ContractDocument = ({ snapshot, folio }: { snapshot: ContractDocume
 
       <Section number={section(4)} title={multiPackageQuote ? "Esquema de pagos por opción" : "Calendario de pagos programado"}>{multiPackageQuote && snapshot.paymentPolicy === '40-30-30' ? <Table><thead><tr><Th>Opción</Th><Th>40% apartado</Th><Th>30% intermedio</Th><Th>30% finiquito</Th><Th right>Total</Th></tr></thead><tbody>{documentPackages.map((pkg, index) => <tr key={pkg.packageSnapshotId || pkg.packageId || index}><Td>{pkg.packageName}</Td><Td>{money(pkg.total * .4)}</Td><Td>{money(pkg.total * .3)}</Td><Td>{money(pkg.total * .3)}</Td><Td right>{money(pkg.total)}</Td></tr>)}</tbody></Table> : multiPackageQuote ? <p className="rounded-md border border-black/20 p-3">El plan personalizado se definirá sobre la opción elegida antes de formalizar el contrato.</p> : <Table><thead><tr><Th>Etapa / pago</Th><Th>Porcentaje</Th><Th>Monto</Th><Th>Fecha límite de pago</Th></tr></thead><tbody>{snapshot.payments.map((payment, index) => <tr key={`${payment.concept}-${index}`}><Td>{payment.concept}</Td><Td>{payment.percentage ? `${payment.percentage}%` : '—'}</Td><Td>{money(payment.amount)} MXN</Td><Td>{payment.dueDate ? (index === 1 ? `A más tardar el ${date(payment.dueDate)}, antes de iniciar la cobertura` : date(payment.dueDate)) : index === 0 ? 'A la firma del contrato para reservar la fecha' : 'Contra entrega de los materiales y entregables contratados'}</Td></tr>)}</tbody></Table>}</Section>
 
-      {!isQuote && <><Section number={section(5)} title="Términos y condiciones generales"><ol className="space-y-2.5 text-justify">{clauses.map(([title, body], index) => <li key={index}><strong>{index + 1}. {title}.</strong> {body}</li>)}</ol></Section><Section number={section(6)} title="Uso comercial, licencia y derechos de imagen"><ol className="space-y-2.5 text-justify"><li><strong>1. Licencia de uso personal para EL CLIENTE.</strong> EL CLIENTE recibe una licencia personal, no exclusiva y de duración indefinida para imprimir, reproducir y compartir las fotografías y videos entregados en sus redes sociales y ámbito familiar privado. No podrá venderlos ni cederlos a terceros con fines de lucro.</li><li><strong>2. Uso promocional por XAVI.PH.</strong> Cuando EL CLIENTE lo autorice, XAVI.PH podrá utilizar fragmentos del video e imágenes del evento en su portafolio, sitio oficial, redes sociales, muestrarios impresos y material publicitario.</li><li><strong>3. Derechos de autor.</strong> EL PRESTADOR DEL SERVICIO conserva los derechos morales y de autor sobre la obra fotográfica y audiovisual conforme a la legislación aplicable.</li><li><strong>4. Privacidad exclusiva.</strong> Si EL CLIENTE requiere que el material no sea publicado en redes, portafolios o promociones, deberá indicarlo antes de la firma del contrato.</li></ol></Section><div className="mt-10 grid grid-cols-2 gap-12 text-center"><Signature label="EL CLIENTE" /><Signature label="EL PRESTADOR DEL SERVICIO" /></div></>}
+      {!isQuote && <><Section number={section(5)} title="Términos y condiciones generales"><ol className="space-y-2.5 text-justify">{clauses.map(([title, body], index) => <li key={index}><strong>{index + 1}. {title}.</strong> {body}</li>)}</ol></Section><Section number={section(6)} title="Uso comercial, licencia y derechos de imagen"><ol className="space-y-2.5 text-justify"><li><strong>1. Licencia de uso personal para EL CLIENTE.</strong> EL CLIENTE recibe una licencia personal, no exclusiva y de duración indefinida para imprimir, reproducir y compartir las fotografías y videos entregados en sus redes sociales personales y ámbito familiar. Cualquier explotación comercial por terceros deberá contar con la autorización que legalmente corresponda.</li><li><strong>2. Decisión expresa sobre uso promocional por XAVI.PH.</strong> <span className={mediaAuthorized ? 'font-bold' : 'font-bold'}>{mediaAuthorized ? 'AUTORIZADO.' : 'NO AUTORIZADO.'}</span> {mediaAuthorized ? 'EL CLIENTE autoriza expresamente a XAVI.PH a utilizar fotografías y fragmentos de video donde aparezca EL CLIENTE, exclusivamente para portafolio, sitio web oficial, redes sociales, muestrarios, concursos y promoción comercial propia de XAVI.PH. Esta autorización no implica cesión a terceros.' : 'EL CLIENTE no autoriza a XAVI.PH a utilizar fotografías o fragmentos de video identificables de EL CLIENTE para portafolio, sitio web, redes sociales, concursos, muestrarios ni publicidad.'}</li><li><strong>3. Personas distintas de EL CLIENTE.</strong> La autorización anterior sólo alcanza la imagen de EL CLIENTE y de aquellas personas respecto de las cuales tenga facultad legal para autorizar. La publicación identificable de otras personas se sujetará al consentimiento que corresponda.</li><li><strong>4. Derechos de autor.</strong> Los derechos morales de autor se reconocen conforme a la legislación aplicable. Los derechos patrimoniales, licencias y facultades de explotación se regirán por este contrato y por las disposiciones legales aplicables a las obras realizadas por encargo.</li></ol></Section><div className="mt-10 grid grid-cols-2 gap-12 text-center"><Signature label="EL CLIENTE" /><Signature label="EL PRESTADOR DEL SERVICIO · Fernando Javier García Flores" /></div></>}
       <footer className="mt-8 border-t border-black pt-3 text-center text-[9px] uppercase tracking-[.12em]">XPH Fotografía &amp; Video · Documento digital · Folio {folio}</footer>
     </div>
   </article>;
