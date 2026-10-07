@@ -1288,6 +1288,16 @@ async function renderContractSnapshotPdf(snapshot, contract) {
         services: Array.isArray(snapshot.services) ? snapshot.services : [],
       }];
   const multiPackageQuote = snapshot.documentType === 'COTIZACION' && documentPackages.length > 1;
+  const contractItems = [
+    ...(Array.isArray(snapshot.services) ? snapshot.services : []),
+    ...(Array.isArray(snapshot.addons) ? snapshot.addons : []),
+  ];
+  const derivedMakeup = contractItems.some((item) => /\b(maquillaje|makeup|peinado|peinados)\b/i.test(String(item?.concept || '')));
+  const includesMakeup = typeof snapshot.includesMakeup === 'boolean' ? snapshot.includesMakeup : derivedMakeup;
+  const mediaAuthorized = snapshot.commercialMediaConsent === 'AUTHORIZED';
+  const serviceTitle = includesMakeup
+    ? 'SERVICIOS FOTOGRÁFICOS, AUDIOVISUALES Y MAQUILLAJE PROFESIONAL'
+    : 'SERVICIOS FOTOGRÁFICOS Y AUDIOVISUALES';
   let page;
   let y;
 
@@ -1558,7 +1568,7 @@ async function renderContractSnapshotPdf(snapshot, contract) {
 
   addPage();
   if (snapshot.documentType === 'CONTRATO') {
-    const intro = safeText(`Conste por el presente documento el CONTRATO DE PRESTACIÓN DE SERVICIOS FOTOGRÁFICOS Y AUDIOVISUALES que celebran XAVI.PH y ${snapshot.client?.name || contract?.clientName || 'EL CLIENTE'}.`);
+    const intro = safeText(`Conste por el presente documento el CONTRATO DE PRESTACIÓN DE ${serviceTitle} que celebran, por una parte, XAVI.PH, representado por Fernando Javier García Flores (EL PRESTADOR DEL SERVICIO), y por otra parte ${snapshot.client?.name || contract?.clientName || 'EL CLIENTE'} (EL CLIENTE).`);
     const introLines = wrap(intro, contentWidth, regular, 7.4);
     introLines.forEach((line, index) => page.drawText(line, { x: marginX, y: y - index * 9, size: 7.4, font: regular, color: black }));
     y -= introLines.length * 9 + 12;
@@ -1624,10 +1634,12 @@ async function renderContractSnapshotPdf(snapshot, contract) {
     sectionNumber += 1;
     sectionHeading(`${sectionNumber}.`, 'Uso comercial, licencia y derechos de imagen');
     const rights = [
-      ['Licencia de uso personal para EL CLIENTE.', 'EL CLIENTE recibe una licencia personal, no exclusiva y de duración indefinida para imprimir, reproducir y compartir las fotografías y videos entregados en sus redes sociales y ámbito familiar privado.'],
-      ['Uso promocional por XAVI.PH.', 'Cuando EL CLIENTE lo autorice, XAVI.PH podrá utilizar fragmentos del video e imágenes del evento en su portafolio, sitio oficial, redes sociales, muestrarios impresos y material publicitario.'],
-      ['Derechos de autor.', 'EL PRESTADOR DEL SERVICIO conserva los derechos morales y de autor sobre la obra fotográfica y audiovisual conforme a la legislación aplicable.'],
-      ['Privacidad exclusiva.', 'Si EL CLIENTE requiere que el material no sea publicado en redes, portafolios o promociones, deberá indicarlo antes de la firma del contrato.'],
+      ['Licencia de uso personal para EL CLIENTE.', 'EL CLIENTE recibe una licencia personal, no exclusiva y de duración indefinida para imprimir, reproducir y compartir las fotografías y videos entregados en sus redes sociales personales y ámbito familiar. Cualquier explotación comercial por terceros deberá contar con la autorización que legalmente corresponda.'],
+      ['Decisión expresa sobre uso promocional por XAVI.PH.', mediaAuthorized
+        ? 'AUTORIZADO. EL CLIENTE autoriza expresamente a XAVI.PH a utilizar fotografías y fragmentos de video donde aparezca EL CLIENTE, exclusivamente para portafolio, sitio web oficial, redes sociales, muestrarios, concursos y promoción comercial propia de XAVI.PH. Esta autorización no implica cesión a terceros.'
+        : 'NO AUTORIZADO. EL CLIENTE no autoriza a XAVI.PH a utilizar fotografías o fragmentos de video identificables de EL CLIENTE para portafolio, sitio web, redes sociales, concursos, muestrarios ni publicidad.'],
+      ['Personas distintas de EL CLIENTE.', 'La autorización anterior sólo alcanza la imagen de EL CLIENTE y de aquellas personas respecto de las cuales tenga facultad legal para autorizar. La publicación identificable de otras personas se sujetará al consentimiento que corresponda.'],
+      ['Derechos de autor.', 'Los derechos morales de autor se reconocen conforme a la legislación aplicable. Los derechos patrimoniales, licencias y facultades de explotación se regirán por este contrato y por las disposiciones legales aplicables a las obras realizadas por encargo.'],
     ];
     rights.forEach(([title, body], index) => {
       const titleLines = wrap(`${index + 1}. ${title}`, contentWidth, bold, 7.2);
@@ -1639,8 +1651,9 @@ async function renderContractSnapshotPdf(snapshot, contract) {
       y -= bodyLines.length * 9 + 8;
     });
 
+    sectionNumber += 1;
     addPage();
-    sectionHeading('7.', 'Firmas y aceptación');
+    sectionHeading(`${sectionNumber}.`, 'Firmas y aceptación');
     page.drawText('Las partes manifiestan que leyeron y aceptan el contenido completo de este contrato.', { x: marginX, y: 675, size: 8, font: regular, color: black });
     page.drawText('La firma electrónica se integra directamente a esta misma versión del documento.', { x: marginX, y: 660, size: 8, font: regular, color: black });
     page.drawText(safeText(`Folio ${folio}`), { x: marginX, y: 630, size: 7.5, font: bold, color: gray });
@@ -1649,7 +1662,7 @@ async function renderContractSnapshotPdf(snapshot, contract) {
     page.drawText('EL CLIENTE', { x: rightX, y: 540, size: 7.2, font: bold, color: black });
     page.drawLine({ start: { x: marginX, y: 400 }, end: { x: 270, y: 400 }, thickness: 0.8, color: black });
     page.drawLine({ start: { x: rightX, y: 400 }, end: { x: 553, y: 400 }, thickness: 0.8, color: black });
-    page.drawText('Javier García', { x: marginX, y: 382, size: 7.5, font: bold, color: black });
+    page.drawText('Fernando Javier García Flores', { x: marginX, y: 382, size: 7.5, font: bold, color: black });
     page.drawText('Prestador del servicio', { x: marginX, y: 368, size: 7, font: regular, color: gray });
     page.drawText(safeText(snapshot.client?.name || contract?.clientName || 'Cliente').slice(0, 56), { x: rightX, y: 382, size: 7.5, font: bold, color: black });
     page.drawText('Cliente / Contratante', { x: rightX, y: 368, size: 7, font: regular, color: gray });
@@ -1734,6 +1747,11 @@ function normalizeContractDocumentSnapshot(input, documentType = 'CONTRATO') {
     addons: (Array.isArray(source.addons) ? source.addons : []).slice(0, 100).map((item) => ({ concept: text(item?.concept, 240), quantity: Math.max(0, Number(item?.quantity || 0)), unitPrice: amount(item?.unitPrice), total: amount(item?.total), notes: text(item?.notes, 500) })).filter((item) => item.concept),
     payments: (Array.isArray(source.payments) ? source.payments : []).slice(0, 20).map((item) => ({ concept: text(item?.concept, 180), percentage: Math.max(0, Number(item?.percentage || 0)), amount: amount(item?.amount), dueDate: text(item?.dueDate, 40), status: text(item?.status || 'Pendiente', 40) })).filter((item) => item.concept),
     paymentPolicy: source.paymentPolicy === 'PERSONALIZADA' ? 'PERSONALIZADA' : '40-30-30',
+    commercialMediaConsent: source.commercialMediaConsent === 'AUTHORIZED' ? 'AUTHORIZED' : 'NOT_AUTHORIZED',
+    includesMakeup: typeof source.includesMakeup === 'boolean'
+      ? source.includesMakeup
+      : [...(Array.isArray(source.services) ? source.services : []), ...(Array.isArray(source.addons) ? source.addons : [])]
+          .some((item) => /\b(maquillaje|makeup|peinado|peinados)\b/i.test(String(item?.concept || ''))),
     terms: (Array.isArray(source.terms) ? source.terms : []).slice(0, 30).map((item) => text(item, 2000)).filter(Boolean),
   };
   const missing = [];
