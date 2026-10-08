@@ -58,7 +58,7 @@ Después crea una nueva implementación de la aplicación web. El despliegue deb
 1. Configura las tres variables en Vercel.
 2. Configura las tres propiedades en Apps Script.
 3. Actualiza y despliega `google-apps-script.js`.
-4. Ejecuta una vez `initDatabase()` para crear las pestañas `CRM_Clientes`, `Gastos`, `Contratos` y `Firma_Administrador` sin registros ficticios.
+4. Ejecuta una vez `initDatabase()` si el proyecto aún no tiene su esquema completo. La versión actual incluye, entre otras, las pestañas `CRM_Clientes`, `Gastos`, `Contratos`, `Firma_Administrador` y `Documentos_Clientes`.
 5. Publica la aplicación en Vercel.
 6. Comprueba la página pública, el inicio de sesión administrativo, una liga móvil de firma en HTML y la carga de una imagen privada en la ficha de un cliente.
 7. Verifica que antes de la firma de ambas partes no exista opción de PDF para el contrato generado y que, al finalizarlo, se cree únicamente el PDF final firmado.
