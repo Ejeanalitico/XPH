@@ -1027,6 +1027,11 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
   };
 
   const selectedClient = snapshot.clients.find((client) => client.id === selectedClientId);
+  const selectedClientDocuments = selectedClient
+    ? (snapshot.clientDocuments || [])
+        .filter((document) => document.clientId === selectedClient.id && document.status !== 'ELIMINADO')
+        .sort((a, b) => String(b.createdAt || b.updatedAt || '').localeCompare(String(a.createdAt || a.updatedAt || '')))
+    : [];
   const followUpQueue = [...snapshot.clients]
     .filter((client) => client.recordType === 'Prospecto' && !['Contratado', 'Sin interés', 'No interesado', 'Archivado'].includes(client.status))
     .sort((a, b) => String(a.nextActionAt || '9999').localeCompare(String(b.nextActionAt || '9999')) || String(a.name || '').localeCompare(String(b.name || '')));
@@ -1362,6 +1367,10 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
   };
 
   const downloadContractPdf = async (contract: BusinessContract) => {
+    if (contract.documentSnapshot && contract.documentType !== 'COTIZACION' && contract.status !== 'Finalizado') {
+      setModalNotice('Este contrato se consulta como texto. El PDF se crea únicamente después de que ambas partes hayan firmado.');
+      return;
+    }
     setBusy(true);
     try {
       const response = await fetch(`${adminContractPdfUrl(contract.id, 'latest', contractPdfRevision(contract))}&download=1`, {
@@ -1470,6 +1479,56 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
     setBusy(false);
   }
 };
+
+  const uploadPrivateClientDocuments = async (client: CrmClient, files: FileList | File[]) => {
+    if (session.role !== 'SUPER_ADMIN' || client.recordType !== 'Cliente') {
+      setModalNotice('Los documentos privados sólo se pueden cargar dentro de una ficha de cliente por el Super Admin.');
+      return;
+    }
+    const selectedFiles = Array.from(files || []);
+    if (!selectedFiles.length) return;
+    setBusy(true);
+    const savedDocuments = [];
+    try {
+      for (const file of selectedFiles) {
+        const saved = await uploadClientPrivateDocument({
+          clientId: client.id,
+          file,
+          category: 'INE',
+          title: file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '),
+        });
+        savedDocuments.push(saved);
+        setSnapshot((previous) => ({
+          ...previous,
+          clientDocuments: [saved, ...(previous.clientDocuments || []).filter((item) => item.id !== saved.id)],
+        }));
+      }
+      setModalNotice(`${savedDocuments.length} imagen(es) privada(s) guardada(s) en la ficha de ${client.name}. No se publican en galerías ni mediante enlaces públicos.`);
+    } catch (error: any) {
+      setModalNotice(error?.message || 'No se pudieron cargar todos los documentos privados.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removePrivateClientDocument = async (documentId: string) => {
+    if (session.role !== 'SUPER_ADMIN') return;
+    const confirmed = window.confirm('¿Eliminar esta imagen privada del cliente? También se enviará a la papelera de Drive.');
+    if (!confirmed) return;
+    setBusy(true);
+    try {
+      await deleteClientPrivateDocument(documentId);
+      setSnapshot((previous) => ({
+        ...previous,
+        clientDocuments: (previous.clientDocuments || []).filter((item) => item.id !== documentId),
+      }));
+      setModalNotice('Documento privado eliminado.');
+    } catch (error: any) {
+      setModalNotice(error?.message || 'No se pudo eliminar el documento privado.');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const persistOwnerSignature = async () => {
     if (!ownerSignature) return setModalNotice('Firma dentro del recuadro antes de guardar.');
