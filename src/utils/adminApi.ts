@@ -244,6 +244,7 @@ function normalizeBusinessSnapshot(snapshot?: Partial<BusinessSnapshot> | null):
     notifications: Array.isArray(snapshot?.notifications) ? snapshot.notifications : [],
     auditLog: Array.isArray(snapshot?.auditLog) ? snapshot.auditLog : [],
     galleries: Array.isArray(snapshot?.galleries) ? snapshot.galleries : [],
+    clientDocuments: Array.isArray(snapshot?.clientDocuments) ? snapshot.clientDocuments : [],
     internalEvents: Array.isArray(snapshot?.internalEvents) ? snapshot.internalEvents.map((item) => ({ ...item, userIds: Array.isArray(item.userIds) ? item.userIds : [] })) : [],
     contracts: Array.isArray(snapshot?.contracts) ? snapshot.contracts : [],
     ownerSignatureConfigured: Boolean(snapshot?.ownerSignatureConfigured),
