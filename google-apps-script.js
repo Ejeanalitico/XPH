@@ -138,6 +138,7 @@ function initSpreadsheetSheets(ss) {
       'Historial_WhatsApp': ['id', 'clientId', 'direction', 'phone', 'contactName', 'type', 'message', 'status', 'occurredAt', 'phoneNumberId', 'businessAccountId', 'userId', 'rawJson'],
       'Notificaciones_CRM': ['id', 'type', 'title', 'message', 'relatedId', 'userId', 'status', 'dueAt', 'dedupeKey', 'createdAt', 'updatedAt'],
       'Galerias_Clientes': ['id', 'clientId', 'eventId', 'title', 'slug', 'accessToken', 'rootFolderId', 'photosFolderId', 'folderUrl', 'galleryUrl', 'status', 'createdAt', 'updatedAt'],
+      'Documentos_Clientes': ['id', 'clientId', 'category', 'title', 'fileId', 'fileName', 'mimeType', 'size', 'status', 'createdAt', 'updatedAt'],
       'Eventos_Internos': ['id', 'title', 'activityType', 'startDate', 'startTime', 'endDate', 'endTime', 'location', 'notes', 'visibility', 'userIdsJson', 'status', 'calendarEventId', 'syncStatus', 'createdAt', 'updatedAt'],
       'Contratos': ['id', 'clientId', 'clientName', 'folio', 'eventType', 'eventDate', 'status', 'originalFileName', 'originalFileId', 'clientSignedFileId', 'finalFileId', 'signatureFileId', 'tokenHash', 'tokenExpiresAt', 'tokenStatus', 'sentAt', 'viewedAt', 'acceptedAt', 'clientSignedAt', 'ownerAuthorizedAt', 'documentHash', 'signedDocumentHash', 'finalDocumentHash', 'signerIp', 'signerUserAgent', 'consentText', 'createdAt', 'updatedAt', 'documentType', 'templateVersion', 'documentJson', 'paymentPolicy', 'adminReviewUsed', 'clientOpenCount', 'maxClientOpens', 'clientSessionIdsJson', 'identificationFileId', 'identificationFileName', 'identificationUploadedAt'],
       'Firma_Administrador': ['id', 'fileId', 'updatedAt']
@@ -493,12 +494,13 @@ var BUSINESS_HEADERS = {
   whatsappHistory: ['id', 'clientId', 'direction', 'phone', 'contactName', 'type', 'message', 'status', 'occurredAt', 'phoneNumberId', 'businessAccountId', 'userId', 'rawJson'],
   notifications: ['id', 'type', 'title', 'message', 'relatedId', 'userId', 'status', 'dueAt', 'dedupeKey', 'createdAt', 'updatedAt'],
   galleries: ['id', 'clientId', 'eventId', 'title', 'slug', 'accessToken', 'rootFolderId', 'photosFolderId', 'folderUrl', 'galleryUrl', 'status', 'createdAt', 'updatedAt'],
+  clientDocuments: ['id', 'clientId', 'category', 'title', 'fileId', 'fileName', 'mimeType', 'size', 'status', 'createdAt', 'updatedAt'],
   internalEvents: ['id', 'title', 'activityType', 'startDate', 'startTime', 'endDate', 'endTime', 'location', 'notes', 'visibility', 'userIdsJson', 'status', 'calendarEventId', 'syncStatus', 'createdAt', 'updatedAt'],
   contracts: ['id', 'clientId', 'clientName', 'folio', 'eventType', 'eventDate', 'status', 'originalFileName', 'originalFileId', 'clientSignedFileId', 'finalFileId', 'signatureFileId', 'tokenHash', 'tokenExpiresAt', 'tokenStatus', 'sentAt', 'viewedAt', 'acceptedAt', 'clientSignedAt', 'ownerAuthorizedAt', 'documentHash', 'signedDocumentHash', 'finalDocumentHash', 'signerIp', 'signerUserAgent', 'consentText', 'createdAt', 'updatedAt', 'documentType', 'templateVersion', 'documentJson', 'paymentPolicy', 'adminReviewUsed', 'clientOpenCount', 'maxClientOpens', 'clientSessionIdsJson', 'identificationFileId', 'identificationFileName', 'identificationUploadedAt'],
   ownerSignature: ['id', 'fileId', 'updatedAt']
 };
 
-var BUSINESS_SCHEMA_VERSION = '2026-09-03-whatsapp-cloud-v1';
+var BUSINESS_SCHEMA_VERSION = '2026-10-07-client-documents-v1';
 var BUSINESS_RECORD_CACHE_TTL_SECONDS = 21600;
 
 function businessSchemaPropertyKey(ss) {
@@ -533,7 +535,7 @@ function clearBusinessRecordCache(sheetName) {
 }
 
 function clearBusinessSnapshotCaches() {
-  ['CRM_Clientes','Seguimientos_CRM','Gastos','Pagos_Clientes','Movimientos_Financieros','Ajustes_Financieros','Paquetes_Cliente','Servicios_Contratados','Adicionales_Cliente','Usuarios_CRM','Funciones_Equipo','Invitaciones_Usuarios','Asignaciones_Equipo','Gmail_Config','Plantillas_Email','Historial_Correos','Historial_WhatsApp','Notificaciones_CRM','Galerias_Clientes','Eventos_Internos','Contratos','Firma_Administrador','Historial_Auditoria'].forEach(clearBusinessRecordCache);
+  ['CRM_Clientes','Seguimientos_CRM','Gastos','Pagos_Clientes','Movimientos_Financieros','Ajustes_Financieros','Paquetes_Cliente','Servicios_Contratados','Adicionales_Cliente','Usuarios_CRM','Funciones_Equipo','Invitaciones_Usuarios','Asignaciones_Equipo','Gmail_Config','Plantillas_Email','Historial_Correos','Historial_WhatsApp','Notificaciones_CRM','Galerias_Clientes','Documentos_Clientes','Eventos_Internos','Contratos','Firma_Administrador','Historial_Auditoria'].forEach(clearBusinessRecordCache);
 }
 
 function ensureBusinessSchema(ss) {
@@ -560,6 +562,7 @@ function ensureBusinessSchema(ss) {
     'Historial_WhatsApp': BUSINESS_HEADERS.whatsappHistory,
     'Notificaciones_CRM': BUSINESS_HEADERS.notifications,
     'Galerias_Clientes': BUSINESS_HEADERS.galleries,
+    'Documentos_Clientes': BUSINESS_HEADERS.clientDocuments,
     'Eventos_Internos': BUSINESS_HEADERS.internalEvents,
     'Contratos': BUSINESS_HEADERS.contracts,
     'Firma_Administrador': BUSINESS_HEADERS.ownerSignature
@@ -2088,6 +2091,7 @@ function handleBusinessAction(ss, action, payload) {
         notifications: readBusinessRecords(ss, 'Notificaciones_CRM', BUSINESS_HEADERS.notifications).sort(function(a, b) { return String(b.createdAt || '').localeCompare(String(a.createdAt || '')); }).slice(0, 300),
         auditLog: readBusinessRecords(ss, 'Historial_Auditoria', ['Fecha_Hora', 'Accion', 'Detalles_Cambio', 'ID_Elemento', 'Usuario', 'Estado']).sort(function(a, b) { return String(b.Fecha_Hora || '').localeCompare(String(a.Fecha_Hora || '')); }).slice(0, 300),
         galleries: readBusinessRecords(ss, 'Galerias_Clientes', BUSINESS_HEADERS.galleries),
+        clientDocuments: readBusinessRecords(ss, 'Documentos_Clientes', BUSINESS_HEADERS.clientDocuments).filter(function(item) { return String(item.status || 'ACTIVO') !== 'ELIMINADO'; }),
         internalEvents: readBusinessRecords(ss, 'Eventos_Internos', BUSINESS_HEADERS.internalEvents).map(publicInternalEventRecord),
         contracts: readBusinessRecords(ss, 'Contratos', BUSINESS_HEADERS.contracts).map(publicContractRecord),
         ownerSignatureConfigured: Boolean(signatureRows.length && signatureRows[0].fileId)
@@ -2970,12 +2974,12 @@ function doPost(e) {
     var ss = getDatabaseSpreadsheet();
 
     var businessActions = [
-      'businessClients', 'businessSnapshot', 'whatsappMessageRecord', 'whatsappWebhookIngest', 'uploadInit', 'uploadFinalize', 'driveFolderImport', 'driveManagedMediaDelete', 'contractUploadInit', 'contractUploadFinalize', 'gmailLogoUploadInit', 'gmailLogoUploadFinalize', 'galleryUploadInit', 'galleryUploadFinalize', 'galleryCreate', 'galleryStatusUpdate', 'internalEventUpsert', 'crmUpsert', 'followUpCreate', 'prospectConvert', 'calendarSync', 'calendarSyncAll', 'expenseUpsert', 'paymentUpsert', 'adjustmentUpsert', 'clientPackageAssign', 'serviceUpsert', 'addonUpsert', 'teamFunctionUpsert', 'teamUserUpsert', 'teamInviteCreate', 'teamInviteResolve', 'teamGoogleConnect', 'teamAssignmentUpsert', 'gmailConfigUpsert', 'gmailTest', 'emailTemplateUpsert', 'emailSend', 'notificationRead', 'remindersRun', 'remindersInstall', 'contractUpload', 'contractGenerate', 'contractDocument', 'contractCreateLink',
+      'businessClients', 'businessSnapshot', 'whatsappMessageRecord', 'whatsappWebhookIngest', 'uploadInit', 'uploadFinalize', 'driveFolderImport', 'driveManagedMediaDelete', 'contractUploadInit', 'contractUploadFinalize', 'gmailLogoUploadInit', 'gmailLogoUploadFinalize', 'galleryUploadInit', 'galleryUploadFinalize', 'galleryCreate', 'galleryStatusUpdate', 'clientDocumentUploadInit', 'clientDocumentUploadFinalize', 'clientDocumentDelete', 'clientDocumentFileData', 'internalEventUpsert', 'crmUpsert', 'followUpCreate', 'prospectConvert', 'calendarSync', 'calendarSyncAll', 'expenseUpsert', 'paymentUpsert', 'adjustmentUpsert', 'clientPackageAssign', 'serviceUpsert', 'addonUpsert', 'teamFunctionUpsert', 'teamUserUpsert', 'teamInviteCreate', 'teamInviteResolve', 'teamGoogleConnect', 'teamAssignmentUpsert', 'gmailConfigUpsert', 'gmailTest', 'emailTemplateUpsert', 'emailSend', 'notificationRead', 'remindersRun', 'remindersInstall', 'contractUpload', 'contractGenerate', 'contractDocument', 'contractCreateLink',
       'contractInvalidate', 'contractResolve', 'contractCompleteSignature', 'ownerSignatureSave',
       'contractAdminPdfData', 'contractFinalizeData', 'contractFinalize'
     ];
     if (businessActions.indexOf(action) >= 0) {
-      if (action === 'businessClients' || action === 'businessSnapshot' || action === 'uploadInit' || action === 'contractUploadInit' || action === 'gmailLogoUploadInit' || action === 'galleryUploadInit' || action === 'contractAdminPdfData' || action === 'teamInviteResolve') {
+      if (action === 'businessClients' || action === 'businessSnapshot' || action === 'uploadInit' || action === 'contractUploadInit' || action === 'gmailLogoUploadInit' || action === 'galleryUploadInit' || action === 'clientDocumentUploadInit' || action === 'clientDocumentFileData' || action === 'contractAdminPdfData' || action === 'teamInviteResolve') {
         return jsonOutput(handleBusinessAction(ss, action, payload));
       }
       var businessLock = LockService.getScriptLock();
