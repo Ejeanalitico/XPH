@@ -6,7 +6,8 @@ export default function middleware(request) {
   const url = new URL(request.url);
   if (url.searchParams.has('xph-admin')) return next();
   if (url.searchParams.has('galeria') || url.searchParams.has('xph-review')) {
-    url.pathname = '/api/share-page';
+    url.pathname = '/api/category-page';
+    url.searchParams.set('share', '1');
     url.searchParams.delete('signingToken');
     return rewrite(url);
   }

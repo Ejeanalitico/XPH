@@ -1,3 +1,4 @@
+import sharePageHandler from './_share-page.js';
 import { readFile } from 'node:fs/promises';
 import { escapeHtml, loadPublicConfig, safeJson, slugify } from './_public-config.js';
 import { applyShareMetadata, galleryKind, shareImage } from './_share-metadata.js';
@@ -50,6 +51,7 @@ function notFound(res, slug) {
 }
 
 export default async function handler(req, res) {
+  if (req.query?.share === '1') return sharePageHandler(req, res);
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     res.setHeader('Allow', 'GET, HEAD');
     res.statusCode = 405;

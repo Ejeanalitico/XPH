@@ -4,9 +4,6 @@
   "framework": "vite",
   "installCommand": "npm install",
   "functions": {
-    "api/share-page.js": {
-      "includeFiles": "dist/index.html"
-    },
     "api/category-page.js": {
       "includeFiles": "dist/index.html"
     }
@@ -39,7 +36,7 @@
     }
   ],
   "rewrites": [
-    { "source": "/firmar/:signingToken", "destination": "/api/share-page?signingToken=:signingToken" },
+    { "source": "/firmar/:signingToken", "destination": "/api/category-page?share=1&signingToken=:signingToken" },
     { "source": "/xph-logo.png", "destination": "/api/xph-logo-png" },
     { "source": "/api/proxy", "destination": "/api/proxy-safe" },
     { "source": "/api/:path*", "destination": "/api/:path*" },

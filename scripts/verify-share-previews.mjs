@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { applyShareMetadata } from '../api/_share-metadata.js';
-import handler, { resolveShareMetadata } from '../api/share-page.js';
+import handler, { resolveShareMetadata } from '../api/_share-page.js';
 import middleware from '../middleware.js';
 
 process.env.XPH_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/test/exec';
@@ -58,8 +58,8 @@ assert.equal(body, '');
 assert.match(headers['Cache-Control'], /no-store/);
 assert.match(headers['X-Robots-Tag'], /noindex/);
 const rewritten = middleware(new Request('https://www.xaviph.com/?galeria=makeup&k=secret'));
-assert.equal(rewritten.headers.get('x-middleware-rewrite'), 'https://www.xaviph.com/api/share-page?galeria=makeup&k=secret');
+assert.equal(rewritten.headers.get('x-middleware-rewrite'), 'https://www.xaviph.com/api/category-page?galeria=makeup&k=secret&share=1');
 assert.equal(middleware(new Request('https://www.xaviph.com/')).headers.get('x-middleware-next'), '1');
 assert.equal(middleware(new Request('https://www.xaviph.com/?xph-admin=panel&galeria=makeup')).headers.get('x-middleware-next'), '1');
-assert.match(middleware(new Request('https://www.xaviph.com/?xph-review=invitation')).headers.get('x-middleware-rewrite'), /api\/share-page/);
+assert.match(middleware(new Request('https://www.xaviph.com/?xph-review=invitation')).headers.get('x-middleware-rewrite'), /api\/category-page/);
 console.log('Share previews verified: contracts without opens, authorized galleries, icons, escaping, fallback and HEAD.');
