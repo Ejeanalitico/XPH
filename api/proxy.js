@@ -2908,6 +2908,25 @@ export default async function handler(req, res) {
       return res.status(200).send(pdf);
     }
 
+    if (req.method === 'GET' && action === 'adminClientDocumentFile') {
+      const session = verifySession(req);
+      if (!requirePermission(res, session, 'SUPER_ADMIN')) return;
+      const documentId = String(req.query?.documentId || '').trim().slice(0, 120);
+      if (!documentId) return res.status(400).json({ status: 'error', message: 'Documento no identificado.' });
+      const result = await forwardTransientBusinessAction('clientDocumentFileData', { documentId }, 4);
+      const bytes = Buffer.from(cleanBase64(result.base64 || ''), 'base64');
+      if (!bytes.length) throw new Error('El documento privado está vacío.');
+      const mimeType = String(result.mimeType || 'application/octet-stream').toLowerCase();
+      if (!['image/png', 'image/jpeg', 'image/webp'].includes(mimeType)) throw new Error('El documento privado no tiene un formato permitido.');
+      const filename = String(result.fileName || 'documento-cliente').replace(/[\r\n"]/g, '_');
+      const disposition = String(req.query?.download || '') === '1' ? 'attachment' : 'inline';
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Content-Disposition', `${disposition}; filename="${filename}"`);
+      res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      return res.status(200).send(bytes);
+    }
+
     if (req.method === 'GET' && action === 'adminContractPdf') {
       const session = verifySession(req);
       if (!requirePermission(res, session, 'CONTRACTS')) return;
@@ -2915,30 +2934,35 @@ export default async function handler(req, res) {
       const requestedVersion = String(req.query?.version || 'latest');
       const version = ['original', 'signed', 'final', 'latest'].includes(requestedVersion) ? requestedVersion : 'latest';
       if (!contractId) return res.status(400).json({ status: 'error', message: 'Contrato no identificado.' });
-      let result = null;
-      let contractMeta = null;
-      let pdfBase64 = '';
+
       const documentResult = await forwardTransientBusinessAction('contractDocument', { contractId }, 5).catch(() => null);
-      contractMeta = documentResult?.contract || null;
+      const contractMeta = documentResult?.contract || null;
       const canRenderCanonical = Boolean(contractMeta?.documentSnapshot);
       const status = String(contractMeta?.status || '');
-      const unsignedVersion = version === 'original' || (version === 'latest' && !['Firmado por cliente', 'Finalizado'].includes(status));
-      const quoteVersion = String(contractMeta?.documentType || contractMeta?.documentSnapshot?.documentType || '').toUpperCase() === 'COTIZACION';
-      if (canRenderCanonical && (unsignedVersion || quoteVersion)) {
+      const isQuote = String(contractMeta?.documentType || contractMeta?.documentSnapshot?.documentType || '').toUpperCase() === 'COTIZACION';
+      let result = null;
+      let pdfBase64 = '';
+
+      if (canRenderCanonical && isQuote) {
+        // Las cotizaciones pueden seguir generándose como PDF en cualquier momento.
         pdfBase64 = await renderContractSnapshotPdf(contractMeta.documentSnapshot, contractMeta);
-        result = { folio: contractMeta.folio || contractMeta.id, documentType: contractMeta.documentType || contractMeta.documentSnapshot?.documentType || '' };
-      } else {
-        try {
-          result = await forwardTransientBusinessAction('contractAdminPdfData', { contractId, version }, 4);
-          pdfBase64 = String(result?.pdfBase64 || '');
-        } catch (error) {
-          const message = String(error?.message || error);
-          if (!/versión solicitada.*no está disponible|version solicitada.*no esta disponible|respuesta no válida|solicitud no autorizada|bad gateway|temporarily unavailable/i.test(message)) throw error;
-          if (!canRenderCanonical) throw error;
-          pdfBase64 = await renderContractSnapshotPdf(contractMeta.documentSnapshot, contractMeta);
-          result = { folio: contractMeta.folio || contractMeta.id, documentType: contractMeta.documentType || '' };
+        result = { folio: contractMeta.folio || contractMeta.id, documentType: 'COTIZACION' };
+      } else if (canRenderCanonical) {
+        // Un contrato HTML no tiene PDF hasta que ambas partes hayan firmado.
+        if (status !== 'Finalizado') {
+          return res.status(409).json({ status: 'error', message: 'Este contrato todavía se consulta como texto. El PDF se crea cuando ambas partes hayan firmado.' });
         }
+        if (!['latest', 'final'].includes(version)) {
+          return res.status(409).json({ status: 'error', message: 'Los contratos nuevos sólo conservan el PDF final firmado por ambas partes.' });
+        }
+        result = await forwardTransientBusinessAction('contractAdminPdfData', { contractId, version: 'final' }, 4);
+        pdfBase64 = String(result?.pdfBase64 || '');
+      } else {
+        // Compatibilidad con contratos históricos que fueron cargados originalmente como PDF.
+        result = await forwardTransientBusinessAction('contractAdminPdfData', { contractId, version }, 4);
+        pdfBase64 = String(result?.pdfBase64 || '');
       }
+
       const pdf = Buffer.from(cleanBase64(pdfBase64), 'base64');
       if (pdf.subarray(0, 5).toString('ascii') !== '%PDF-') throw new Error('El documento privado no contiene un PDF válido.');
       const kind = String(result?.documentType || contractMeta?.documentType || '').toUpperCase() === 'COTIZACION' ? 'cotizacion' : 'contrato';
