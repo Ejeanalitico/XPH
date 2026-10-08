@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { applyShareMetadata, shareImage } from '../api/_share-metadata.js';
 
 const SITE_URL = 'https://www.xaviph.com';
 const OUTPUT_DIR = resolve('dist');
@@ -53,6 +54,10 @@ const template = await readFile(resolve(OUTPUT_DIR, 'index.html'), 'utf8');
 for (const [route, metadata] of Object.entries(routes)) {
   const canonicalUrl = `${SITE_URL}/${route}`;
   let html = template;
+  html = applyShareMetadata(html, {
+    title: metadata.title, description: metadata.description,
+    url: canonicalUrl, image: shareImage('fotos'), alt: metadata.service,
+  });
   html = replaceMeta(html, /<title>[^<]*<\/title>/, `<title>${escapeHtml(metadata.title)}</title>`);
   html = replaceMeta(html, /<meta name="description" content="[^"]*"\s*\/?>/, `<meta name="description" content="${escapeHtml(metadata.description)}" />`);
   html = replaceMeta(html, /<meta property="og:title" content="[^"]*"\s*\/?>/, `<meta property="og:title" content="${escapeHtml(metadata.title)}" />`);

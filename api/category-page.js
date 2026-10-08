@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { escapeHtml, loadPublicConfig, safeJson, slugify } from './_public-config.js';
+import { applyShareMetadata, galleryKind, shareImage } from './_share-metadata.js';
 
 const SITE_URL = 'https://www.xaviph.com';
 const INDEX_ROBOTS = 'index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1';
@@ -80,8 +81,7 @@ export default async function handler(req, res) {
     const indexed = seo.indexed !== false;
     const robots = indexed ? INDEX_ROBOTS : NOINDEX_ROBOTS;
     const canonicalUrl = `${SITE_URL}/${slug}`;
-    const heroSetting = config.heroCoverSettings?.[categoryId] || {};
-    const imageUrl = String(heroSetting.url || category.imageUrl || `${SITE_URL}/xph-logo.png`).trim();
+    const imageUrl = shareImage(galleryKind(categoryName));
     const packages = Array.isArray(config.packages?.[categoryId]) ? config.packages[categoryId] : [];
 
     let html = await loadShell(req);
@@ -97,6 +97,7 @@ export default async function handler(req, res) {
     html = replaceTag(html, /<meta\s+name=["']twitter:description["'][^>]*>/i, `<meta name="twitter:description" content="${escapeHtml(description)}" />`);
     html = replaceTag(html, /<meta\s+name=["']twitter:image["'][^>]*>/i, `<meta name="twitter:image" content="${escapeHtml(imageUrl)}" />`);
     html = replaceTag(html, /<link\s+rel=["']canonical["'][^>]*>/i, `<link rel="canonical" href="${canonicalUrl}" />`);
+    html = applyShareMetadata(html, { title, description, url: canonicalUrl, image: imageUrl, alt: categoryName });
 
     const structuredData = {
       '@context': 'https://schema.org',
