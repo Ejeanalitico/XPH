@@ -3091,7 +3091,12 @@ export default async function handler(req, res) {
 
     if (req.method === 'GET' && (!action || action === 'loadConfig')) {
       const payload = await fetchConfigFromScript();
-      return res.status(200).json(sanitizePublicConfig(payload));
+      const publicPayload = sanitizePublicConfig(payload);
+      // Only this sanitized, session-independent public response is cacheable.
+      // Keep browser revalidation and limit CDN staleness to 60 seconds.
+      res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+      res.setHeader('Vercel-CDN-Cache-Control', 'max-age=30, stale-while-revalidate=30');
+      return res.status(200).json(publicPayload);
     }
 
     return res.status(403).json({ status: 'error', message: 'Acción no permitida.' });

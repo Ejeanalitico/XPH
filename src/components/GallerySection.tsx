@@ -162,6 +162,8 @@ export const GallerySection: React.FC<GallerySectionProps> = ({
                 >
                   <SafeImage
                     src={img.url}
+                    previewWidth={800}
+                    loading={index < INITIAL_VISIBLE_PHOTOS ? 'eager' : 'lazy'}
                     alt={`${img.title || `Fotografía de ${CATEGORY_LABELS[img.category] || 'evento'}`} por XPH${img.location ? ` en ${img.location}` : ''}`}
                     preventDownload
                     className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500"

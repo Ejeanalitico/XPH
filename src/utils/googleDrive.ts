@@ -15,14 +15,15 @@ export function extractGoogleDriveFileId(urlOrId: string): string {
 }
 
 /** URLs alternativas para una imagen de Drive. */
-export function getGoogleDriveImageCandidates(urlOrId: string): string[] {
+export function getGoogleDriveImageCandidates(urlOrId: string, width = 1600): string[] {
   const trimmed = String(urlOrId || '').trim();
   if (!trimmed) return [];
   const fileId = extractGoogleDriveFileId(trimmed);
   if (!fileId) return [trimmed];
   const encoded = encodeURIComponent(fileId);
+  const previewWidth = Math.max(320, Math.min(1600, Math.round(width)));
   return Array.from(new Set([
-    `https://drive.google.com/thumbnail?id=${encoded}&sz=w1600`,
+    `https://drive.google.com/thumbnail?id=${encoded}&sz=w${previewWidth}`,
     `https://lh3.googleusercontent.com/d/${fileId}`,
     `https://drive.google.com/uc?export=view&id=${encoded}`,
     `https://drive.usercontent.google.com/download?id=${encoded}&export=download&confirm=t`,
@@ -37,10 +38,10 @@ export function getDirectGoogleDriveUrl(urlOrId: string): string {
 /** Carga únicamente la configuración pública sanitizada por el proxy de Vercel. */
 export async function loadSiteDataFromCloud(): Promise<Record<string, any> | null> {
   try {
-    const params = new URLSearchParams({ action: 'loadConfig', _t: Date.now().toString() });
+    const params = new URLSearchParams({ action: 'loadConfig' });
     const response = await fetch(`/api/proxy?${params.toString()}`, {
       method: 'GET',
-      cache: 'no-store',
+      credentials: 'omit',
       headers: { Accept: 'application/json' },
     });
     const data = await response.json().catch(() => ({}));

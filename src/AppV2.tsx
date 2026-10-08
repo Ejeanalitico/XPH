@@ -42,7 +42,6 @@ import { ServiceSeoSection } from './components/ServiceSeoSection';
 import { loadSiteDataFromCloud } from './utils/googleDrive';
 import {
   filterPublicGalleryImages,
-  preloadCriticalPublicMedia,
   readPublicMediaCache,
   writePublicMediaCache,
 } from './utils/publicMediaCache';
@@ -130,7 +129,7 @@ export default function AppV2() {
   useEffect(() => {
     let cancelled = false;
 
-    loadSiteDataFromCloud().then(async (cloudData) => {
+    loadSiteDataFromCloud().then((cloudData) => {
       if (cancelled) return;
       const data = cloudData || {};
 
@@ -149,9 +148,6 @@ export default function AppV2() {
       else setPromotionPopup(null);
 
       writePublicMediaCache(publicMedia);
-      await preloadCriticalPublicMedia(publicMedia, currentRoute);
-      if (cancelled) return;
-
       setGalleryImages(publicMedia.galleryImages);
       setHeroCovers(publicMedia.heroCovers);
       setHeroCoverSettings(publicMedia.heroCoverSettings);

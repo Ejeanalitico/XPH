@@ -8,6 +8,8 @@ interface SafeImageProps {
   className?: string;
   onClick?: () => void;
   preventDownload?: boolean;
+  previewWidth?: number;
+  loading?: 'lazy' | 'eager';
 }
 
 export function extractDriveFileId(url: string): string | null {
@@ -20,15 +22,17 @@ export const SafeImage: React.FC<SafeImageProps> = ({
   className = '',
   onClick,
   preventDownload = false,
+  previewWidth = 1600,
+  loading = 'lazy',
 }) => {
-  const candidates = useMemo(() => getGoogleDriveImageCandidates(src), [src]);
+  const candidates = useMemo(() => getGoogleDriveImageCandidates(src, previewWidth), [src, previewWidth]);
   const [candidateIndex, setCandidateIndex] = useState(0);
   const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
     setCandidateIndex(0);
     setHasError(false);
-  }, [src]);
+  }, [src, previewWidth]);
 
   const handleError = () => {
     if (candidateIndex + 1 < candidates.length) {
@@ -81,7 +85,8 @@ export const SafeImage: React.FC<SafeImageProps> = ({
       onDragStart={preventDownload ? (event) => event.preventDefault() : undefined}
       draggable={preventDownload ? false : undefined}
       className={`${preventDownload ? 'select-none' : ''} ${className}`}
-      loading="lazy"
+      loading={loading}
+      decoding="async"
       referrerPolicy="no-referrer"
       style={preventDownload ? ({ WebkitUserDrag: 'none', userSelect: 'none' } as React.CSSProperties) : undefined}
     />
