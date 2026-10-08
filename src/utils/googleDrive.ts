@@ -1,3 +1,5 @@
+import publicGalleryPreviews from '../data/publicGalleryPreviews.json';
+
 /** Extrae un ID únicamente de referencias válidas de Google Drive. */
 export function extractGoogleDriveFileId(urlOrId: string): string {
   const trimmed = String(urlOrId || '').trim();
@@ -22,7 +24,11 @@ export function getGoogleDriveImageCandidates(urlOrId: string, width = 1600): st
   if (!fileId) return [trimmed];
   const encoded = encodeURIComponent(fileId);
   const previewWidth = Math.max(320, Math.min(1600, Math.round(width)));
+  const hostedPreview = previewWidth <= 800
+    ? (publicGalleryPreviews as Record<string, string>)[fileId]
+    : undefined;
   return Array.from(new Set([
+    ...(hostedPreview ? [hostedPreview] : []),
     `https://drive.google.com/thumbnail?id=${encoded}&sz=w${previewWidth}`,
     `https://lh3.googleusercontent.com/d/${fileId}`,
     `https://drive.google.com/uc?export=view&id=${encoded}`,
