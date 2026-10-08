@@ -40,8 +40,6 @@
   ],
   "rewrites": [
     { "source": "/firmar/:signingToken", "destination": "/api/share-page?signingToken=:signingToken" },
-    { "source": "/", "has": [{ "type": "query", "key": "galeria" }], "destination": "/api/share-page" },
-    { "source": "/", "has": [{ "type": "query", "key": "xph-review" }], "destination": "/api/share-page" },
     { "source": "/xph-logo.png", "destination": "/api/xph-logo-png" },
     { "source": "/api/proxy", "destination": "/api/proxy-safe" },
     { "source": "/api/:path*", "destination": "/api/:path*" },

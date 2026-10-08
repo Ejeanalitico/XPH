@@ -37,6 +37,17 @@ export async function resolveShareMetadata(query) {
   else if (review) url += `?xph-review=${encodeURIComponent(review)}`;
   else if (slug) url += `?galeria=${encodeURIComponent(slug)}&k=${encodeURIComponent(key)}`;
 
+  // Older links can outlive their stored gallery. Their readable slug still
+  // identifies the subject without disclosing anything beyond the URL itself.
+  if (!token && !review && slug) {
+    const label = clean(slug.replace(/-[a-z0-9]{5}$/i, '').replace(/-/g, ' '));
+    if (label) {
+      title = `${label.charAt(0).toUpperCase()}${label.slice(1)} | XPH`;
+      kind = galleryKind(label);
+      if (kind === 'maquillaje') description = 'Galería de maquillaje y peinados de XPH. Abre la liga para ver las fotografías.';
+    }
+  }
+
   try {
     if (token && /^[\w-]{20,200}$/.test(token)) {
       // Read-only: never call contractView, invalidate a token, fetch a PDF,
