@@ -51,6 +51,9 @@ import {
   saveOwnerSignature,
   saveInternalCalendarEvent,
   uploadBusinessContract,
+  uploadClientPrivateDocument,
+  deleteClientPrivateDocument,
+  clientPrivateDocumentUrl,
   adminContractPdfUrl,
   markNotification,
   sendWhatsAppMessage,
@@ -81,7 +84,7 @@ const SalesExecutionCenter = React.lazy(() => import('./SalesExecutionCenter'));
 
 export type BusinessTab = 'overview' | 'execution' | 'prospects' | 'clients' | 'calendar' | 'payments' | 'expenses' | 'contracts' | 'email' | 'team' | 'account';
 
-const emptySnapshot: BusinessSnapshot = { clients: [], followUps: [], expenses: [], payments: [], transactions: [], adjustments: [], packageSnapshots: [], services: [], addons: [], users: [], teamFunctions: [], assignments: [], gmailConfig: null, emailTemplates: [], emailHistory: [], whatsappHistory: [], notifications: [], auditLog: [], galleries: [], internalEvents: [], contracts: [], ownerSignatureConfigured: false };
+const emptySnapshot: BusinessSnapshot = { clients: [], followUps: [], expenses: [], payments: [], transactions: [], adjustments: [], packageSnapshots: [], services: [], addons: [], users: [], teamFunctions: [], assignments: [], gmailConfig: null, emailTemplates: [], emailHistory: [], whatsappHistory: [], notifications: [], auditLog: [], galleries: [], clientDocuments: [], internalEvents: [], contracts: [], ownerSignatureConfigured: false };
 const today = () => new Date().toISOString().slice(0, 10);
 const now = () => new Date().toISOString();
 const dateValue = (value?: string) => String(value || '').slice(0, 10);
