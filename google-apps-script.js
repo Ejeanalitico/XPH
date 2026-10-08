@@ -1001,8 +1001,9 @@ function safeDriveFolderName(value) {
 }
 
 function getClientDocumentsRootFolder() {
-  var parent;
-  try { parent = DriveApp.getFolderById(FOLDER_ID); } catch (_) { parent = DriveApp.getRootFolder(); }
+  // La identificación se separa de las carpetas comerciales/galerías para evitar
+  // heredar permisos de enlace de un contenedor público o compartido.
+  var parent = DriveApp.getRootFolder();
   var folders = parent.getFoldersByName('Documentos_Clientes_Privados');
   return folders.hasNext() ? folders.next() : parent.createFolder('Documentos_Clientes_Privados');
 }
@@ -1065,7 +1066,9 @@ function finalizeClientDocumentUpload(ss, payload) {
   while (parents.hasNext()) if (parents.next().getId() === folder.getId()) { belongsToFolder = true; break; }
   if (!belongsToFolder) throw new Error('El archivo no pertenece a la carpeta privada de este cliente.');
 
-  // No se establece ANYONE_WITH_LINK. Los documentos de identificación permanecen privados en Drive.
+  // No se establece ANYONE_WITH_LINK. Se intenta además retirar cualquier
+  // permiso de enlace directo que pudiera haberse aplicado al archivo.
+  try { file.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.VIEW); } catch (_) {}
   var timestamp = businessNow();
   var record = {
     id: businessId('doc-cliente'),
