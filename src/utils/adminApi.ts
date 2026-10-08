@@ -1,5 +1,5 @@
 import { GalleryImage, PackageOption } from '../types';
-import { BusinessContract, BusinessExpense, BusinessPayment, BusinessSnapshot, ClientAddon, ClientGalleryRecord, ClientPackageSnapshot, ContractDocumentSnapshot, ContractedService, CrmClient, CrmFollowUp, CrmNotification, EmailHistory, EmailTemplate, FinancialAdjustment, FinancialTransaction, GmailConfig, InternalCalendarEvent, TeamAssignment, TeamFunction, TeamUser } from '../types/business';
+import { BusinessContract, BusinessExpense, BusinessPayment, BusinessSnapshot, ClientAddon, ClientDocument, ClientGalleryRecord, ClientPackageSnapshot, ContractDocumentSnapshot, ContractedService, CrmClient, CrmFollowUp, CrmNotification, EmailHistory, EmailTemplate, FinancialAdjustment, FinancialTransaction, GmailConfig, InternalCalendarEvent, TeamAssignment, TeamFunction, TeamUser } from '../types/business';
 import { CURRENT_CATALOG_VERSION, resolvePublishedAddons, resolvePublishedPackages } from './catalogMerge';
 import { getDirectGoogleDriveUrl } from './googleDrive';
 
@@ -428,7 +428,7 @@ export async function sendClientEmail(clientId: string, templateId: string, vari
   return data.emailHistory;
 }
 
-type PrivateDriveUploadKind = 'contract' | 'logo' | 'gallery' | 'media';
+type PrivateDriveUploadKind = 'contract' | 'logo' | 'gallery' | 'media' | 'client-document';
 
 async function uploadPrivateDriveFile(uploadUrl: string, file: File, kind: PrivateDriveUploadKind): Promise<string> {
   const chunkBytes = 1_048_576;
@@ -503,6 +503,42 @@ export async function uploadClientGalleryPhoto(galleryId: string, file: File): P
 export async function updateClientGalleryStatus(galleryId: string, status: ClientGalleryRecord['status']): Promise<ClientGalleryRecord> {
   const data = await adminBusinessRequest<{ gallery: ClientGalleryRecord }>('adminGalleryStatusUpdate', { galleryId, status });
   return data.gallery;
+}
+
+export async function uploadClientPrivateDocument(input: {
+  clientId: string;
+  file: File;
+  category?: string;
+  title?: string;
+}): Promise<ClientDocument> {
+  const allowed = ['image/png', 'image/jpeg', 'image/webp'];
+  if (!allowed.includes(input.file.type)) throw new Error('El documento debe estar en formato PNG, JPG o WebP.');
+  if (input.file.size <= 0 || input.file.size > 15_000_000) throw new Error('El documento debe pesar máximo 15 MB.');
+  const initialized = await adminBusinessRequest<{ uploadUrl: string }>('adminClientDocumentUploadInit', {
+    clientId: input.clientId,
+    filename: input.file.name,
+    mimeType: input.file.type,
+    size: input.file.size,
+  });
+  const fileId = await uploadPrivateDriveFile(initialized.uploadUrl, input.file, 'client-document');
+  const finalized = await adminBusinessRequest<{ document: ClientDocument }>('adminClientDocumentUploadFinalize', {
+    clientId: input.clientId,
+    fileId,
+    category: input.category || 'INE',
+    title: input.title || input.file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '),
+  });
+  return finalized.document;
+}
+
+export async function deleteClientPrivateDocument(documentId: string): Promise<ClientDocument> {
+  const data = await adminBusinessRequest<{ document: ClientDocument }>('adminClientDocumentDelete', { documentId });
+  return data.document;
+}
+
+export function clientPrivateDocumentUrl(documentId: string, download = false): string {
+  const params = new URLSearchParams({ action: 'adminClientDocumentFile', documentId });
+  if (download) params.set('download', '1');
+  return `/api/proxy?${params.toString()}`;
 }
 
 export async function saveInternalCalendarEvent(internalEvent: Partial<InternalCalendarEvent>): Promise<InternalCalendarEvent> {
