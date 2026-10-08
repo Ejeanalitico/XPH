@@ -381,6 +381,9 @@ function publicGalleryOnly(items, promotionPopup = null) {
     .filter((item) => {
       if (!item || !item.url) return false;
       if (promotionImageUrls.has(String(item.url))) return false;
+      if (item.excludedFromPublicGallery === true) return false;
+      if (/^promo(?:cion|ción)?(?:\s|[-_]|$)/i.test(String(item.title || ''))) return false;
+      if (/^promoci[oó]n xph$/i.test(String(item.location || '').trim())) return false;
       if (item.visibility === 'private' || item.visibility === 'cover') return false;
       if (item.galleryId || item.gallerySlug || item.galleryToken) return false;
       if (item.mediaType === 'gallery-meta' || item.mediaType === 'cover-meta' || item.mediaType === 'video') return false;
@@ -441,7 +444,7 @@ function compactGalleryImagesForConfig(items) {
       return;
     }
     if (looksLikeDriveFileId(item.id)) {
-      compactPublic.push(pick(item, ['id', 'title', 'category', 'location', 'visibility', 'mediaType']));
+      compactPublic.push(pick(item, ['id', 'title', 'category', 'location', 'visibility', 'mediaType', 'excludedFromPublicGallery']));
       return;
     }
     compactPublic.push(item);

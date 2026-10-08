@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { CatalogCategory, GalleryImage, GalleryCategory, RoutePath } from '../types';
 import { Maximize2, X, ChevronLeft, ChevronRight, Camera } from 'lucide-react';
 import { SafeImage } from './SafeImage';
+import { filterPublicGalleryImages } from '../utils/publicMediaCache';
 
 interface GallerySectionProps {
   currentRoute: RoutePath;
@@ -55,7 +56,7 @@ export const GallerySection: React.FC<GallerySectionProps> = ({
     }
   };
 
-  const filteredImages = images.filter((img) => {
+  const filteredImages = filterPublicGalleryImages(images).filter((img) => {
     if (activeCategory === 'all') return true;
     return img.category === activeCategory;
   });

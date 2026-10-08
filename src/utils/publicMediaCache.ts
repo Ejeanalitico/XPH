@@ -1,7 +1,7 @@
 import { GalleryImage, HeroCoverSetting, RoutePath } from '../types';
 
-const PUBLIC_MEDIA_CACHE_KEY = 'xph-public-media:v2';
-const CACHE_VERSION = 2;
+const PUBLIC_MEDIA_CACHE_KEY = 'xph-public-media:v3';
+const CACHE_VERSION = 3;
 
 export interface PublicMediaSnapshot {
   version: number;
@@ -18,7 +18,11 @@ export const filterPublicGalleryImages = (images: unknown): GalleryImage[] => {
       image?.id && image?.url && image?.category &&
       image.visibility !== 'private' && image.visibility !== 'cover' &&
       image.mediaType !== 'gallery-meta' && image.mediaType !== 'cover-meta' &&
-      image.mediaType !== 'video' && image.category !== 'private'
+      image.mediaType !== 'video' && image.category !== 'private' &&
+      !image.galleryId && !image.gallerySlug && !image.galleryToken &&
+      image.excludedFromPublicGallery !== true &&
+      !/^promo(?:cion|ción)?(?:\s|[-_]|$)/i.test(String(image.title || '')) &&
+      !/^promoci[oó]n xph$/i.test(String(image.location || '').trim())
     )
   );
 };
@@ -38,7 +42,7 @@ export const readPublicMediaCache = (): PublicMediaSnapshot | null => {
       return null;
     }
 
-    return cached as PublicMediaSnapshot;
+    return { ...cached, galleryImages: filterPublicGalleryImages(cached.galleryImages) } as PublicMediaSnapshot;
   } catch {
     return null;
   }

@@ -35,6 +35,7 @@ export interface GalleryImage {
   lens?: string;
   likes?: number;
   visibility?: GalleryVisibility;
+  excludedFromPublicGallery?: boolean;
   mediaType?: GalleryMediaType;
   galleryId?: string;
   gallerySlug?: string;
