@@ -2901,12 +2901,12 @@ function handleBusinessAction(ss, action, payload) {
 
   if (action === 'contractCompleteSignature') {
     var signedContract = resolveSigningContract(ss, payload.token, '', false);
+    if (!signedContract.documentJson) throw new Error('Este flujo de firma requiere un contrato generado en texto.');
     var folder = getContractsFolder();
-    var signedName = 'Firmado-cliente-' + (signedContract.folio || signedContract.id) + '.pdf';
-    var signedFile = folder.createFile(base64Blob(payload.signedPdfBase64, 'application/pdf', signedName));
     var signatureFile = folder.createFile(base64Blob(payload.signatureDataUrl, 'image/png', 'Firma-cliente-' + signedContract.id + '.png'));
     var audit = payload.audit || {};
-    signedContract.clientSignedFileId = signedFile.getId();
+    // No se genera PDF en la firma del cliente. Solo se conserva la firma y la evidencia técnica.
+    signedContract.clientSignedFileId = '';
     signedContract.signatureFileId = signatureFile.getId();
     signedContract.tokenStatus = 'CONSUMIDO';
     signedContract.status = 'Firmado por cliente';
@@ -2919,7 +2919,7 @@ function handleBusinessAction(ss, action, payload) {
     signedContract.consentText = cleanBusinessText(audit.consentText, 600);
     signedContract.updatedAt = signedContract.clientSignedAt;
     upsertBusinessRecord(ss, 'Contratos', BUSINESS_HEADERS.contracts, signedContract);
-    logAudit(ss, 'CONTRATO_FIRMADO_CLIENTE', signedContract.folio + ' | hash ' + signedContract.signedDocumentHash, signedContract.id, signedContract.clientName);
+    logAudit(ss, 'CONTRATO_FIRMADO_CLIENTE_SIN_PDF', signedContract.folio + ' | evidencia ' + signedContract.signedDocumentHash, signedContract.id, signedContract.clientName);
     return { status: 'success', contract: publicContractRecord(signedContract) };
   }
 
@@ -2946,10 +2946,36 @@ function handleBusinessAction(ss, action, payload) {
 
   if (action === 'contractFinalizeData') {
     var finalSource = findBusinessRecord(ss, 'Contratos', BUSINESS_HEADERS.contracts, payload.contractId);
-    if (!finalSource || String(finalSource.status || '') !== 'Firmado por cliente' || !finalSource.clientSignedFileId) throw new Error('El cliente todavía no ha firmado este contrato.');
+    if (!finalSource || String(finalSource.status || '') !== 'Firmado por cliente') throw new Error('El cliente todavía no ha firmado este contrato.');
     var ownerRows = readBusinessRecords(ss, 'Firma_Administrador', BUSINESS_HEADERS.ownerSignature);
     if (!ownerRows.length || !ownerRows[0].fileId) throw new Error('Guarda primero la firma privada de Javier.');
-    return { status: 'success', pdfBase64: fileBase64(finalSource.clientSignedFileId), ownerSignatureDataUrl: 'data:image/png;base64,' + fileBase64(ownerRows[0].fileId) };
+
+    // Contratos HTML nuevos: hasta este punto se crea por primera vez el PDF.
+    if (finalSource.documentJson) {
+      if (!finalSource.signatureFileId) throw new Error('No se localizó la firma del cliente.');
+      return {
+        status: 'success',
+        contract: publicContractRecord(finalSource),
+        clientSignatureDataUrl: 'data:image/png;base64,' + fileBase64(finalSource.signatureFileId),
+        ownerSignatureDataUrl: 'data:image/png;base64,' + fileBase64(ownerRows[0].fileId),
+        audit: {
+          acceptedAt: finalSource.acceptedAt || '',
+          signedAt: finalSource.clientSignedAt || '',
+          ip: finalSource.signerIp || '',
+          userAgent: finalSource.signerUserAgent || '',
+          consentText: finalSource.consentText || ''
+        }
+      };
+    }
+
+    // Compatibilidad únicamente con contratos históricos que ya tenían PDF intermedio.
+    if (!finalSource.clientSignedFileId) throw new Error('El contrato histórico firmado no está disponible.');
+    return {
+      status: 'success',
+      pdfBase64: fileBase64(finalSource.clientSignedFileId),
+      ownerSignatureDataUrl: 'data:image/png;base64,' + fileBase64(ownerRows[0].fileId),
+      legacyPdfFlow: true
+    };
   }
 
   if (action === 'contractFinalize') {
