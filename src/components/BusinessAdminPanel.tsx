@@ -21,6 +21,7 @@ import {
   RefreshCw,
   Save,
   Send,
+  ShieldCheck,
   TrendingUp,
   Trash2,
   Upload,
@@ -1690,9 +1691,9 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
                       className="hidden"
                       disabled={busy}
                       onChange={(event) => {
-                        const files = event.currentTarget.files;
+                        const files = Array.from(event.currentTarget.files || []);
                         event.currentTarget.value = '';
-                        if (files?.length) void uploadPrivateClientDocuments(selectedClient, files);
+                        if (files.length) void uploadPrivateClientDocuments(selectedClient, files);
                       }}
                     />
                   </label>
