@@ -2975,10 +2975,19 @@ export default async function handler(req, res) {
     if (req.method === 'GET' && (action === 'contractView' || action === 'contractPdf')) {
       const token = String(req.query?.token || '').trim();
       if (!token) return res.status(400).json({ status: 'error', message: 'Liga incompleta.' });
-      if (action === 'contractPdf') {
-        return res.status(409).json({ status: 'error', message: 'El PDF se crea únicamente después de que ambas partes hayan firmado el contrato.' });
-      }
       const sessionId = String(req.query?.sessionId || '').trim().slice(0, 120);
+
+      if (action === 'contractPdf') {
+        const result = await forwardBusinessAction('contractResolve', { token, sessionId, includePdf: true, markViewed: false });
+        if (result.contract?.documentSnapshot) {
+          return res.status(409).json({ status: 'error', message: 'El PDF se crea únicamente después de que ambas partes hayan firmado el contrato.' });
+        }
+        const pdf = Buffer.from(cleanBase64(result.pdfBase64 || ''), 'base64');
+        if (!pdf.length || pdf.subarray(0, 5).toString('ascii') !== '%PDF-') throw new Error('El contrato histórico no contiene un PDF válido.');
+        setPrivatePdfHeaders(res, `contrato-${String(result.contract?.folio || 'xaviph').replace(/[^a-z0-9-]/gi, '_')}.pdf`);
+        return res.status(200).send(pdf);
+      }
+
       const result = await forwardBusinessAction('contractResolve', { token, sessionId, includePdf: false, markViewed: true });
       return res.status(200).json({ status: 'success', contract: result.contract });
     }
@@ -2997,27 +3006,47 @@ export default async function handler(req, res) {
       if (Buffer.byteLength(signatureDataUrl, 'utf8') > 900_000) return res.status(413).json({ status: 'error', message: 'La firma excede el tamaño permitido.' });
 
       const material = await forwardBusinessAction('contractResolve', { token, includePdf: false, markViewed: false });
-      if (!material.contract?.documentSnapshot) throw new Error('Este contrato no puede firmarse con el flujo de texto actual.');
       const audit = signingAudit(req);
-      const canonicalDocument = JSON.stringify(material.contract.documentSnapshot);
-      const originalDocumentHash = createHash('sha256').update(canonicalDocument, 'utf8').digest('hex');
-      const signedEvidence = JSON.stringify({
-        documentHash: originalDocumentHash,
-        signatureDataUrl,
-        acceptedAt: audit.acceptedAt || '',
-        ip: audit.ip || '',
-        userAgent: audit.userAgent || '',
-        consentText: audit.consentText || '',
-      });
-      const signedDocumentHash = createHash('sha256').update(signedEvidence, 'utf8').digest('hex');
+
+      if (material.contract?.documentSnapshot) {
+        // Flujo nuevo: sólo se registra evidencia y firma. Todavía no existe PDF.
+        const canonicalDocument = JSON.stringify(material.contract.documentSnapshot);
+        const originalDocumentHash = createHash('sha256').update(canonicalDocument, 'utf8').digest('hex');
+        const signedEvidence = JSON.stringify({
+          documentHash: originalDocumentHash,
+          signatureDataUrl,
+          acceptedAt: audit.acceptedAt || '',
+          ip: audit.ip || '',
+          userAgent: audit.userAgent || '',
+          consentText: audit.consentText || '',
+        });
+        const signedDocumentHash = createHash('sha256').update(signedEvidence, 'utf8').digest('hex');
+        await forwardBusinessAction('contractCompleteSignature', {
+          token,
+          signatureDataUrl,
+          originalDocumentHash,
+          signedDocumentHash,
+          audit,
+        });
+        return res.status(200).json({ status: 'success', message: 'Firma recibida. El PDF se creará cuando ambas partes hayan firmado.' });
+      }
+
+      // Compatibilidad: contratos históricos ya almacenados como PDF conservan su flujo anterior.
+      const legacyMaterial = await forwardBusinessAction('contractResolve', { token, includePdf: true, markViewed: false });
+      const originalPdfBase64 = legacyMaterial.pdfBase64 || '';
+      if (!originalPdfBase64) throw new Error('El documento histórico original no está disponible.');
+      const signedPdfBase64 = await appendClientSignature(originalPdfBase64, signatureDataUrl, legacyMaterial.contract, audit);
+      const originalDocumentHash = createHash('sha256').update(Buffer.from(cleanBase64(originalPdfBase64), 'base64')).digest('hex');
+      const signedDocumentHash = createHash('sha256').update(Buffer.from(signedPdfBase64, 'base64')).digest('hex');
       await forwardBusinessAction('contractCompleteSignature', {
         token,
+        signedPdfBase64,
         signatureDataUrl,
         originalDocumentHash,
         signedDocumentHash,
         audit,
       });
-      return res.status(200).json({ status: 'success', message: 'Firma recibida. El PDF se creará cuando ambas partes hayan firmado.' });
+      return res.status(200).json({ status: 'success', message: 'Firma recibida.' });
     }
 
     if (req.method === 'POST' && ['adminConfig', 'adminSaveConfig', 'adminUpload', 'adminDriveList'].includes(action)) {
