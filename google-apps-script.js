@@ -2904,13 +2904,36 @@ function handleBusinessAction(ss, action, payload) {
 
   if (action === 'contractCompleteSignature') {
     var signedContract = resolveSigningContract(ss, payload.token, '', false);
-    if (!signedContract.documentJson) throw new Error('Este flujo de firma requiere un contrato generado en texto.');
     var folder = getContractsFolder();
-    var signatureFile = folder.createFile(base64Blob(payload.signatureDataUrl, 'image/png', 'Firma-cliente-' + signedContract.id + '.png'));
     var audit = payload.audit || {};
-    // No se genera PDF en la firma del cliente. Solo se conserva la firma y la evidencia técnica.
-    signedContract.clientSignedFileId = '';
-    signedContract.signatureFileId = signatureFile.getId();
+
+    if (signedContract.documentJson) {
+      // Flujo actual: la firma del cliente se conserva como imagen/evidencia.
+      // No existe PDF hasta la autorización final de ambas partes.
+      var signatureFile = folder.createFile(base64Blob(payload.signatureDataUrl, 'image/png', 'Firma-cliente-' + signedContract.id + '.png'));
+      signedContract.clientSignedFileId = '';
+      signedContract.signatureFileId = signatureFile.getId();
+      signedContract.tokenStatus = 'CONSUMIDO';
+      signedContract.status = 'Firmado por cliente';
+      signedContract.acceptedAt = cleanBusinessText(audit.acceptedAt || businessNow(), 50);
+      signedContract.clientSignedAt = businessNow();
+      signedContract.documentHash = cleanBusinessText(payload.originalDocumentHash, 180);
+      signedContract.signedDocumentHash = cleanBusinessText(payload.signedDocumentHash, 180);
+      signedContract.signerIp = cleanBusinessText(audit.ip, 150);
+      signedContract.signerUserAgent = cleanBusinessText(audit.userAgent, 900);
+      signedContract.consentText = cleanBusinessText(audit.consentText, 600);
+      signedContract.updatedAt = signedContract.clientSignedAt;
+      upsertBusinessRecord(ss, 'Contratos', BUSINESS_HEADERS.contracts, signedContract);
+      logAudit(ss, 'CONTRATO_FIRMADO_CLIENTE_SIN_PDF', signedContract.folio + ' | evidencia ' + signedContract.signedDocumentHash, signedContract.id, signedContract.clientName);
+      return { status: 'success', contract: publicContractRecord(signedContract) };
+    }
+
+    // Compatibilidad con contratos históricos que fueron cargados originalmente como PDF.
+    var signedName = 'Firmado-cliente-' + (signedContract.folio || signedContract.id) + '.pdf';
+    var signedFile = folder.createFile(base64Blob(payload.signedPdfBase64, 'application/pdf', signedName));
+    var legacySignatureFile = folder.createFile(base64Blob(payload.signatureDataUrl, 'image/png', 'Firma-cliente-' + signedContract.id + '.png'));
+    signedContract.clientSignedFileId = signedFile.getId();
+    signedContract.signatureFileId = legacySignatureFile.getId();
     signedContract.tokenStatus = 'CONSUMIDO';
     signedContract.status = 'Firmado por cliente';
     signedContract.acceptedAt = cleanBusinessText(audit.acceptedAt || businessNow(), 50);
@@ -2922,10 +2945,9 @@ function handleBusinessAction(ss, action, payload) {
     signedContract.consentText = cleanBusinessText(audit.consentText, 600);
     signedContract.updatedAt = signedContract.clientSignedAt;
     upsertBusinessRecord(ss, 'Contratos', BUSINESS_HEADERS.contracts, signedContract);
-    logAudit(ss, 'CONTRATO_FIRMADO_CLIENTE_SIN_PDF', signedContract.folio + ' | evidencia ' + signedContract.signedDocumentHash, signedContract.id, signedContract.clientName);
+    logAudit(ss, 'CONTRATO_HISTORICO_FIRMADO_CLIENTE', signedContract.folio + ' | hash ' + signedContract.signedDocumentHash, signedContract.id, signedContract.clientName);
     return { status: 'success', contract: publicContractRecord(signedContract) };
   }
-
   if (action === 'ownerSignatureSave') {
     var ownerFile = getContractsFolder().createFile(base64Blob(payload.signatureDataUrl, 'image/png', 'Firma-Javier-' + Date.now() + '.png'));
     var signatureRecord = { id: 'xavi-owner-signature', fileId: ownerFile.getId(), updatedAt: businessNow() };
