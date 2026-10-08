@@ -21,6 +21,7 @@ import {
   RefreshCw,
   Save,
   Send,
+  ShieldCheck,
   TrendingUp,
   Trash2,
   Upload,
@@ -51,6 +52,9 @@ import {
   saveOwnerSignature,
   saveInternalCalendarEvent,
   uploadBusinessContract,
+  uploadClientPrivateDocument,
+  deleteClientPrivateDocument,
+  clientPrivateDocumentUrl,
   adminContractPdfUrl,
   markNotification,
   sendWhatsAppMessage,
@@ -81,7 +85,7 @@ const SalesExecutionCenter = React.lazy(() => import('./SalesExecutionCenter'));
 
 export type BusinessTab = 'overview' | 'execution' | 'prospects' | 'clients' | 'calendar' | 'payments' | 'expenses' | 'contracts' | 'email' | 'team' | 'account';
 
-const emptySnapshot: BusinessSnapshot = { clients: [], followUps: [], expenses: [], payments: [], transactions: [], adjustments: [], packageSnapshots: [], services: [], addons: [], users: [], teamFunctions: [], assignments: [], gmailConfig: null, emailTemplates: [], emailHistory: [], whatsappHistory: [], notifications: [], auditLog: [], galleries: [], internalEvents: [], contracts: [], ownerSignatureConfigured: false };
+const emptySnapshot: BusinessSnapshot = { clients: [], followUps: [], expenses: [], payments: [], transactions: [], adjustments: [], packageSnapshots: [], services: [], addons: [], users: [], teamFunctions: [], assignments: [], gmailConfig: null, emailTemplates: [], emailHistory: [], whatsappHistory: [], notifications: [], auditLog: [], galleries: [], clientDocuments: [], internalEvents: [], contracts: [], ownerSignatureConfigured: false };
 const today = () => new Date().toISOString().slice(0, 10);
 const now = () => new Date().toISOString();
 const dateValue = (value?: string) => String(value || '').slice(0, 10);
@@ -1024,6 +1028,11 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
   };
 
   const selectedClient = snapshot.clients.find((client) => client.id === selectedClientId);
+  const selectedClientDocuments = selectedClient
+    ? (snapshot.clientDocuments || [])
+        .filter((document) => document.clientId === selectedClient.id && document.status !== 'ELIMINADO')
+        .sort((a, b) => String(b.createdAt || b.updatedAt || '').localeCompare(String(a.createdAt || a.updatedAt || '')))
+    : [];
   const followUpQueue = [...snapshot.clients]
     .filter((client) => client.recordType === 'Prospecto' && !['Contratado', 'Sin interés', 'No interesado', 'Archivado'].includes(client.status))
     .sort((a, b) => String(a.nextActionAt || '9999').localeCompare(String(b.nextActionAt || '9999')) || String(a.name || '').localeCompare(String(b.name || '')));
@@ -1359,6 +1368,10 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
   };
 
   const downloadContractPdf = async (contract: BusinessContract) => {
+    if (contract.documentSnapshot && contract.documentType !== 'COTIZACION' && contract.status !== 'Finalizado') {
+      setModalNotice('Este contrato se consulta como texto. El PDF se crea únicamente después de que ambas partes hayan firmado.');
+      return;
+    }
     setBusy(true);
     try {
       const response = await fetch(`${adminContractPdfUrl(contract.id, 'latest', contractPdfRevision(contract))}&download=1`, {
@@ -1468,6 +1481,56 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
   }
 };
 
+  const uploadPrivateClientDocuments = async (client: CrmClient, files: FileList | File[]) => {
+    if (session.role !== 'SUPER_ADMIN' || client.recordType !== 'Cliente') {
+      setModalNotice('Los documentos privados sólo se pueden cargar dentro de una ficha de cliente por el Super Admin.');
+      return;
+    }
+    const selectedFiles = Array.from(files || []);
+    if (!selectedFiles.length) return;
+    setBusy(true);
+    const savedDocuments = [];
+    try {
+      for (const file of selectedFiles) {
+        const saved = await uploadClientPrivateDocument({
+          clientId: client.id,
+          file,
+          category: 'INE',
+          title: file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '),
+        });
+        savedDocuments.push(saved);
+        setSnapshot((previous) => ({
+          ...previous,
+          clientDocuments: [saved, ...(previous.clientDocuments || []).filter((item) => item.id !== saved.id)],
+        }));
+      }
+      setModalNotice(`${savedDocuments.length} imagen(es) privada(s) guardada(s) en la ficha de ${client.name}. No se publican en galerías ni mediante enlaces públicos.`);
+    } catch (error: any) {
+      setModalNotice(error?.message || 'No se pudieron cargar todos los documentos privados.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removePrivateClientDocument = async (documentId: string) => {
+    if (session.role !== 'SUPER_ADMIN') return;
+    const confirmed = window.confirm('¿Eliminar esta imagen privada del cliente? También se enviará a la papelera de Drive.');
+    if (!confirmed) return;
+    setBusy(true);
+    try {
+      await deleteClientPrivateDocument(documentId);
+      setSnapshot((previous) => ({
+        ...previous,
+        clientDocuments: (previous.clientDocuments || []).filter((item) => item.id !== documentId),
+      }));
+      setModalNotice('Documento privado eliminado.');
+    } catch (error: any) {
+      setModalNotice(error?.message || 'No se pudo eliminar el documento privado.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const persistOwnerSignature = async () => {
     if (!ownerSignature) return setModalNotice('Firma dentro del recuadro antes de guardar.');
     setBusy(true);
@@ -1485,6 +1548,10 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
   const selectedClientPackageOptions = selectedClient ? documentPackageOptionsForClient(selectedClient) : [];
   const contractDataChecklist = getContractDataChecklist(selectedContractClient);
   const missingContractData = contractDataChecklist.filter((item) => item.required && !item.complete);
+  const contractPreviewPdfAvailable = Boolean(
+    contractPreview &&
+    (contractPreview.documentType === 'COTIZACION' || contractPreview.status === 'Finalizado' || !contractPreview.documentSnapshot)
+  );
 
   return (
     <section className="space-y-5">
@@ -1575,7 +1642,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
             <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111722] shadow-2xl shadow-black/20">
               <div className="flex flex-col gap-3 border-b border-white/10 bg-[#161C28] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-3"><button onClick={closeClientDetails} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-gray-200 hover:bg-white/5">← {returnLabel}</button><span className="inline-flex items-center gap-2 rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-3 py-2 text-xs text-emerald-200"><CheckCircle2 className="h-4 w-4" />{selectedClient.status}</span></div>
-                <div className="flex flex-wrap gap-2">{session.role === 'SUPER_ADMIN' && selectedClient.recordType === 'Cliente' && <button type="button" onClick={() => downloadClientCsv([selectedClient], snapshot)} className="inline-flex items-center gap-2 rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100"><Download className="h-4 w-4" />Descargar CSV</button>}{canEditSelected && selectedClient.recordType === 'Prospecto' && <button onClick={convertSelectedProspect} disabled={busy} className="rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100">Convertir en cliente</button>}{canManageFinance && selectedClient.recordType === 'Cliente' && <button onClick={() => prepareNextPayment(selectedClient)} className="rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100">Agregar pago al plan</button>}{canManageFinance && selectedClientContract && <a href={adminContractPdfUrl(selectedClientContract.id, 'latest', contractPdfRevision(selectedClientContract))} target="_blank" rel="noreferrer" className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm text-white">{contractViewLabel(selectedClientContract)}</a>}{canEditSelected && <button onClick={() => { setClientDraft(selectedClient); setShowClientForm(true); }} className="rounded-lg bg-[#D4AF37] px-4 py-2 text-sm font-bold text-black">Editar seguimiento</button>}{canEditSelected && selectedClient.recordType === 'Cliente' && <button onClick={() => syncCalendar(selectedClient)} disabled={Boolean(syncingClientId)} className="inline-flex items-center gap-2 rounded-lg border border-sky-300/30 bg-sky-400/10 px-4 py-2 text-sm text-sky-100 disabled:border-white/10 disabled:bg-transparent disabled:text-gray-600">{syncingClientId === selectedClient.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}{syncingClientId === selectedClient.id ? 'Rectificando…' : 'Actualizar Calendar'}</button>}</div>
+                <div className="flex flex-wrap gap-2">{session.role === 'SUPER_ADMIN' && selectedClient.recordType === 'Cliente' && <button type="button" onClick={() => downloadClientCsv([selectedClient], snapshot)} className="inline-flex items-center gap-2 rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100"><Download className="h-4 w-4" />Descargar CSV</button>}{canEditSelected && selectedClient.recordType === 'Prospecto' && <button onClick={convertSelectedProspect} disabled={busy} className="rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100">Convertir en cliente</button>}{canManageFinance && selectedClient.recordType === 'Cliente' && <button onClick={() => prepareNextPayment(selectedClient)} className="rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100">Agregar pago al plan</button>}{canManageFinance && selectedClientContract && (selectedClientContract.documentSnapshot && selectedClientContract.status !== 'Finalizado' ? <button type="button" onClick={() => previewContractDocument(selectedClientContract)} className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm text-white">Ver contrato en texto</button> : <a href={adminContractPdfUrl(selectedClientContract.id, 'latest', contractPdfRevision(selectedClientContract))} target="_blank" rel="noreferrer" className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm text-white">{contractViewLabel(selectedClientContract)}</a>)}{canEditSelected && <button onClick={() => { setClientDraft(selectedClient); setShowClientForm(true); }} className="rounded-lg bg-[#D4AF37] px-4 py-2 text-sm font-bold text-black">Editar seguimiento</button>}{canEditSelected && selectedClient.recordType === 'Cliente' && <button onClick={() => syncCalendar(selectedClient)} disabled={Boolean(syncingClientId)} className="inline-flex items-center gap-2 rounded-lg border border-sky-300/30 bg-sky-400/10 px-4 py-2 text-sm text-sky-100 disabled:border-white/10 disabled:bg-transparent disabled:text-gray-600">{syncingClientId === selectedClient.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}{syncingClientId === selectedClient.id ? 'Rectificando…' : 'Actualizar Calendar'}</button>}</div>
               </div>
               {canManageContracts && <section className="border-b border-white/10 p-5">
                 <div className="mb-4">
@@ -1592,7 +1659,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
                   <article className="rounded-xl border border-[#D4AF37]/25 bg-[#D4AF37]/5 p-4">
                     <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wider text-[#F5D76E]">Contrato</p>{selectedClientContract ? <p className="mt-1 text-sm text-white">{selectedClientContract.folio} · {selectedClientContract.status}</p> : <p className="mt-1 text-xs text-gray-400">Todavía no existe un contrato para este contacto.</p>}</div></div>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {!selectedClientContract ? <button type="button" onClick={() => openInlineContractEditor(selectedClient, undefined, 'CONTRATO')} disabled={busy} className="inline-flex items-center gap-2 rounded-lg bg-[#D4AF37] px-3 py-2 text-xs font-bold text-black disabled:opacity-40"><Plus className="h-4 w-4" />Crear contrato</button> : <><button type="button" onClick={() => setContractPreview(selectedClientContract)} className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-xs text-white"><Eye className="h-4 w-4" />Ver contrato</button><button type="button" onClick={() => downloadContractPdf(selectedClientContract)} disabled={busy} className="inline-flex items-center gap-2 rounded-lg border border-[#D4AF37]/35 px-3 py-2 text-xs font-semibold text-[#F5D76E] disabled:opacity-40"><Download className="h-4 w-4" />Descargar PDF</button><button type="button" onClick={() => openInlineContractEditor(selectedClient, selectedClientContract, 'CONTRATO')} disabled={busy} className="inline-flex items-center gap-2 rounded-lg border border-sky-300/30 bg-sky-400/10 px-3 py-2 text-xs font-semibold text-sky-100 disabled:opacity-40"><PenLine className="h-4 w-4" />Modificar contrato</button>{selectedClientContract.status !== 'Finalizado' && <button type="button" onClick={() => createLink(selectedClientContract)} disabled={busy} className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-xs text-gray-200 disabled:opacity-40"><Send className="h-4 w-4" />Liga de firma</button>}{selectedClientContract.status === 'Firmado por cliente' && <button type="button" onClick={() => finalize(selectedClientContract)} disabled={busy || !snapshot.ownerSignatureConfigured} className="inline-flex items-center gap-2 rounded-lg bg-emerald-400 px-3 py-2 text-xs font-bold text-black disabled:opacity-40"><CheckCircle2 className="h-4 w-4" />Autorizar y finalizar</button>}{selectedClientContract.status === 'Finalizado' && <button type="button" onClick={() => resendFinalContract(selectedClientContract)} disabled={busy} className="inline-flex items-center gap-2 rounded-lg border border-emerald-400/30 bg-emerald-400/5 px-3 py-2 text-xs font-semibold text-emerald-300 disabled:opacity-40"><Mail className="h-4 w-4" />Reenviar por correo</button>}</>}
+                      {!selectedClientContract ? <button type="button" onClick={() => openInlineContractEditor(selectedClient, undefined, 'CONTRATO')} disabled={busy} className="inline-flex items-center gap-2 rounded-lg bg-[#D4AF37] px-3 py-2 text-xs font-bold text-black disabled:opacity-40"><Plus className="h-4 w-4" />Crear contrato</button> : <><button type="button" onClick={() => setContractPreview(selectedClientContract)} className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-xs text-white"><Eye className="h-4 w-4" />Ver contrato</button>{(!selectedClientContract.documentSnapshot || selectedClientContract.status === 'Finalizado') ? <button type="button" onClick={() => downloadContractPdf(selectedClientContract)} disabled={busy} className="inline-flex items-center gap-2 rounded-lg border border-[#D4AF37]/35 px-3 py-2 text-xs font-semibold text-[#F5D76E] disabled:opacity-40"><Download className="h-4 w-4" />Descargar PDF</button> : <span className="inline-flex items-center rounded-lg border border-white/10 px-3 py-2 text-[11px] text-gray-400">PDF disponible al finalizar</span>}<button type="button" onClick={() => openInlineContractEditor(selectedClient, selectedClientContract, 'CONTRATO')} disabled={busy} className="inline-flex items-center gap-2 rounded-lg border border-sky-300/30 bg-sky-400/10 px-3 py-2 text-xs font-semibold text-sky-100 disabled:opacity-40"><PenLine className="h-4 w-4" />Modificar contrato</button>{selectedClientContract.status !== 'Finalizado' && <button type="button" onClick={() => createLink(selectedClientContract)} disabled={busy} className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-xs text-gray-200 disabled:opacity-40"><Send className="h-4 w-4" />Liga de firma</button>}{selectedClientContract.status === 'Firmado por cliente' && <button type="button" onClick={() => finalize(selectedClientContract)} disabled={busy || !snapshot.ownerSignatureConfigured} className="inline-flex items-center gap-2 rounded-lg bg-emerald-400 px-3 py-2 text-xs font-bold text-black disabled:opacity-40"><CheckCircle2 className="h-4 w-4" />Autorizar y finalizar</button>}{selectedClientContract.status === 'Finalizado' && <button type="button" onClick={() => resendFinalContract(selectedClientContract)} disabled={busy} className="inline-flex items-center gap-2 rounded-lg border border-emerald-400/30 bg-emerald-400/5 px-3 py-2 text-xs font-semibold text-emerald-300 disabled:opacity-40"><Mail className="h-4 w-4" />Reenviar por correo</button>}</>}
                     </div>
                   </article>
                 </div>
@@ -1608,6 +1675,44 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
                   {contractDraft.documentType === 'CONTRATO' && <div className="sm:col-span-2 lg:col-span-4 rounded-xl border border-[#D4AF37]/20 bg-[#D4AF37]/5 p-3"><p className="text-xs font-semibold text-white">Uso comercial / portafolio de fotografías y video</p><p className="mt-1 text-[11px] leading-5 text-gray-400">El contrato registrará expresamente esta elección. Por privacidad, un contrato nuevo inicia en “No autorizado”.</p><div className="mt-3 grid grid-cols-2 gap-2"><button type="button" onClick={() => setContractDraft((prev) => ({ ...prev, commercialMediaConsent: 'AUTHORIZED' }))} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${contractDraft.commercialMediaConsent === 'AUTHORIZED' ? 'border-emerald-400/50 bg-emerald-400/15 text-emerald-200' : 'border-white/10 text-gray-400'}`}>Sí autorizo</button><button type="button" onClick={() => setContractDraft((prev) => ({ ...prev, commercialMediaConsent: 'NOT_AUTHORIZED' }))} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${contractDraft.commercialMediaConsent === 'NOT_AUTHORIZED' ? 'border-rose-400/50 bg-rose-400/10 text-rose-200' : 'border-white/10 text-gray-400'}`}>No autorizo</button></div></div>}
                   <div className="flex flex-wrap gap-2 sm:col-span-2 lg:col-span-4"><button type="button" onClick={() => setShowInlineContractEditor(false)} className="rounded-lg border border-white/15 px-4 py-2.5 text-sm text-gray-200">Cancelar</button><button type="submit" disabled={busy} className="rounded-lg bg-[#D4AF37] px-5 py-2.5 text-sm font-bold text-black disabled:opacity-40">{busy ? 'Generando…' : contractDraft.documentType === 'COTIZACION' ? 'Guardar cotización' : 'Guardar contrato'}</button><button type="button" onClick={() => { setShowInlineContractEditor(false); setClientDraft(selectedClient); setShowClientForm(true); }} className="rounded-lg border border-sky-300/30 bg-sky-400/10 px-4 py-2.5 text-sm font-semibold text-sky-100">Editar datos del contacto</button></div>
                 </form>}
+              </section>}
+              {session.role === 'SUPER_ADMIN' && selectedClient.recordType === 'Cliente' && <section className="border-b border-white/10 p-5">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-[#D4AF37]" /><h3 className="font-semibold text-white">Documentos privados</h3></div>
+                    <p className="mt-1 max-w-2xl text-xs leading-5 text-gray-400">Carga aquí imágenes de INE u otros documentos del cliente. Se guardan en una carpeta privada de Drive, no aparecen en galerías y sólo el Super Admin puede abrirlos desde el panel.</p>
+                  </div>
+                  <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#D4AF37]/30 bg-[#D4AF37]/10 px-4 py-2.5 text-sm font-semibold text-[#F5D76E]">
+                    <Upload className="h-4 w-4" />Cargar imágenes
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/png,image/jpeg,image/webp"
+                      className="hidden"
+                      disabled={busy}
+                      onChange={(event) => {
+                        const files = Array.from(event.currentTarget.files || []);
+                        event.currentTarget.value = '';
+                        if (files.length) void uploadPrivateClientDocuments(selectedClient, files);
+                      }}
+                    />
+                  </label>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {selectedClientDocuments.map((document) => <article key={document.id} className="rounded-xl border border-white/10 bg-black/15 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0"><p className="truncate text-sm font-semibold text-white">{document.title || document.fileName}</p><p className="mt-1 text-[11px] text-gray-500">{document.category || 'Documento'} · {dateTimeDisplay(document.createdAt) || 'Sin fecha'}</p></div>
+                      <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-300" />
+                    </div>
+                    <p className="mt-3 truncate text-xs text-gray-400">{document.fileName}</p>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <a href={clientPrivateDocumentUrl(document.id)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 px-3 py-2 text-xs text-white"><Eye className="h-3.5 w-3.5" />Ver</a>
+                      <a href={clientPrivateDocumentUrl(document.id, true)} className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 px-3 py-2 text-xs text-white"><Download className="h-3.5 w-3.5" />Descargar</a>
+                      <button type="button" onClick={() => removePrivateClientDocument(document.id)} disabled={busy} className="inline-flex items-center gap-1.5 rounded-lg border border-red-400/25 px-3 py-2 text-xs text-red-300 disabled:opacity-40"><Trash2 className="h-3.5 w-3.5" />Eliminar</button>
+                    </div>
+                  </article>)}
+                  {!selectedClientDocuments.length && <div className="rounded-xl border border-dashed border-white/10 p-5 text-sm text-gray-500 sm:col-span-2 xl:col-span-3">Aún no hay imágenes privadas cargadas para este cliente.</div>}
+                </div>
               </section>}
               {showInlinePayment && <div className="border-b border-white/10 p-5"><div className="mb-3 flex items-center justify-between"><h3 className="font-semibold text-white">{paymentDraft.id ? `Editar pago de ${selectedClient.name}` : `Registrar siguiente pago de ${selectedClient.name}`}</h3><button onClick={() => { setPaymentDraft(blankPayment()); setPaymentReceipt(null); setShowInlinePayment(false); }} className="text-xs text-gray-400">Cerrar</button></div><PaymentForm draft={paymentDraft} receipt={paymentReceipt} clients={snapshot.clients} contracts={snapshot.contracts} onChange={setPaymentDraft} onReceipt={setPaymentReceipt} onSubmit={savePayment} onCancel={() => { setPaymentDraft(blankPayment()); setPaymentReceipt(null); setShowInlinePayment(false); }} busy={busy} /></div>}
               {canManageFinance && selectedClient.recordType === 'Cliente' && <section className="border-b border-white/10 p-5">
@@ -1739,7 +1844,7 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
           {latestLink && <div className="flex flex-col gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 sm:flex-row sm:items-center"><input readOnly value={latestLink} className="min-w-0 flex-1 rounded-xl border border-white/10 bg-[#0B0F17] px-3 py-2 text-xs" /><button onClick={() => navigator.clipboard.writeText(latestLink)} className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black"><ClipboardCopy className="h-4 w-4" />Copiar</button></div>}
 
           <div className="grid gap-4 lg:grid-cols-[1.35fr_.65fr]">
-            <div className="space-y-3">{snapshot.contracts.map((contract) => <article key={contract.id} className="rounded-2xl border border-white/10 bg-[#161C28] p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><div className="font-semibold">{contract.clientName}</div><div className="text-xs text-gray-400">{contract.folio} · {contract.eventType} · {contract.eventDate}</div><div className="mt-2 flex flex-wrap gap-2 text-xs"><span className="text-[#F5D76E]">{contract.status}</span>{contract.documentSnapshot && <span className="rounded-full bg-sky-400/10 px-2 py-0.5 text-sky-300">{contract.documentType === 'COTIZACION' ? 'Cotización HTML' : 'Contrato HTML'}</span>}{contract.documentSnapshot && <span className="text-gray-500">Cliente: {contract.clientOpenCount || 0}/{contract.maxClientOpens || 2} accesos</span>}</div>{contract.clientSignedAt && <div className="mt-1 text-[11px] text-emerald-300">Firma del cliente: {dateTimeDisplay(contract.clientSignedAt)}</div>}{contract.ownerAuthorizedAt && <div className="mt-1 text-[11px] text-emerald-300">Firma de Javier: {dateTimeDisplay(contract.ownerAuthorizedAt)}</div>}</div><div className="flex flex-wrap gap-2">{contract.documentSnapshot && !['Firmado por cliente', 'Finalizado'].includes(contract.status) ? <button onClick={() => previewContractDocument(contract)} disabled={busy} className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-xs"><Eye className="h-4 w-4" />Revisar documento</button> : <a href={adminContractPdfUrl(contract.id, 'latest', contractPdfRevision(contract))} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-xs"><Eye className="h-4 w-4" />{contractViewLabel(contract)}</a>}<button type="button" onClick={() => downloadContractPdf(contract)} disabled={busy} className="inline-flex items-center gap-2 rounded-xl border border-[#D4AF37]/35 bg-[#D4AF37]/5 px-3 py-2 text-xs font-semibold text-[#F5D76E] hover:bg-[#D4AF37]/10 disabled:opacity-40"><Download className="h-4 w-4" />Descargar PDF</button>{contract.status === 'Finalizado' && <button type="button" onClick={() => resendFinalContract(contract)} disabled={busy} className="inline-flex items-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-400/5 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-400/10 disabled:opacity-40"><Mail className="h-4 w-4" />Reenviar PDF por correo</button>}<button onClick={() => createLink(contract)} disabled={busy || contract.status === 'Finalizado' || contract.documentType === 'COTIZACION'} className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-xs disabled:opacity-40"><Send className="h-4 w-4" />Crear liga privada</button>{contract.status === 'Firmado por cliente' && <button onClick={() => finalize(contract)} disabled={busy || !snapshot.ownerSignatureConfigured} className="inline-flex items-center gap-2 rounded-xl bg-[#D4AF37] px-3 py-2 text-xs font-bold text-black disabled:opacity-40"><CheckCircle2 className="h-4 w-4" />Autorizar y finalizar</button>}{session.role === 'SUPER_ADMIN' && <button onClick={() => removeContract(contract)} disabled={busy} className="inline-flex items-center gap-2 rounded-xl border border-red-400/30 bg-red-500/5 px-3 py-2 text-xs font-semibold text-red-300 hover:bg-red-500/10 disabled:opacity-40"><Trash2 className="h-4 w-4" />Eliminar</button>}</div></div></article>)}{!snapshot.contracts.length && <div className="rounded-2xl border border-white/10 bg-[#161C28] p-10 text-center text-gray-500">Aún no hay contratos ni cotizaciones.</div>}</div>
+            <div className="space-y-3">{snapshot.contracts.map((contract) => <article key={contract.id} className="rounded-2xl border border-white/10 bg-[#161C28] p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><div className="font-semibold">{contract.clientName}</div><div className="text-xs text-gray-400">{contract.folio} · {contract.eventType} · {contract.eventDate}</div><div className="mt-2 flex flex-wrap gap-2 text-xs"><span className="text-[#F5D76E]">{contract.status}</span>{contract.documentSnapshot && <span className="rounded-full bg-sky-400/10 px-2 py-0.5 text-sky-300">{contract.documentType === 'COTIZACION' ? 'Cotización HTML' : 'Contrato HTML'}</span>}{contract.documentSnapshot && <span className="text-gray-500">Cliente: {contract.clientOpenCount || 0}/{contract.maxClientOpens || 2} accesos</span>}</div>{contract.clientSignedAt && <div className="mt-1 text-[11px] text-emerald-300">Firma del cliente: {dateTimeDisplay(contract.clientSignedAt)}</div>}{contract.ownerAuthorizedAt && <div className="mt-1 text-[11px] text-emerald-300">Firma de Javier: {dateTimeDisplay(contract.ownerAuthorizedAt)}</div>}</div><div className="flex flex-wrap gap-2">{contract.documentSnapshot && contract.status !== 'Finalizado' ? <button onClick={() => previewContractDocument(contract)} disabled={busy} className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-xs"><Eye className="h-4 w-4" />Revisar en texto</button> : <a href={adminContractPdfUrl(contract.id, 'latest', contractPdfRevision(contract))} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-xs"><Eye className="h-4 w-4" />{contractViewLabel(contract)}</a>}{(contract.documentType === 'COTIZACION' || contract.status === 'Finalizado' || !contract.documentSnapshot) && <button type="button" onClick={() => downloadContractPdf(contract)} disabled={busy} className="inline-flex items-center gap-2 rounded-xl border border-[#D4AF37]/35 bg-[#D4AF37]/5 px-3 py-2 text-xs font-semibold text-[#F5D76E] hover:bg-[#D4AF37]/10 disabled:opacity-40"><Download className="h-4 w-4" />Descargar PDF</button>}{contract.status === 'Finalizado' && <button type="button" onClick={() => resendFinalContract(contract)} disabled={busy} className="inline-flex items-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-400/5 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-400/10 disabled:opacity-40"><Mail className="h-4 w-4" />Reenviar PDF por correo</button>}<button onClick={() => createLink(contract)} disabled={busy || contract.status === 'Finalizado' || contract.documentType === 'COTIZACION'} className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-xs disabled:opacity-40"><Send className="h-4 w-4" />Crear liga privada</button>{contract.status === 'Firmado por cliente' && <button onClick={() => finalize(contract)} disabled={busy || !snapshot.ownerSignatureConfigured} className="inline-flex items-center gap-2 rounded-xl bg-[#D4AF37] px-3 py-2 text-xs font-bold text-black disabled:opacity-40"><CheckCircle2 className="h-4 w-4" />Autorizar y finalizar</button>}{session.role === 'SUPER_ADMIN' && <button onClick={() => removeContract(contract)} disabled={busy} className="inline-flex items-center gap-2 rounded-xl border border-red-400/30 bg-red-500/5 px-3 py-2 text-xs font-semibold text-red-300 hover:bg-red-500/10 disabled:opacity-40"><Trash2 className="h-4 w-4" />Eliminar</button>}</div></div></article>)}{!snapshot.contracts.length && <div className="rounded-2xl border border-white/10 bg-[#161C28] p-10 text-center text-gray-500">Aún no hay contratos ni cotizaciones.</div>}</div>
             <aside className="rounded-2xl border border-white/10 bg-[#161C28] p-5 space-y-4"><div><div className="flex items-center gap-2 font-semibold"><PenLine className="h-4 w-4 text-[#D4AF37]" />Firma de Javier</div><p className="mt-1 text-xs text-gray-400">Se guarda privada y nunca se aplica automáticamente.</p></div><SignaturePad onChange={setOwnerSignature} label="Firma de autorización" /><button onClick={persistOwnerSignature} disabled={busy || !ownerSignature} className="w-full rounded-xl bg-white px-4 py-3 text-sm font-bold text-black disabled:opacity-40">{snapshot.ownerSignatureConfigured ? 'Reemplazar firma guardada' : 'Guardar firma'}</button>{snapshot.ownerSignatureConfigured && <p className="text-xs text-emerald-300">Firma privada configurada.</p>}</aside>
           </div>
         </div>
@@ -1751,11 +1856,11 @@ export const BusinessAdminPanel: React.FC<Props> = ({ notify, session, refreshSi
       </div>
       {contractPreview?.documentSnapshot && <div className="fixed inset-0 z-[110] overflow-y-auto bg-[#05070b]/95 p-3 backdrop-blur-md sm:p-6" role="dialog" aria-modal="true" aria-label={`Vista previa ${contractPreview.folio}`}>
         <div className="mx-auto mb-4 flex max-w-[860px] items-center justify-between gap-3 rounded-2xl border border-[#D4AF37]/25 bg-[#111722] p-3.5 text-white shadow-2xl">
-          <div><p className="text-[10px] font-semibold uppercase tracking-[.18em] text-[#D4AF37]">Vista previa instantánea</p><p className="mt-0.5 font-semibold">{contractPreview.folio} · {contractPreview.documentType === 'COTIZACION' ? 'cotización' : 'contrato'}</p><p className="mt-1 text-[11px] text-gray-400">Mismo diseño XPH que verá el cliente. El PDF solo se genera cuando lo abres o descargas.</p></div>
-          <div className="flex gap-2"><a href={adminContractPdfUrl(contractPreview.id, 'latest', contractPdfRevision(contractPreview))} target="_blank" rel="noreferrer" className="hidden rounded-xl border border-[#D4AF37]/30 px-3 py-2 text-xs font-semibold text-[#F5D76E] sm:inline-flex">Abrir PDF</a><button type="button" onClick={() => setContractPreview(null)} className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-4 py-2 text-sm"><X className="h-4 w-4" />Cerrar</button></div>
+          <div><p className="text-[10px] font-semibold uppercase tracking-[.18em] text-[#D4AF37]">Vista previa instantánea</p><p className="mt-0.5 font-semibold">{contractPreview.folio} · {contractPreview.documentType === 'COTIZACION' ? 'cotización' : 'contrato'}</p><p className="mt-1 text-[11px] text-gray-400">{contractPreview.documentType === 'COTIZACION' ? 'La cotización se muestra como texto y puede exportarse a PDF.' : contractPreview.status === 'Finalizado' ? 'Contrato finalizado. El PDF contiene las firmas de ambas partes.' : 'Contrato en texto. Todavía no existe un PDF; se generará al finalizar con ambas firmas.'}</p></div>
+          <div className="flex gap-2">{contractPreviewPdfAvailable && <a href={adminContractPdfUrl(contractPreview.id, 'latest', contractPdfRevision(contractPreview))} target="_blank" rel="noreferrer" className="hidden rounded-xl border border-[#D4AF37]/30 px-3 py-2 text-xs font-semibold text-[#F5D76E] sm:inline-flex">Abrir PDF</a>}<button type="button" onClick={() => setContractPreview(null)} className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-4 py-2 text-sm"><X className="h-4 w-4" />Cerrar</button></div>
         </div>
         <div className="mx-auto max-w-[794px] overflow-hidden rounded-sm bg-[#fffefb] shadow-[0_25px_80px_rgba(0,0,0,.55)]"><ContractDocument snapshot={contractPreview.documentSnapshot} folio={contractPreview.folio} /></div>
-        <div className="mx-auto mt-4 flex max-w-[794px] justify-center sm:hidden"><a href={adminContractPdfUrl(contractPreview.id, 'latest', contractPdfRevision(contractPreview))} target="_blank" rel="noreferrer" className="rounded-xl border border-[#D4AF37]/30 bg-[#D4AF37]/5 px-4 py-3 text-sm font-semibold text-[#F5D76E]">Abrir PDF exacto</a></div>
+        {contractPreviewPdfAvailable && <div className="mx-auto mt-4 flex max-w-[794px] justify-center sm:hidden"><a href={adminContractPdfUrl(contractPreview.id, 'latest', contractPdfRevision(contractPreview))} target="_blank" rel="noreferrer" className="rounded-xl border border-[#D4AF37]/30 bg-[#D4AF37]/5 px-4 py-3 text-sm font-semibold text-[#F5D76E]">Abrir PDF</a></div>}
       </div>}
       {internalEventDraft && session.role === 'SUPER_ADMIN' && <div className="fixed inset-0 z-[100] grid place-items-center overflow-y-auto bg-black/75 p-4"><form onSubmit={persistInternalEvent} className="my-6 w-full max-w-2xl rounded-2xl border border-violet-400/25 bg-[#161C28] p-5 shadow-2xl"><h3 className="text-lg font-semibold text-violet-100">Evento interno</h3><div className="mt-4 grid gap-3 sm:grid-cols-2"><input value={internalEventDraft.title || ''} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, title: event.target.value })} placeholder="Título" className={`${inputClass} sm:col-span-2`} required /><select value={internalEventDraft.activityType || 'Junta'} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, activityType: event.target.value })} className={inputClass}>{['Junta','Capacitación','Mantenimiento','Compra de equipo','Bloqueo personal','Día no disponible','Otro'].map((item) => <option key={item}>{item}</option>)}</select><select value={internalEventDraft.visibility || 'SUPER_ADMIN'} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, visibility: event.target.value as InternalCalendarEvent['visibility'] })} className={inputClass}><option value="SUPER_ADMIN">Solo Super Admin</option><option value="SELECTED">Usuarios seleccionados</option></select><label className="text-xs text-gray-400">Fecha inicial<input type="date" value={dateValue(internalEventDraft.startDate)} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, startDate: event.target.value })} className={`${inputClass} mt-1`} required /></label><label className="text-xs text-gray-400">Hora inicial<input type="time" value={timeValue(internalEventDraft.startTime)} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, startTime: event.target.value })} className={`${inputClass} mt-1`} /></label><label className="text-xs text-gray-400">Fecha final<input type="date" value={dateValue(internalEventDraft.endDate)} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, endDate: event.target.value })} className={`${inputClass} mt-1`} /></label><label className="text-xs text-gray-400">Hora final<input type="time" value={timeValue(internalEventDraft.endTime)} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, endTime: event.target.value })} className={`${inputClass} mt-1`} /></label><input value={internalEventDraft.location || ''} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, location: event.target.value })} placeholder="Lugar" className={`${inputClass} sm:col-span-2`} /><textarea value={internalEventDraft.notes || ''} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, notes: event.target.value })} placeholder="Notas" className={`${inputClass} min-h-24 sm:col-span-2`} />{internalEventDraft.visibility === 'SELECTED' && <fieldset className="grid gap-2 rounded-xl border border-white/10 p-3 sm:col-span-2 sm:grid-cols-2"><legend className="px-2 text-xs text-gray-300">Usuarios con visibilidad</legend>{snapshot.users.filter((item) => item.status === 'ACTIVO').map((user) => <label key={user.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={(internalEventDraft.userIds || []).includes(user.id)} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, userIds: event.target.checked ? [...(internalEventDraft.userIds || []), user.id] : (internalEventDraft.userIds || []).filter((id) => id !== user.id) })} />{user.displayName || `${user.name} ${user.lastName}`}</label>)}</fieldset>}<select value={internalEventDraft.status || 'ACTIVO'} onChange={(event) => setInternalEventDraft({ ...internalEventDraft, status: event.target.value as InternalCalendarEvent['status'] })} className={inputClass}><option>ACTIVO</option><option>CANCELADO</option></select></div><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setInternalEventDraft(null)} className="rounded-xl border border-white/15 px-4 py-2.5 text-sm">Cancelar</button><button disabled={busy} className="rounded-xl bg-violet-200 px-4 py-2.5 text-sm font-bold text-violet-950">Guardar y sincronizar</button></div></form></div>}
     </section>

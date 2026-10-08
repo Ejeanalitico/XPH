@@ -5,13 +5,14 @@ import { BusinessContract } from '../types/business';
 import { SignaturePad } from './SignaturePad';
 import { ContractDocument } from './ContractDocument';
 
+const safeContractPdfUrl = (token: string) => publicContractPdfUrl(token).replace(/^\/api\/proxy(?=\?|$)/, '/api/proxy-safe');
+
 interface Props {
   token: string;
 }
 
 type PublicContract = Pick<BusinessContract, 'id' | 'clientName' | 'folio' | 'eventType' | 'eventDate' | 'status' | 'expiresAt' | 'documentType' | 'documentSnapshot' | 'identificationFileName' | 'identificationUploadedAt'>;
 
-const safeContractPdfUrl = (token: string) => publicContractPdfUrl(token).replace(/^\/api\/proxy(?=\?|$)/, '/api/proxy-safe');
 
 export const MobileContractSigningPage: React.FC<Props> = ({ token }) => {
   const [contract, setContract] = useState<PublicContract | null>(null);
@@ -55,7 +56,7 @@ export const MobileContractSigningPage: React.FC<Props> = ({ token }) => {
   if (loading) return <MobileShell><Loader2 className="h-8 w-8 animate-spin text-[#D4AF37]" /><p className="text-sm text-gray-400">Preparando tu contrato…</p></MobileShell>;
   if (error) return <MobileShell><AlertTriangle className="h-10 w-10 text-amber-400" /><h1 className="text-xl font-bold">Esta liga ya no puede utilizarse</h1><p className="max-w-sm text-center text-sm leading-6 text-gray-400">{error}</p><p className="max-w-sm text-center text-xs text-gray-500">Pide a Javier García una nueva liga de firma por WhatsApp.</p></MobileShell>;
   if (!contract) return null;
-  if (step === 'done') return <MobileShell><CheckCircle2 className="h-12 w-12 text-emerald-400" /><h1 className="text-2xl font-bold">Firma recibida</h1><p className="max-w-sm text-center text-sm leading-6 text-gray-300">Gracias, {contract.clientName}. Javier revisará y autorizará el documento para finalizarlo.</p><div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-200">Folio {contract.folio}</div></MobileShell>;
+  if (step === 'done') return <MobileShell><CheckCircle2 className="h-12 w-12 text-emerald-400" /><h1 className="text-2xl font-bold">Firma recibida</h1><p className="max-w-sm text-center text-sm leading-6 text-gray-300">Gracias, {contract.clientName}. {contract.documentSnapshot ? 'Tu firma quedó registrada. El PDF final se creará únicamente cuando Javier autorice y firme también el contrato.' : 'Tu contrato histórico fue firmado y quedará pendiente de la autorización final de Javier.'}</p><div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-200">Folio {contract.folio}</div></MobileShell>;
 
   return (
     <main className="min-h-screen bg-[#0B0F17] px-3 py-4 text-white sm:px-6 sm:py-8">
@@ -67,9 +68,9 @@ export const MobileContractSigningPage: React.FC<Props> = ({ token }) => {
 
         {step === 'read' && <>
           <section className="overflow-hidden rounded-2xl border border-white/10 bg-[#fffefb] shadow-2xl">
-            {contract.documentSnapshot ? <ContractDocument snapshot={contract.documentSnapshot} folio={contract.folio} /> : <div className="grid min-h-[420px] place-items-center bg-white text-gray-500"><Loader2 className="h-7 w-7 animate-spin" /></div>}
+            {contract.documentSnapshot ? <ContractDocument snapshot={contract.documentSnapshot} folio={contract.folio} /> : <div className="min-h-[70vh] bg-white"><object data={safeContractPdfUrl(token)} type="application/pdf" className="h-[78vh] w-full"><div className="p-6 text-center text-sm text-gray-700"><p>Este contrato histórico fue creado originalmente como PDF.</p><a href={safeContractPdfUrl(token)} target="_blank" rel="noreferrer" className="mt-4 inline-block font-semibold text-amber-700 underline">Abrir documento</a></div></object></div>}
           </section>
-          <a href={safeContractPdfUrl(token)} target="_blank" rel="noreferrer" className="block rounded-xl border border-[#D4AF37]/30 bg-[#D4AF37]/5 px-4 py-3 text-center text-sm font-semibold text-[#F5D76E]">Abrir o descargar PDF firmado</a>
+          <div className="rounded-xl border border-[#D4AF37]/20 bg-[#D4AF37]/5 px-4 py-3 text-center text-xs leading-5 text-[#EAD889]">{contract.documentSnapshot ? 'Este contrato se presenta como texto dentro de la página. El PDF final se genera sólo después de que ambas partes hayan firmado.' : 'Este es un contrato histórico que ya existía como PDF. Los contratos nuevos utilizan el flujo de texto y generan PDF únicamente al finalizar.'}</div>
           <section className="space-y-4 rounded-2xl border border-white/10 bg-[#161C28] p-4">
             <div className="flex gap-3 text-xs leading-5 text-gray-300"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[#D4AF37]" /><p>Lee el documento completo. Tu aceptación y firma se guardarán con fecha, hora y datos técnicos de esta sesión como evidencia.</p></div>
             <label className="flex items-start gap-3 rounded-xl border border-white/10 bg-black/20 p-3 text-sm"><input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} className="mt-1 h-4 w-4 accent-[#D4AF37]" /><span>He leído el contrato completo, comprendo su contenido y acepto sus términos.</span></label>

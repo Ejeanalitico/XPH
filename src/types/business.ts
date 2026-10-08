@@ -365,6 +365,20 @@ export interface ClientGalleryRecord {
   updatedAt: string;
 }
 
+export interface ClientDocument {
+  id: string;
+  clientId: string;
+  category: 'INE' | 'IDENTIFICACION' | 'OTRO' | string;
+  title: string;
+  fileId: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  status: 'ACTIVO' | 'ELIMINADO' | string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface InternalCalendarEvent {
   id: string;
   title: string;
@@ -490,6 +504,7 @@ export interface BusinessSnapshot {
   notifications: CrmNotification[];
   auditLog: CrmAuditEntry[];
   galleries: ClientGalleryRecord[];
+  clientDocuments: ClientDocument[];
   internalEvents: InternalCalendarEvent[];
   contracts: BusinessContract[];
   ownerSignatureConfigured: boolean;

@@ -2119,6 +2119,9 @@ export default async function handler(req, res) {
       'adminGalleryUploadInit',
       'adminGalleryUploadFinalize',
       'adminGalleryStatusUpdate',
+      'adminClientDocumentUploadInit',
+      'adminClientDocumentUploadFinalize',
+      'adminClientDocumentDelete',
       'adminInternalEventUpsert',
       'adminContractUpload',
       'adminContractUploadInit',
@@ -2136,7 +2139,7 @@ export default async function handler(req, res) {
     if (req.method === 'POST' && adminBusinessActions.includes(action)) {
       const session = verifySession(req);
       const uploadKind = String(req.headers?.['x-xph-upload-kind'] || '').trim().toLowerCase();
-      const uploadPermissionByKind = { contract: 'CONTRACTS', logo: 'GMAIL_ADMIN', gallery: 'GALLERIES', media: 'GALLERIES' };
+      const uploadPermissionByKind = { contract: 'CONTRACTS', logo: 'GMAIL_ADMIN', gallery: 'GALLERIES', media: 'GALLERIES', 'client-document': 'SUPER_ADMIN' };
       const permissionByAction = {
         adminBusinessClients: 'CRM_OR_CLIENT_READ', adminBusinessSnapshot: 'CRM_OR_CLIENT_READ',
         adminCrmUpsert: 'CRM_OR_CLIENT_WRITE', adminFollowUpCreate: 'CRM_WRITE', adminProspectConvert: 'CRM_WRITE',
@@ -2152,6 +2155,7 @@ export default async function handler(req, res) {
         adminWhatsAppStatus: 'CRM_OR_CLIENT_READ', adminWhatsAppSend: 'CRM_OR_CLIENT_WRITE',
         adminNotificationRead: 'CRM_OR_CLIENT_READ', adminRemindersRun: 'GMAIL_ADMIN', adminRemindersInstall: 'GMAIL_ADMIN',
         adminGalleryCreate: 'GALLERIES', adminGalleryUploadInit: 'GALLERIES', adminGalleryUploadFinalize: 'GALLERIES', adminGalleryStatusUpdate: 'GALLERIES',
+        adminClientDocumentUploadInit: 'SUPER_ADMIN', adminClientDocumentUploadFinalize: 'SUPER_ADMIN', adminClientDocumentDelete: 'SUPER_ADMIN',
         adminInternalEventUpsert: 'USERS_ADMIN',
       };
       if (!requirePermission(res, session, permissionByAction[action] || 'SUPER_ADMIN')) return;
@@ -2167,6 +2171,7 @@ export default async function handler(req, res) {
           logo: { maxBytes: 5_000_000, validMime: ['image/png', 'image/jpeg', 'image/webp'].includes(mimeType) },
           gallery: { maxBytes: 100_000_000, validMime: mimeType.startsWith('image/') },
           media: { maxBytes: 100_000_000, validMime: mimeType.startsWith('image/') },
+          'client-document': { maxBytes: 15_000_000, validMime: ['image/png', 'image/jpeg', 'image/webp'].includes(mimeType) },
         };
         const rule = uploadRules[uploadKind];
         if (!rule) return res.status(400).json({ status: 'error', message: 'El tipo de carga privada no es válido.' });
@@ -2229,6 +2234,7 @@ export default async function handler(req, res) {
           result.snapshot.notifications = (result.snapshot.notifications || []).filter((item) => String(item.userId) === String(session.userId));
           result.snapshot.auditLog = [];
           result.snapshot.galleries = hasPermission(session, 'GALLERIES') ? (result.snapshot.galleries || []).filter((item) => allowedClientIds.has(String(item.clientId))) : [];
+          result.snapshot.clientDocuments = [];
           result.snapshot.internalEvents = (result.snapshot.internalEvents || []).filter((item) => item.visibility === 'SELECTED' && Array.isArray(item.userIds) && item.userIds.includes(String(session.userId)));
           result.snapshot.ownerSignatureConfigured = false;
         }
@@ -2244,6 +2250,36 @@ export default async function handler(req, res) {
         const visible = (result.clients || []).filter((item) => (item.recordType === 'Prospecto' && canReadProspects) || (item.recordType === 'Cliente' && assignedIds.has(String(item.id))));
         return res.status(200).json({ status: 'success', clients: visible.map((item) => item.recordType === 'Cliente' ? operationalClientRecord(item) : { ...item, totalAmount: 0, paidAmount: 0, estimatedCost: 0, allocatedAdCost: 0, internalNotes: '' }) });
       }
+      if (action === 'adminClientDocumentUploadInit') {
+        const clientId = String(submitted.clientId || '').trim().slice(0, 120);
+        const filename = String(submitted.filename || '').trim().slice(0, 180);
+        const mimeType = String(submitted.mimeType || '').trim().toLowerCase();
+        const size = Number(submitted.size || 0);
+        if (!clientId || !filename || !['image/png', 'image/jpeg', 'image/webp'].includes(mimeType) || size <= 0 || size > 15_000_000) {
+          return res.status(400).json({ status: 'error', message: 'El documento debe ser una imagen PNG, JPG o WebP de máximo 15 MB.' });
+        }
+        const result = await forwardBusinessAction('clientDocumentUploadInit', { clientId, filename, mimeType, size });
+        return res.status(200).json({ status: 'success', uploadUrl: result.uploadUrl });
+      }
+      if (action === 'adminClientDocumentUploadFinalize') {
+        const clientId = String(submitted.clientId || '').trim().slice(0, 120);
+        const fileId = String(submitted.fileId || '').trim().slice(0, 200);
+        if (!clientId || !fileId) return res.status(400).json({ status: 'error', message: 'Faltan datos del documento privado.' });
+        const result = await forwardBusinessAction('clientDocumentUploadFinalize', {
+          clientId,
+          fileId,
+          category: String(submitted.category || 'INE').slice(0, 80),
+          title: String(submitted.title || '').slice(0, 180),
+        });
+        return res.status(200).json({ status: 'success', document: result.document });
+      }
+      if (action === 'adminClientDocumentDelete') {
+        const documentId = String(submitted.documentId || '').trim().slice(0, 120);
+        if (!documentId) return res.status(400).json({ status: 'error', message: 'Documento no identificado.' });
+        const result = await forwardBusinessAction('clientDocumentDelete', { documentId });
+        return res.status(200).json({ status: 'success', document: result.document });
+      }
+
       if (action === 'adminUploadInit') {
         const filename = String(submitted.filename || '').trim().slice(0, 180);
         const mimeType = String(submitted.mimeType || '').trim().toLowerCase();
@@ -2815,7 +2851,23 @@ export default async function handler(req, res) {
         const contractId = String(submitted.contractId || '');
         const material = await forwardBusinessAction('contractFinalizeData', { contractId });
         const authorizedAt = new Date().toISOString();
-        const finalizedPdfBase64 = await applyOwnerSignature(material.pdfBase64, material.ownerSignatureDataUrl, authorizedAt);
+        let finalizedPdfBase64 = '';
+
+        if (material.contract?.documentSnapshot) {
+          // El PDF nace aquí, una sola vez, después de que el cliente ya firmó y Javier autoriza.
+          const basePdf = await renderContractSnapshotPdf(material.contract.documentSnapshot, material.contract);
+          const withClientSignature = await appendClientSignature(
+            basePdf,
+            material.clientSignatureDataUrl,
+            material.contract,
+            material.audit || {},
+          );
+          finalizedPdfBase64 = await applyOwnerSignature(withClientSignature, material.ownerSignatureDataUrl, authorizedAt);
+        } else {
+          // Compatibilidad con contratos históricos que ya tenían un PDF firmado por el cliente.
+          finalizedPdfBase64 = await applyOwnerSignature(material.pdfBase64, material.ownerSignatureDataUrl, authorizedAt);
+        }
+
         const finalDocumentHash = createHash('sha256').update(Buffer.from(finalizedPdfBase64, 'base64')).digest('hex');
         const result = await forwardBusinessAction('contractFinalize', { contractId, finalizedPdfBase64, finalDocumentHash, authorizedAt });
         let emailDelivery = result.emailDelivery || null;
@@ -2856,6 +2908,25 @@ export default async function handler(req, res) {
       return res.status(200).send(pdf);
     }
 
+    if (req.method === 'GET' && action === 'adminClientDocumentFile') {
+      const session = verifySession(req);
+      if (!requirePermission(res, session, 'SUPER_ADMIN')) return;
+      const documentId = String(req.query?.documentId || '').trim().slice(0, 120);
+      if (!documentId) return res.status(400).json({ status: 'error', message: 'Documento no identificado.' });
+      const result = await forwardTransientBusinessAction('clientDocumentFileData', { documentId }, 4);
+      const bytes = Buffer.from(cleanBase64(result.base64 || ''), 'base64');
+      if (!bytes.length) throw new Error('El documento privado está vacío.');
+      const mimeType = String(result.mimeType || 'application/octet-stream').toLowerCase();
+      if (!['image/png', 'image/jpeg', 'image/webp'].includes(mimeType)) throw new Error('El documento privado no tiene un formato permitido.');
+      const filename = String(result.fileName || 'documento-cliente').replace(/[\r\n"]/g, '_');
+      const disposition = String(req.query?.download || '') === '1' ? 'attachment' : 'inline';
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Content-Disposition', `${disposition}; filename="${filename}"`);
+      res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      return res.status(200).send(bytes);
+    }
+
     if (req.method === 'GET' && action === 'adminContractPdf') {
       const session = verifySession(req);
       if (!requirePermission(res, session, 'CONTRACTS')) return;
@@ -2863,30 +2934,35 @@ export default async function handler(req, res) {
       const requestedVersion = String(req.query?.version || 'latest');
       const version = ['original', 'signed', 'final', 'latest'].includes(requestedVersion) ? requestedVersion : 'latest';
       if (!contractId) return res.status(400).json({ status: 'error', message: 'Contrato no identificado.' });
-      let result = null;
-      let contractMeta = null;
-      let pdfBase64 = '';
+
       const documentResult = await forwardTransientBusinessAction('contractDocument', { contractId }, 5).catch(() => null);
-      contractMeta = documentResult?.contract || null;
+      const contractMeta = documentResult?.contract || null;
       const canRenderCanonical = Boolean(contractMeta?.documentSnapshot);
       const status = String(contractMeta?.status || '');
-      const unsignedVersion = version === 'original' || (version === 'latest' && !['Firmado por cliente', 'Finalizado'].includes(status));
-      const quoteVersion = String(contractMeta?.documentType || contractMeta?.documentSnapshot?.documentType || '').toUpperCase() === 'COTIZACION';
-      if (canRenderCanonical && (unsignedVersion || quoteVersion)) {
+      const isQuote = String(contractMeta?.documentType || contractMeta?.documentSnapshot?.documentType || '').toUpperCase() === 'COTIZACION';
+      let result = null;
+      let pdfBase64 = '';
+
+      if (canRenderCanonical && isQuote) {
+        // Las cotizaciones pueden seguir generándose como PDF en cualquier momento.
         pdfBase64 = await renderContractSnapshotPdf(contractMeta.documentSnapshot, contractMeta);
-        result = { folio: contractMeta.folio || contractMeta.id, documentType: contractMeta.documentType || contractMeta.documentSnapshot?.documentType || '' };
-      } else {
-        try {
-          result = await forwardTransientBusinessAction('contractAdminPdfData', { contractId, version }, 4);
-          pdfBase64 = String(result?.pdfBase64 || '');
-        } catch (error) {
-          const message = String(error?.message || error);
-          if (!/versión solicitada.*no está disponible|version solicitada.*no esta disponible|respuesta no válida|solicitud no autorizada|bad gateway|temporarily unavailable/i.test(message)) throw error;
-          if (!canRenderCanonical) throw error;
-          pdfBase64 = await renderContractSnapshotPdf(contractMeta.documentSnapshot, contractMeta);
-          result = { folio: contractMeta.folio || contractMeta.id, documentType: contractMeta.documentType || '' };
+        result = { folio: contractMeta.folio || contractMeta.id, documentType: 'COTIZACION' };
+      } else if (canRenderCanonical) {
+        // Un contrato HTML no tiene PDF hasta que ambas partes hayan firmado.
+        if (status !== 'Finalizado') {
+          return res.status(409).json({ status: 'error', message: 'Este contrato todavía se consulta como texto. El PDF se crea cuando ambas partes hayan firmado.' });
         }
+        if (!['latest', 'final'].includes(version)) {
+          return res.status(409).json({ status: 'error', message: 'Los contratos nuevos sólo conservan el PDF final firmado por ambas partes.' });
+        }
+        result = await forwardTransientBusinessAction('contractAdminPdfData', { contractId, version: 'final' }, 4);
+        pdfBase64 = String(result?.pdfBase64 || '');
+      } else {
+        // Compatibilidad con contratos históricos que fueron cargados originalmente como PDF.
+        result = await forwardTransientBusinessAction('contractAdminPdfData', { contractId, version }, 4);
+        pdfBase64 = String(result?.pdfBase64 || '');
       }
+
       const pdf = Buffer.from(cleanBase64(pdfBase64), 'base64');
       if (pdf.subarray(0, 5).toString('ascii') !== '%PDF-') throw new Error('El documento privado no contiene un PDF válido.');
       const kind = String(result?.documentType || contractMeta?.documentType || '').toUpperCase() === 'COTIZACION' ? 'cotizacion' : 'contrato';
@@ -2900,15 +2976,19 @@ export default async function handler(req, res) {
       const token = String(req.query?.token || '').trim();
       if (!token) return res.status(400).json({ status: 'error', message: 'Liga incompleta.' });
       const sessionId = String(req.query?.sessionId || '').trim().slice(0, 120);
-      const result = await forwardBusinessAction('contractResolve', { token, sessionId, includePdf: action === 'contractPdf', markViewed: action === 'contractView' });
+
       if (action === 'contractPdf') {
-        const pdfBase64 = result.contract?.documentSnapshot
-          ? await renderContractSnapshotPdf(result.contract.documentSnapshot, result.contract)
-          : result.pdfBase64 || '';
-        const pdf = Buffer.from(cleanBase64(pdfBase64), 'base64');
+        const result = await forwardBusinessAction('contractResolve', { token, sessionId, includePdf: true, markViewed: false });
+        if (result.contract?.documentSnapshot) {
+          return res.status(409).json({ status: 'error', message: 'El PDF se crea únicamente después de que ambas partes hayan firmado el contrato.' });
+        }
+        const pdf = Buffer.from(cleanBase64(result.pdfBase64 || ''), 'base64');
+        if (!pdf.length || pdf.subarray(0, 5).toString('ascii') !== '%PDF-') throw new Error('El contrato histórico no contiene un PDF válido.');
         setPrivatePdfHeaders(res, `contrato-${String(result.contract?.folio || 'xaviph').replace(/[^a-z0-9-]/gi, '_')}.pdf`);
         return res.status(200).send(pdf);
       }
+
+      const result = await forwardBusinessAction('contractResolve', { token, sessionId, includePdf: false, markViewed: true });
       return res.status(200).json({ status: 'success', contract: result.contract });
     }
 
@@ -2924,13 +3004,38 @@ export default async function handler(req, res) {
         return res.status(400).json({ status: 'error', message: 'Aceptación o firma incompleta.' });
       }
       if (Buffer.byteLength(signatureDataUrl, 'utf8') > 900_000) return res.status(413).json({ status: 'error', message: 'La firma excede el tamaño permitido.' });
-      const material = await forwardBusinessAction('contractResolve', { token, includePdf: true, markViewed: false });
+
+      const material = await forwardBusinessAction('contractResolve', { token, includePdf: false, markViewed: false });
       const audit = signingAudit(req);
-      const originalPdfBase64 = material.contract?.documentSnapshot
-        ? await renderContractSnapshotPdf(material.contract.documentSnapshot, material.contract)
-        : material.pdfBase64 || '';
-      if (!originalPdfBase64) throw new Error('El documento original no está disponible.');
-      const signedPdfBase64 = await appendClientSignature(originalPdfBase64, signatureDataUrl, material.contract, audit);
+
+      if (material.contract?.documentSnapshot) {
+        // Flujo nuevo: sólo se registra evidencia y firma. Todavía no existe PDF.
+        const canonicalDocument = JSON.stringify(material.contract.documentSnapshot);
+        const originalDocumentHash = createHash('sha256').update(canonicalDocument, 'utf8').digest('hex');
+        const signedEvidence = JSON.stringify({
+          documentHash: originalDocumentHash,
+          signatureDataUrl,
+          acceptedAt: audit.acceptedAt || '',
+          ip: audit.ip || '',
+          userAgent: audit.userAgent || '',
+          consentText: audit.consentText || '',
+        });
+        const signedDocumentHash = createHash('sha256').update(signedEvidence, 'utf8').digest('hex');
+        await forwardBusinessAction('contractCompleteSignature', {
+          token,
+          signatureDataUrl,
+          originalDocumentHash,
+          signedDocumentHash,
+          audit,
+        });
+        return res.status(200).json({ status: 'success', message: 'Firma recibida. El PDF se creará cuando ambas partes hayan firmado.' });
+      }
+
+      // Compatibilidad: contratos históricos ya almacenados como PDF conservan su flujo anterior.
+      const legacyMaterial = await forwardBusinessAction('contractResolve', { token, includePdf: true, markViewed: false });
+      const originalPdfBase64 = legacyMaterial.pdfBase64 || '';
+      if (!originalPdfBase64) throw new Error('El documento histórico original no está disponible.');
+      const signedPdfBase64 = await appendClientSignature(originalPdfBase64, signatureDataUrl, legacyMaterial.contract, audit);
       const originalDocumentHash = createHash('sha256').update(Buffer.from(cleanBase64(originalPdfBase64), 'base64')).digest('hex');
       const signedDocumentHash = createHash('sha256').update(Buffer.from(signedPdfBase64, 'base64')).digest('hex');
       await forwardBusinessAction('contractCompleteSignature', {
