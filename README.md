@@ -23,7 +23,9 @@ npm run dev
 - Las ligas de firma se almacenan como hash, caducan a las 72 horas y se consumen después de firmar.
 - Si una liga de firma se abre desde una computadora, se invalida y debe generarse una nueva.
 - La firma privada de Javier se aplica únicamente después de una autorización explícita desde el panel.
-- Se conservan el PDF original, el PDF firmado por el cliente, el documento final y la evidencia técnica de aceptación.
+- Los contratos generados por el CRM se leen y firman como HTML/texto. La firma del cliente se conserva como evidencia privada y no crea un PDF intermedio.
+- El único PDF de un contrato generado se crea al finalizar, después de contar con la firma del cliente y la autorización/firma de Javier.
+- Las imágenes de identificación cargadas desde una ficha de cliente se guardan en Drive sin acceso público y sólo se sirven al Super Admin mediante una ruta autenticada.
 
 ## Variables de Vercel
 
@@ -58,6 +60,7 @@ Después crea una nueva implementación de la aplicación web. El despliegue deb
 3. Actualiza y despliega `google-apps-script.js`.
 4. Ejecuta una vez `initDatabase()` para crear las pestañas `CRM_Clientes`, `Gastos`, `Contratos` y `Firma_Administrador` sin registros ficticios.
 5. Publica la aplicación en Vercel.
-6. Comprueba la página pública, el inicio de sesión administrativo, la carga privada de un PDF y una liga móvil de firma.
+6. Comprueba la página pública, el inicio de sesión administrativo, una liga móvil de firma en HTML y la carga de una imagen privada en la ficha de un cliente.
+7. Verifica que antes de la firma de ambas partes no exista opción de PDF para el contrato generado y que, al finalizarlo, se cree únicamente el PDF final firmado.
 
 No publiques credenciales, claves de Drive, IDs privados ni archivos `.vercel/project.json` en el repositorio.
