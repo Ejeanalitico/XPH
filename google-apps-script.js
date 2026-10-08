@@ -1000,6 +1000,121 @@ function safeDriveFolderName(value) {
   return cleanBusinessText(value, 180).replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim() || 'Galería XPH';
 }
 
+function getClientDocumentsRootFolder() {
+  var parent;
+  try { parent = DriveApp.getFolderById(FOLDER_ID); } catch (_) { parent = DriveApp.getRootFolder(); }
+  var folders = parent.getFoldersByName('Documentos_Clientes_Privados');
+  return folders.hasNext() ? folders.next() : parent.createFolder('Documentos_Clientes_Privados');
+}
+
+function getClientDocumentsFolder(ss, clientId) {
+  var client = findBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, clientId);
+  if (!client || String(client.recordType || '') !== 'Cliente') throw new Error('Selecciona un cliente válido.');
+  var root = getClientDocumentsRootFolder();
+  var folderName = safeDriveFolderName((client.name || 'Cliente') + ' - ' + client.id);
+  var folders = root.getFoldersByName(folderName);
+  return folders.hasNext() ? folders.next() : root.createFolder(folderName);
+}
+
+function createClientDocumentUploadSession(ss, payload) {
+  payload = payload || {};
+  var clientId = cleanBusinessText(payload.clientId, 120);
+  var filename = cleanBusinessText(payload.filename || ('documento-' + Date.now()), 180).replace(/[\\/]/g, '-');
+  var mimeType = cleanBusinessText(payload.mimeType || '', 120).toLowerCase();
+  var size = Number(payload.size || 0);
+  if (['image/png', 'image/jpeg', 'image/webp'].indexOf(mimeType) < 0 || size <= 0 || size > 15000000) {
+    throw new Error('El documento debe ser una imagen PNG, JPG o WebP y pesar máximo 15 MB.');
+  }
+  var folder = getClientDocumentsFolder(ss, clientId);
+  var response = UrlFetchApp.fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,mimeType,size,parents', {
+    method: 'post',
+    contentType: 'application/json',
+    headers: {
+      Authorization: 'Bearer ' + ScriptApp.getOAuthToken(),
+      'X-Upload-Content-Type': mimeType,
+      'X-Upload-Content-Length': String(size)
+    },
+    payload: JSON.stringify({ name: filename, parents: [folder.getId()] }),
+    muteHttpExceptions: true
+  });
+  var status = response.getResponseCode();
+  var headers = response.getAllHeaders();
+  var uploadUrl = headers.Location || headers.location || '';
+  if (status < 200 || status >= 300 || !uploadUrl) throw new Error('Google Drive no pudo iniciar la carga del documento (HTTP ' + status + ').');
+  return { status: 'success', uploadUrl: String(uploadUrl) };
+}
+
+function finalizeClientDocumentUpload(ss, payload) {
+  payload = payload || {};
+  var clientId = cleanBusinessText(payload.clientId, 120);
+  var fileId = cleanBusinessText(payload.fileId, 200);
+  var client = findBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, clientId);
+  if (!client || String(client.recordType || '') !== 'Cliente') throw new Error('Cliente no localizado.');
+  if (!fileId) throw new Error('No se recibió el archivo cargado.');
+
+  var file = DriveApp.getFileById(fileId);
+  var mimeType = String(file.getMimeType() || '').toLowerCase();
+  var size = Number(file.getSize() || 0);
+  if (['image/png', 'image/jpeg', 'image/webp'].indexOf(mimeType) < 0 || size <= 0 || size > 15000000) {
+    throw new Error('El documento cargado no es una imagen válida.');
+  }
+
+  var folder = getClientDocumentsFolder(ss, clientId);
+  var parents = file.getParents();
+  var belongsToFolder = false;
+  while (parents.hasNext()) if (parents.next().getId() === folder.getId()) { belongsToFolder = true; break; }
+  if (!belongsToFolder) throw new Error('El archivo no pertenece a la carpeta privada de este cliente.');
+
+  // No se establece ANYONE_WITH_LINK. Los documentos de identificación permanecen privados en Drive.
+  var timestamp = businessNow();
+  var record = {
+    id: businessId('doc-cliente'),
+    clientId: clientId,
+    category: cleanBusinessText(payload.category || 'INE', 80),
+    title: cleanBusinessText(payload.title || file.getName().replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '), 180),
+    fileId: fileId,
+    fileName: cleanBusinessText(file.getName(), 240),
+    mimeType: mimeType,
+    size: size,
+    status: 'ACTIVO',
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
+  upsertBusinessRecord(ss, 'Documentos_Clientes', BUSINESS_HEADERS.clientDocuments, record);
+  logAudit(ss, 'DOCUMENTO_PRIVADO_CLIENTE_AGREGADO', { clientId: clientId, category: record.category, fileName: record.fileName }, record.id, 'Admin XPH');
+  return { status: 'success', document: record };
+}
+
+function deleteClientDocument(ss, payload) {
+  payload = payload || {};
+  var documentId = cleanBusinessText(payload.documentId, 120);
+  var record = findBusinessRecord(ss, 'Documentos_Clientes', BUSINESS_HEADERS.clientDocuments, documentId);
+  if (!record || String(record.status || '') === 'ELIMINADO') throw new Error('Documento no localizado.');
+  try { if (record.fileId) DriveApp.getFileById(record.fileId).setTrashed(true); } catch (_) {}
+  record.status = 'ELIMINADO';
+  record.updatedAt = businessNow();
+  upsertBusinessRecord(ss, 'Documentos_Clientes', BUSINESS_HEADERS.clientDocuments, record);
+  logAudit(ss, 'DOCUMENTO_PRIVADO_CLIENTE_ELIMINADO', { clientId: record.clientId, fileName: record.fileName }, record.id, 'Admin XPH');
+  return { status: 'success', document: record };
+}
+
+function clientDocumentFileData(ss, payload) {
+  payload = payload || {};
+  var documentId = cleanBusinessText(payload.documentId, 120);
+  var record = findBusinessRecord(ss, 'Documentos_Clientes', BUSINESS_HEADERS.clientDocuments, documentId);
+  if (!record || String(record.status || '') !== 'ACTIVO' || !record.fileId) throw new Error('Documento no localizado.');
+  var file = DriveApp.getFileById(record.fileId);
+  var mimeType = String(file.getMimeType() || '').toLowerCase();
+  if (mimeType.indexOf('image/') !== 0) throw new Error('El documento privado no es una imagen válida.');
+  return {
+    status: 'success',
+    document: record,
+    base64: Utilities.base64Encode(file.getBlob().getBytes()),
+    mimeType: mimeType,
+    fileName: file.getName()
+  };
+}
+
 function createClientGalleryRecord(ss, payload) {
   var client = findBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, payload.clientId);
   if (!client || String(client.recordType) !== 'Cliente') throw new Error('Selecciona un cliente válido para crear la galería.');
@@ -2020,6 +2135,10 @@ function handleBusinessAction(ss, action, payload) {
   if (action === 'uploadFinalize') return finalizeDrivePhotoUpload(ss, payload);
   if (action === 'gmailLogoUploadFinalize') return finalizeEmailLogoUpload(ss, payload);
   if (action === 'galleryUploadFinalize') return finalizeClientGalleryUpload(ss, payload);
+  if (action === 'clientDocumentUploadInit') return createClientDocumentUploadSession(ss, payload);
+  if (action === 'clientDocumentUploadFinalize') return finalizeClientDocumentUpload(ss, payload);
+  if (action === 'clientDocumentDelete') return deleteClientDocument(ss, payload);
+  if (action === 'clientDocumentFileData') return clientDocumentFileData(ss, payload);
   if (action === 'driveFolderImport') {
     var importedFolder;
     try { importedFolder = DriveApp.getFolderById(cleanBusinessText(payload.folderId, 200)); }
