@@ -99,11 +99,15 @@ export const PricingQuoteEngineV2: React.FC<Props> = ({
     onProceedToBooking();
   };
 
+  // Keep all four commercial tiers aligned in one desktop row.
+  // Smaller viewports retain a readable responsive layout.
   const packageGridClass = currentPackages.length === 1
     ? 'max-w-2xl mx-auto'
     : currentPackages.length === 2
       ? 'md:grid-cols-2'
-      : 'lg:grid-cols-3';
+      : currentPackages.length === 3
+        ? 'md:grid-cols-2 lg:grid-cols-3'
+        : 'sm:grid-cols-2 lg:grid-cols-4';
 
   return (
     <section id="cotizador" className="py-20 bg-[#0B0F17] relative border-b border-white/5">
@@ -119,9 +123,9 @@ export const PricingQuoteEngineV2: React.FC<Props> = ({
         <div className={`grid gap-6 xl:gap-8 items-stretch ${packageGridClass}`}>
           {currentPackages.map((pkg) => {
             const selected = selectedPackage?.id === pkg.id;
-            return <button key={pkg.id} type="button" onClick={() => handleSelectPackage(pkg.id)} className={`relative text-left rounded-2xl p-5 sm:p-6 xl:p-7 transition-all ${selected ? 'bg-[#161C28] border-2 border-[#D4AF37] shadow-xl' : 'bg-[#161C28]/80 border border-white/10 hover:border-white/30'}`}>
+            return <button key={pkg.id} type="button" onClick={() => handleSelectPackage(pkg.id)} className={`relative min-w-0 text-left rounded-2xl p-5 sm:p-6 lg:p-5 xl:p-6 transition-all ${selected ? 'bg-[#161C28] border-2 border-[#D4AF37] shadow-xl' : 'bg-[#161C28]/80 border border-white/10 hover:border-white/30'}`}>
               {pkg.badge && <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full gold-gradient-bg text-black font-bold text-[10px] tracking-wider whitespace-nowrap">{pkg.badge}</span>}
-              <div className="flex justify-between gap-3"><h3 className="text-lg xl:text-xl font-bold font-serif-luxury text-white">{pkg.name}</h3>{selected && <Check className="w-5 h-5 text-[#D4AF37] shrink-0" />}</div>
+              <div className="flex justify-between gap-3"><h3 className="min-w-0 break-words text-lg xl:text-xl font-bold font-serif-luxury text-white">{pkg.name}</h3>{selected && <Check className="w-5 h-5 text-[#D4AF37] shrink-0" />}</div>
               <p className="text-xs text-gray-400 mt-2 leading-relaxed">{pkg.description}</p>
               <div className="pt-4 mt-4 border-t border-white/10">{pkg.price > 0 ? <><span className="text-3xl font-extrabold text-white font-mono">${pkg.price.toLocaleString('es-MX')}</span><span className="text-xs text-gray-400 ml-1">MXN</span></> : <span className="text-2xl font-extrabold text-[#D4AF37]">Cotización personalizada</span>}</div>
               <ul className="space-y-2 text-xs text-gray-300 mt-5">{pkg.features.map((feature) => <li key={feature} className="flex items-start gap-2"><Check className="w-4 h-4 text-[#D4AF37] shrink-0 mt-0.5" /><span>{feature}</span></li>)}</ul>
