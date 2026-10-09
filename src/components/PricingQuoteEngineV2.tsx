@@ -27,7 +27,8 @@ export const PricingQuoteEngineV2: React.FC<Props> = ({
   const packages = providedPackages;
   const addons = providedAddons;
   const configured = packages[bookingState.eventType];
-  const currentPackages = [...((configured?.length ? configured : PACKAGES_BY_EVENT[bookingState.eventType]) || [])].sort((a, b) => a.price - b.price);
+  // An intentionally empty published category must not resurrect bundled prices.
+  const currentPackages = [...((configured !== undefined ? configured : PACKAGES_BY_EVENT[bookingState.eventType]) || [])].sort((a, b) => a.price - b.price);
   const selectedPackage = currentPackages.find((pkg) => pkg.id === bookingState.selectedPackageId);
   const extraHoursAddon = addons.find((addon) => addon.id === 'extra_hours');
   const extraHoursRate = extraHoursAddon?.price || 0;
