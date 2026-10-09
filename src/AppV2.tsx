@@ -96,7 +96,9 @@ export default function AppV2() {
   const [heroCoverSettings, setHeroCoverSettings] = useState<Partial<Record<RoutePath, HeroCoverSetting>>>(() => initialMedia?.heroCoverSettings || {});
   const [mediaReady, setMediaReady] = useState(Boolean(initialMedia));
   const [footerContact, setFooterContact] = useState<FooterContact>(defaultContact);
-  const [packagesState, setPackagesState] = useState<Record<EventType, PackageOption[]>>(PACKAGES_BY_EVENT);
+  // Do not offer historical bundled prices before the current published catalog loads.
+  const [packagesState, setPackagesState] = useState<Record<EventType, PackageOption[]>>({} as Record<EventType, PackageOption[]>);
+  const [catalogStatus, setCatalogStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
   const [catalogCategories, setCatalogCategories] = useState<CatalogCategory[]>(DEFAULT_CATALOG_CATEGORIES);
   const [addonsState, setAddonsState] = useState<AddOnOption[]>(ADDONS_CATALOG);
   const [promotionPopup, setPromotionPopup] = useState<PromotionPopupConfig | null>(null);
@@ -135,6 +137,7 @@ export default function AppV2() {
 
       if (!cloudData) {
         setMediaReady(true);
+        setCatalogStatus('unavailable');
         return;
       }
 
@@ -172,6 +175,7 @@ export default function AppV2() {
       setAddonsState(resolvePublishedAddons(data));
       if (data.footerContact) setFooterContact(sanitizePublicContact(data.footerContact));
       setSeoSettings(normalizeSeoSettings(data.seoSettings, publishedCategories));
+      setCatalogStatus('ready');
     });
 
     return () => {
@@ -182,10 +186,10 @@ export default function AppV2() {
   useEffect(() => {
     const handleLocationChange = () => {
       const route = routeFromLocation(catalogCategories);
-      setCurrentRoute(route);
+      setCurrentRoute((previous) => previous === route ? previous : route);
       if (window.location.hash) window.history.replaceState({}, '', routePath(route, catalogCategories));
       if (route !== 'inicio') {
-        setBookingState((prev) => ({
+        setBookingState((prev) => prev.eventType === route ? prev : ({
           ...prev,
           eventType: route as EventType,
           selectedPackageId: '',
@@ -203,6 +207,57 @@ export default function AppV2() {
       window.removeEventListener('popstate', handleLocationChange);
     };
   }, [catalogCategories]);
+
+
+  // Refresh prices when the administrator publishes or a visitor returns to a tab.
+  useEffect(() => {
+    let disposed = false;
+    let refreshing = false;
+    const refreshPublishedPrices = async () => {
+      if (refreshing) return;
+      refreshing = true;
+      try {
+        const config = await loadSiteDataFromCloud();
+        if (disposed) return;
+        if (!config) {
+          setCatalogStatus('unavailable');
+          return;
+        }
+        const currentPackages = resolvePublishedPackages(config);
+        const currentAddons = resolvePublishedAddons(config);
+        setPackagesState(currentPackages);
+        setAddonsState(currentAddons);
+        setCatalogStatus('ready');
+        setBookingState((previous) => {
+          const selected = (currentPackages[previous.eventType] || []).find((pkg) => pkg.id === previous.selectedPackageId);
+          if (!selected) {
+            if (!previous.selectedPackageId && previous.total === 0) return previous;
+            return { ...previous, selectedPackageId: '', selectedAddons: [], extraHours: 0, total: 0 };
+          }
+          const selectedAddons = previous.selectedAddons.filter((id) => currentAddons.some((addon) => addon.id === id));
+          const addonCost = selectedAddons.reduce((sum, id) => {
+            const addon = currentAddons.find((item) => item.id === id);
+            return sum + (addon?.type === 'checkbox' ? addon.price : 0);
+          }, 0);
+          const hourRate = currentAddons.find((item) => item.id === 'extra_hours')?.price || 0;
+          return { ...previous, selectedAddons, total: selected.price === 0 ? 0 : selected.price + addonCost + previous.extraHours * hourRate };
+        });
+      } finally {
+        refreshing = false;
+      }
+    };
+    const onVisible = () => { if (document.visibilityState === 'visible') void refreshPublishedPrices(); };
+    const onPublish = (event: StorageEvent) => { if (event.key === 'xph:catalog-updated') void refreshPublishedPrices(); };
+    window.addEventListener('focus', onVisible);
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('storage', onPublish);
+    return () => {
+      disposed = true;
+      window.removeEventListener('focus', onVisible);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('storage', onPublish);
+    };
+  }, []);
 
   const showToast = (title: string, description?: string, type: 'success' | 'info' | 'warning' = 'info') => {
     const toast: ToastMessage = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, title, description, type };
@@ -246,6 +301,7 @@ export default function AppV2() {
       <GallerySection currentRoute={currentRoute} onNavigateRoute={(route) => handleNavigateRoute(route, true)} images={galleryImages} categories={catalogCategories} onShowToast={showToast} loading={!mediaReady} />
       <ServiceSeoSection currentRoute={currentRoute} categories={catalogCategories} packages={packagesState[currentRoute] || []} onNavigateRoute={(route) => handleNavigateRoute(route, false)} onQuoteClick={() => handleScrollTo('cotizador')} />
 
+      {catalogStatus === 'ready' ? (
       <PricingQuoteEngineV2
         currentRoute={currentRoute}
         onNavigateRoute={(route) => handleNavigateRoute(route, true)}
@@ -256,14 +312,20 @@ export default function AppV2() {
         addons={addonsState}
         categories={catalogCategories}
       />
+      ) : (
+        <section id="cotizador" aria-live="polite" className="mx-auto max-w-4xl px-6 py-12 text-center">
+          <h2 className="text-2xl font-bold text-white">{catalogStatus === 'loading' ? 'Cargando precios actualizados...' : 'Precios temporalmente no disponibles'}</h2>
+          <p className="mt-3 text-sm text-gray-300">{catalogStatus === 'loading' ? 'Consultando el catálogo publicado.' : 'No fue posible verificar los precios vigentes. Consulta directamente con XPH antes de contratar.'}</p>
+        </section>
+      )}
 
       <InPersonConsultation bookingState={bookingState} onNavigateToQuote={() => handleScrollTo('cotizador')} onShowToast={showToast} />
-      <BookingWizardV2 bookingState={bookingState} onUpdateBookingState={setBookingState} onShowToast={showToast} packages={packagesState} addons={addonsState} categories={catalogCategories} />
+      {catalogStatus === 'ready' && <BookingWizardV2 bookingState={bookingState} onUpdateBookingState={setBookingState} onShowToast={showToast} packages={packagesState} addons={addonsState} categories={catalogCategories} />}
       {currentRoute === 'inicio' ? <TestimonialsSection /> : null}
       <Footer onNavigateRoute={(route) => handleNavigateRoute(route, false)} footerContact={footerContact} categories={catalogCategories} />
 
       <WhatsAppFloatingButtonV2 bookingState={bookingState} phoneNumber={`52${whatsappNumber}`} packages={packagesState} addons={addonsState} />
-      <StickyQuoteBar bookingState={bookingState} packages={packagesState} addons={addonsState} onProceed={() => handleScrollTo('solicitud')} />
+      {catalogStatus === 'ready' && <StickyQuoteBar bookingState={bookingState} packages={packagesState} addons={addonsState} onProceed={() => handleScrollTo('solicitud')} />}
     </div>
   );
 }
