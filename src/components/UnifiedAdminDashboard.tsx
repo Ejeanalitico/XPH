@@ -48,6 +48,8 @@ import { AnalyticsAdminPanel } from './AnalyticsAdminPanel';
 import { BusinessAdminPanel, BusinessTab } from './BusinessAdminPanel';
 import { setAnalyticsExcluded } from '../utils/analyticsPrivacy';
 import { normalizeSeoSettings } from '../utils/seo';
+import { CURRENT_CATALOG_VERSION } from '../utils/catalogMerge';
+import { loadSiteDataFromCloud } from '../utils/googleDrive';
 import { DEFAULT_CATALOG_CATEGORIES } from '../utils/catalogCategories';
 import {
   AdminSession,
@@ -171,8 +173,17 @@ const privateGallerySummaries = (items: GalleryImage[]): PrivateGallerySummary[]
     allowDownloads: meta.galleryAllowDownloads !== false,
   }));
 
-const stablePackages = (value: Record<string, PackageOption[]>) =>
-  JSON.stringify(value, Object.keys(value).sort());
+// Compare all nested catalog fields (including prices), not just top-level keys.
+const canonicalCatalog = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(canonicalCatalog);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => [key, canonicalCatalog(item)]));
+  }
+  return value;
+};
+const stableCatalog = (value: unknown) => JSON.stringify(canonicalCatalog(value));
 
 interface Props {
   initialTab?: Tab;
@@ -352,10 +363,17 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
       if (reservedSlug) throw new Error(`La liga /${reservedSlug} está reservada por el sistema. Elige otra.`);
       const confirmed = await saveAdminConfig(session, { packages: managedPackages, addons: managedAddons, catalogCategories: normalizedCategories }, 'ADMIN_PAQUETES', 'Categorías, paquetes y adicionales actualizados desde el administrador web');
       if (!hasManagedPackages(confirmed.packages) || !hasManagedAddons(confirmed.addons)) throw new Error('La nube no devolvió el catálogo guardado.');
-      if (stablePackages(confirmed.packages) !== stablePackages(managedPackages)) throw new Error('Los paquetes no coinciden después del guardado. Vuelve a intentarlo.');
+      if (stableCatalog(confirmed.packages) !== stableCatalog(managedPackages)) throw new Error('El servidor no confirmó los precios y servicios guardados. Vuelve a intentarlo.');
+      if (stableCatalog(confirmed.addons) !== stableCatalog(managedAddons)) throw new Error('El servidor no confirmó los precios de los adicionales. Vuelve a intentarlo.');
+      if (Number(confirmed.catalogVersion || 0) !== CURRENT_CATALOG_VERSION) throw new Error('El catálogo guardado tiene una versión incorrecta.');
+      const publicConfig = await loadSiteDataFromCloud();
+      if (!publicConfig || stableCatalog(publicConfig.packages) !== stableCatalog(managedPackages) || stableCatalog(publicConfig.addons) !== stableCatalog(managedAddons)) {
+        throw new Error('El servidor guardó el catálogo, pero no se pudo confirmar que los nuevos precios aparezcan en la página pública. Recarga y verifica antes de compartir cotizaciones.');
+      }
       setPackages(confirmed.packages);
       setCatalogCategories(Array.isArray(confirmed.catalogCategories) ? confirmed.catalogCategories : normalizedCategories);
       setAddons(confirmed.addons);
+      window.localStorage.setItem('xph:catalog-updated', String(Date.now()));
       setSuccessModal(true);
     } catch (error: any) {
       notify(error?.message || 'No se pudieron guardar los paquetes.');
