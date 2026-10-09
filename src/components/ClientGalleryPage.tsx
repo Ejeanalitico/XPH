@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Camera, ChevronLeft, ChevronRight, Download, FileVideo2, Loader2, LockKeyhole, X } from 'lucide-react';
+import { Camera, ChevronLeft, ChevronRight, Download, FileVideo2, House, Loader2, LockKeyhole, X } from 'lucide-react';
 import { GalleryImage } from '../types';
 import { SafeImage } from './SafeImage';
 
@@ -128,22 +128,69 @@ export const ClientGalleryPage: React.FC<ClientGalleryPageProps> = ({ slug, toke
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activePhotoIndex, photos.length]);
 
+  const galleryHeader = (
+    <header className="sticky top-0 z-30 border-b border-white/10 bg-[#0B0F17]/95 backdrop-blur-xl">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
+        <a href="/" className="flex min-w-0 items-center gap-3 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#D4AF37]" aria-label="XPH Fotografía & Video: ir al inicio">
+          <img
+            src="/xph-logo.png?v=20260814-6"
+            alt="Logotipo de XPH Fotografía & Video"
+            className="h-12 w-12 shrink-0 object-contain sm:h-14 sm:w-14"
+            width="56"
+            height="56"
+          />
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-bold text-white sm:text-base">XPH Fotografía & Video</span>
+            <span className="block text-[10px] uppercase tracking-widest text-gray-400">Galería privada</span>
+          </span>
+        </a>
+        <div className="flex shrink-0 items-center gap-3">
+          <span className="hidden items-center gap-2 text-xs text-gray-400 md:flex">
+            <LockKeyhole className="h-4 w-4 text-[#D4AF37]" />
+            Acceso exclusivo por enlace
+          </span>
+          <a
+            href="/"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#D4AF37]/45 bg-[#D4AF37]/10 px-3 py-2 text-sm font-semibold text-[#F5D76E] transition-colors hover:bg-[#D4AF37]/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#D4AF37] sm:px-4"
+            aria-label="Inicio: visitar la página principal de XPH"
+          >
+            <House className="h-4 w-4" aria-hidden="true" />
+            Inicio
+          </a>
+        </div>
+      </div>
+    </header>
+  );
+
   if (loading) {
-    return <main className="min-h-screen bg-[#0B0F17] text-white flex items-center justify-center"><div className="text-center space-y-3"><Loader2 className="w-8 h-8 animate-spin text-[#D4AF37] mx-auto" /><p className="text-sm text-gray-400">Abriendo galería privada…</p></div></main>;
+    return (
+      <main className="flex min-h-screen flex-col bg-[#0B0F17] text-white">
+        {galleryHeader}
+        <div className="flex flex-1 items-center justify-center p-4">
+          <div className="space-y-3 text-center"><Loader2 className="mx-auto h-8 w-8 animate-spin text-[#D4AF37]" /><p className="text-sm text-gray-400">Abriendo galería privada…</p></div>
+        </div>
+      </main>
+    );
   }
 
   if (error) {
-    return <main className="min-h-screen bg-[#0B0F17] text-white flex items-center justify-center p-4"><div className="max-w-md text-center rounded-2xl bg-[#161C28] border border-white/10 p-8 space-y-3"><LockKeyhole className="w-10 h-10 text-[#D4AF37] mx-auto" /><h1 className="text-xl font-bold">Galería no disponible</h1><p className="text-sm text-gray-400">{error}</p></div></main>;
+    return (
+      <main className="flex min-h-screen flex-col bg-[#0B0F17] text-white">
+        {galleryHeader}
+        <div className="flex flex-1 items-center justify-center p-4">
+          <div className="max-w-md space-y-3 rounded-2xl border border-white/10 bg-[#161C28] p-8 text-center">
+            <LockKeyhole className="mx-auto h-10 w-10 text-[#D4AF37]" />
+            <h1 className="text-xl font-bold">Galería no disponible</h1>
+            <p className="text-sm text-gray-400">{error}</p>
+          </div>
+        </div>
+      </main>
+    );
   }
 
   return (
     <main className="min-h-screen bg-[#0B0F17] text-white">
-      <header className="border-b border-white/10 bg-[#0B0F17]/95 sticky top-0 z-30 backdrop-blur-xl">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between gap-4">
-          <div><p className="text-sm font-bold">XPH Fotografía & Video</p><p className="text-[10px] uppercase tracking-widest text-gray-500">Galería privada</p></div>
-          <span className="hidden sm:flex items-center gap-2 text-xs text-gray-400"><LockKeyhole className="w-4 h-4 text-[#D4AF37]" />Acceso exclusivo por enlace</span>
-        </div>
-      </header>
+      {galleryHeader}
 
       <section className="max-w-7xl mx-auto px-4 py-10 space-y-10">
         <div className="text-center max-w-3xl mx-auto space-y-3">
