@@ -49,6 +49,7 @@ export async function loadSiteDataFromCloud(): Promise<Record<string, any> | nul
       method: 'GET',
       credentials: 'omit',
       headers: { Accept: 'application/json' },
+      cache: 'no-store',
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok || data?.status !== 'success') throw new Error(data?.message || 'No se pudo cargar la configuración.');
