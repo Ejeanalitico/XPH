@@ -138,6 +138,7 @@ function initSpreadsheetSheets(ss) {
       'Historial_WhatsApp': ['id', 'clientId', 'direction', 'phone', 'contactName', 'type', 'message', 'status', 'occurredAt', 'phoneNumberId', 'businessAccountId', 'userId', 'rawJson'],
       'Notificaciones_CRM': ['id', 'type', 'title', 'message', 'relatedId', 'userId', 'status', 'dueAt', 'dedupeKey', 'createdAt', 'updatedAt'],
       'Galerias_Clientes': ['id', 'clientId', 'eventId', 'title', 'slug', 'accessToken', 'rootFolderId', 'photosFolderId', 'folderUrl', 'galleryUrl', 'status', 'createdAt', 'updatedAt'],
+      'Documentos_Clientes': ['id', 'clientId', 'category', 'title', 'fileId', 'fileName', 'mimeType', 'size', 'status', 'createdAt', 'updatedAt'],
       'Eventos_Internos': ['id', 'title', 'activityType', 'startDate', 'startTime', 'endDate', 'endTime', 'location', 'notes', 'visibility', 'userIdsJson', 'status', 'calendarEventId', 'syncStatus', 'createdAt', 'updatedAt'],
       'Contratos': ['id', 'clientId', 'clientName', 'folio', 'eventType', 'eventDate', 'status', 'originalFileName', 'originalFileId', 'clientSignedFileId', 'finalFileId', 'signatureFileId', 'tokenHash', 'tokenExpiresAt', 'tokenStatus', 'sentAt', 'viewedAt', 'acceptedAt', 'clientSignedAt', 'ownerAuthorizedAt', 'documentHash', 'signedDocumentHash', 'finalDocumentHash', 'signerIp', 'signerUserAgent', 'consentText', 'createdAt', 'updatedAt', 'documentType', 'templateVersion', 'documentJson', 'paymentPolicy', 'adminReviewUsed', 'clientOpenCount', 'maxClientOpens', 'clientSessionIdsJson', 'identificationFileId', 'identificationFileName', 'identificationUploadedAt'],
       'Firma_Administrador': ['id', 'fileId', 'updatedAt']
@@ -493,12 +494,13 @@ var BUSINESS_HEADERS = {
   whatsappHistory: ['id', 'clientId', 'direction', 'phone', 'contactName', 'type', 'message', 'status', 'occurredAt', 'phoneNumberId', 'businessAccountId', 'userId', 'rawJson'],
   notifications: ['id', 'type', 'title', 'message', 'relatedId', 'userId', 'status', 'dueAt', 'dedupeKey', 'createdAt', 'updatedAt'],
   galleries: ['id', 'clientId', 'eventId', 'title', 'slug', 'accessToken', 'rootFolderId', 'photosFolderId', 'folderUrl', 'galleryUrl', 'status', 'createdAt', 'updatedAt'],
+  clientDocuments: ['id', 'clientId', 'category', 'title', 'fileId', 'fileName', 'mimeType', 'size', 'status', 'createdAt', 'updatedAt'],
   internalEvents: ['id', 'title', 'activityType', 'startDate', 'startTime', 'endDate', 'endTime', 'location', 'notes', 'visibility', 'userIdsJson', 'status', 'calendarEventId', 'syncStatus', 'createdAt', 'updatedAt'],
   contracts: ['id', 'clientId', 'clientName', 'folio', 'eventType', 'eventDate', 'status', 'originalFileName', 'originalFileId', 'clientSignedFileId', 'finalFileId', 'signatureFileId', 'tokenHash', 'tokenExpiresAt', 'tokenStatus', 'sentAt', 'viewedAt', 'acceptedAt', 'clientSignedAt', 'ownerAuthorizedAt', 'documentHash', 'signedDocumentHash', 'finalDocumentHash', 'signerIp', 'signerUserAgent', 'consentText', 'createdAt', 'updatedAt', 'documentType', 'templateVersion', 'documentJson', 'paymentPolicy', 'adminReviewUsed', 'clientOpenCount', 'maxClientOpens', 'clientSessionIdsJson', 'identificationFileId', 'identificationFileName', 'identificationUploadedAt'],
   ownerSignature: ['id', 'fileId', 'updatedAt']
 };
 
-var BUSINESS_SCHEMA_VERSION = '2026-09-03-whatsapp-cloud-v1';
+var BUSINESS_SCHEMA_VERSION = '2026-10-07-client-documents-v1';
 var BUSINESS_RECORD_CACHE_TTL_SECONDS = 21600;
 
 function businessSchemaPropertyKey(ss) {
@@ -533,7 +535,7 @@ function clearBusinessRecordCache(sheetName) {
 }
 
 function clearBusinessSnapshotCaches() {
-  ['CRM_Clientes','Seguimientos_CRM','Gastos','Pagos_Clientes','Movimientos_Financieros','Ajustes_Financieros','Paquetes_Cliente','Servicios_Contratados','Adicionales_Cliente','Usuarios_CRM','Funciones_Equipo','Invitaciones_Usuarios','Asignaciones_Equipo','Gmail_Config','Plantillas_Email','Historial_Correos','Historial_WhatsApp','Notificaciones_CRM','Galerias_Clientes','Eventos_Internos','Contratos','Firma_Administrador','Historial_Auditoria'].forEach(clearBusinessRecordCache);
+  ['CRM_Clientes','Seguimientos_CRM','Gastos','Pagos_Clientes','Movimientos_Financieros','Ajustes_Financieros','Paquetes_Cliente','Servicios_Contratados','Adicionales_Cliente','Usuarios_CRM','Funciones_Equipo','Invitaciones_Usuarios','Asignaciones_Equipo','Gmail_Config','Plantillas_Email','Historial_Correos','Historial_WhatsApp','Notificaciones_CRM','Galerias_Clientes','Documentos_Clientes','Eventos_Internos','Contratos','Firma_Administrador','Historial_Auditoria'].forEach(clearBusinessRecordCache);
 }
 
 function ensureBusinessSchema(ss) {
@@ -560,6 +562,7 @@ function ensureBusinessSchema(ss) {
     'Historial_WhatsApp': BUSINESS_HEADERS.whatsappHistory,
     'Notificaciones_CRM': BUSINESS_HEADERS.notifications,
     'Galerias_Clientes': BUSINESS_HEADERS.galleries,
+    'Documentos_Clientes': BUSINESS_HEADERS.clientDocuments,
     'Eventos_Internos': BUSINESS_HEADERS.internalEvents,
     'Contratos': BUSINESS_HEADERS.contracts,
     'Firma_Administrador': BUSINESS_HEADERS.ownerSignature
@@ -995,6 +998,124 @@ function getClientGalleriesFolder() {
 
 function safeDriveFolderName(value) {
   return cleanBusinessText(value, 180).replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim() || 'Galería XPH';
+}
+
+function getClientDocumentsRootFolder() {
+  // La identificación se separa de las carpetas comerciales/galerías para evitar
+  // heredar permisos de enlace de un contenedor público o compartido.
+  var parent = DriveApp.getRootFolder();
+  var folders = parent.getFoldersByName('Documentos_Clientes_Privados');
+  return folders.hasNext() ? folders.next() : parent.createFolder('Documentos_Clientes_Privados');
+}
+
+function getClientDocumentsFolder(ss, clientId) {
+  var client = findBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, clientId);
+  if (!client || String(client.recordType || '') !== 'Cliente') throw new Error('Selecciona un cliente válido.');
+  var root = getClientDocumentsRootFolder();
+  var folderName = safeDriveFolderName((client.name || 'Cliente') + ' - ' + client.id);
+  var folders = root.getFoldersByName(folderName);
+  return folders.hasNext() ? folders.next() : root.createFolder(folderName);
+}
+
+function createClientDocumentUploadSession(ss, payload) {
+  payload = payload || {};
+  var clientId = cleanBusinessText(payload.clientId, 120);
+  var filename = cleanBusinessText(payload.filename || ('documento-' + Date.now()), 180).replace(/[\\/]/g, '-');
+  var mimeType = cleanBusinessText(payload.mimeType || '', 120).toLowerCase();
+  var size = Number(payload.size || 0);
+  if (['image/png', 'image/jpeg', 'image/webp'].indexOf(mimeType) < 0 || size <= 0 || size > 15000000) {
+    throw new Error('El documento debe ser una imagen PNG, JPG o WebP y pesar máximo 15 MB.');
+  }
+  var folder = getClientDocumentsFolder(ss, clientId);
+  var response = UrlFetchApp.fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,mimeType,size,parents', {
+    method: 'post',
+    contentType: 'application/json',
+    headers: {
+      Authorization: 'Bearer ' + ScriptApp.getOAuthToken(),
+      'X-Upload-Content-Type': mimeType,
+      'X-Upload-Content-Length': String(size)
+    },
+    payload: JSON.stringify({ name: filename, parents: [folder.getId()] }),
+    muteHttpExceptions: true
+  });
+  var status = response.getResponseCode();
+  var headers = response.getAllHeaders();
+  var uploadUrl = headers.Location || headers.location || '';
+  if (status < 200 || status >= 300 || !uploadUrl) throw new Error('Google Drive no pudo iniciar la carga del documento (HTTP ' + status + ').');
+  return { status: 'success', uploadUrl: String(uploadUrl) };
+}
+
+function finalizeClientDocumentUpload(ss, payload) {
+  payload = payload || {};
+  var clientId = cleanBusinessText(payload.clientId, 120);
+  var fileId = cleanBusinessText(payload.fileId, 200);
+  var client = findBusinessRecord(ss, 'CRM_Clientes', BUSINESS_HEADERS.clients, clientId);
+  if (!client || String(client.recordType || '') !== 'Cliente') throw new Error('Cliente no localizado.');
+  if (!fileId) throw new Error('No se recibió el archivo cargado.');
+
+  var file = DriveApp.getFileById(fileId);
+  var mimeType = String(file.getMimeType() || '').toLowerCase();
+  var size = Number(file.getSize() || 0);
+  if (['image/png', 'image/jpeg', 'image/webp'].indexOf(mimeType) < 0 || size <= 0 || size > 15000000) {
+    throw new Error('El documento cargado no es una imagen válida.');
+  }
+
+  var folder = getClientDocumentsFolder(ss, clientId);
+  var parents = file.getParents();
+  var belongsToFolder = false;
+  while (parents.hasNext()) if (parents.next().getId() === folder.getId()) { belongsToFolder = true; break; }
+  if (!belongsToFolder) throw new Error('El archivo no pertenece a la carpeta privada de este cliente.');
+
+  // No se establece ANYONE_WITH_LINK. Se intenta además retirar cualquier
+  // permiso de enlace directo que pudiera haberse aplicado al archivo.
+  try { file.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.VIEW); } catch (_) {}
+  var timestamp = businessNow();
+  var record = {
+    id: businessId('doc-cliente'),
+    clientId: clientId,
+    category: cleanBusinessText(payload.category || 'INE', 80),
+    title: cleanBusinessText(payload.title || file.getName().replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '), 180),
+    fileId: fileId,
+    fileName: cleanBusinessText(file.getName(), 240),
+    mimeType: mimeType,
+    size: size,
+    status: 'ACTIVO',
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
+  upsertBusinessRecord(ss, 'Documentos_Clientes', BUSINESS_HEADERS.clientDocuments, record);
+  logAudit(ss, 'DOCUMENTO_PRIVADO_CLIENTE_AGREGADO', { clientId: clientId, category: record.category, fileName: record.fileName }, record.id, 'Admin XPH');
+  return { status: 'success', document: record };
+}
+
+function deleteClientDocument(ss, payload) {
+  payload = payload || {};
+  var documentId = cleanBusinessText(payload.documentId, 120);
+  var record = findBusinessRecord(ss, 'Documentos_Clientes', BUSINESS_HEADERS.clientDocuments, documentId);
+  if (!record || String(record.status || '') === 'ELIMINADO') throw new Error('Documento no localizado.');
+  try { if (record.fileId) DriveApp.getFileById(record.fileId).setTrashed(true); } catch (_) {}
+  record.status = 'ELIMINADO';
+  record.updatedAt = businessNow();
+  upsertBusinessRecord(ss, 'Documentos_Clientes', BUSINESS_HEADERS.clientDocuments, record);
+  logAudit(ss, 'DOCUMENTO_PRIVADO_CLIENTE_ELIMINADO', { clientId: record.clientId, fileName: record.fileName }, record.id, 'Admin XPH');
+  return { status: 'success', document: record };
+}
+
+function clientDocumentFileData(ss, payload) {
+  payload = payload || {};
+  var documentId = cleanBusinessText(payload.documentId, 120);
+  var record = findBusinessRecord(ss, 'Documentos_Clientes', BUSINESS_HEADERS.clientDocuments, documentId);
+  if (!record || String(record.status || '') !== 'ACTIVO' || !record.fileId) throw new Error('Documento no localizado.');
+  var file = DriveApp.getFileById(record.fileId);
+  var mimeType = String(file.getMimeType() || '').toLowerCase();
+  if (mimeType.indexOf('image/') !== 0) throw new Error('El documento privado no es una imagen válida.');
+  return {
+    status: 'success',
+    document: record,
+    base64: Utilities.base64Encode(file.getBlob().getBytes()),
+    mimeType: mimeType,
+    fileName: file.getName()
+  };
 }
 
 function createClientGalleryRecord(ss, payload) {
@@ -2017,6 +2138,10 @@ function handleBusinessAction(ss, action, payload) {
   if (action === 'uploadFinalize') return finalizeDrivePhotoUpload(ss, payload);
   if (action === 'gmailLogoUploadFinalize') return finalizeEmailLogoUpload(ss, payload);
   if (action === 'galleryUploadFinalize') return finalizeClientGalleryUpload(ss, payload);
+  if (action === 'clientDocumentUploadInit') return createClientDocumentUploadSession(ss, payload);
+  if (action === 'clientDocumentUploadFinalize') return finalizeClientDocumentUpload(ss, payload);
+  if (action === 'clientDocumentDelete') return deleteClientDocument(ss, payload);
+  if (action === 'clientDocumentFileData') return clientDocumentFileData(ss, payload);
   if (action === 'driveFolderImport') {
     var importedFolder;
     try { importedFolder = DriveApp.getFolderById(cleanBusinessText(payload.folderId, 200)); }
@@ -2088,6 +2213,7 @@ function handleBusinessAction(ss, action, payload) {
         notifications: readBusinessRecords(ss, 'Notificaciones_CRM', BUSINESS_HEADERS.notifications).sort(function(a, b) { return String(b.createdAt || '').localeCompare(String(a.createdAt || '')); }).slice(0, 300),
         auditLog: readBusinessRecords(ss, 'Historial_Auditoria', ['Fecha_Hora', 'Accion', 'Detalles_Cambio', 'ID_Elemento', 'Usuario', 'Estado']).sort(function(a, b) { return String(b.Fecha_Hora || '').localeCompare(String(a.Fecha_Hora || '')); }).slice(0, 300),
         galleries: readBusinessRecords(ss, 'Galerias_Clientes', BUSINESS_HEADERS.galleries),
+        clientDocuments: readBusinessRecords(ss, 'Documentos_Clientes', BUSINESS_HEADERS.clientDocuments).filter(function(item) { return String(item.status || 'ACTIVO') !== 'ELIMINADO'; }),
         internalEvents: readBusinessRecords(ss, 'Eventos_Internos', BUSINESS_HEADERS.internalEvents).map(publicInternalEventRecord),
         contracts: readBusinessRecords(ss, 'Contratos', BUSINESS_HEADERS.contracts).map(publicContractRecord),
         ownerSignatureConfigured: Boolean(signatureRows.length && signatureRows[0].fileId)
@@ -2779,12 +2905,35 @@ function handleBusinessAction(ss, action, payload) {
   if (action === 'contractCompleteSignature') {
     var signedContract = resolveSigningContract(ss, payload.token, '', false);
     var folder = getContractsFolder();
+    var audit = payload.audit || {};
+
+    if (signedContract.documentJson) {
+      // Flujo actual: la firma del cliente se conserva como imagen/evidencia.
+      // No existe PDF hasta la autorización final de ambas partes.
+      var signatureFile = folder.createFile(base64Blob(payload.signatureDataUrl, 'image/png', 'Firma-cliente-' + signedContract.id + '.png'));
+      signedContract.clientSignedFileId = '';
+      signedContract.signatureFileId = signatureFile.getId();
+      signedContract.tokenStatus = 'CONSUMIDO';
+      signedContract.status = 'Firmado por cliente';
+      signedContract.acceptedAt = cleanBusinessText(audit.acceptedAt || businessNow(), 50);
+      signedContract.clientSignedAt = businessNow();
+      signedContract.documentHash = cleanBusinessText(payload.originalDocumentHash, 180);
+      signedContract.signedDocumentHash = cleanBusinessText(payload.signedDocumentHash, 180);
+      signedContract.signerIp = cleanBusinessText(audit.ip, 150);
+      signedContract.signerUserAgent = cleanBusinessText(audit.userAgent, 900);
+      signedContract.consentText = cleanBusinessText(audit.consentText, 600);
+      signedContract.updatedAt = signedContract.clientSignedAt;
+      upsertBusinessRecord(ss, 'Contratos', BUSINESS_HEADERS.contracts, signedContract);
+      logAudit(ss, 'CONTRATO_FIRMADO_CLIENTE_SIN_PDF', signedContract.folio + ' | evidencia ' + signedContract.signedDocumentHash, signedContract.id, signedContract.clientName);
+      return { status: 'success', contract: publicContractRecord(signedContract) };
+    }
+
+    // Compatibilidad con contratos históricos que fueron cargados originalmente como PDF.
     var signedName = 'Firmado-cliente-' + (signedContract.folio || signedContract.id) + '.pdf';
     var signedFile = folder.createFile(base64Blob(payload.signedPdfBase64, 'application/pdf', signedName));
-    var signatureFile = folder.createFile(base64Blob(payload.signatureDataUrl, 'image/png', 'Firma-cliente-' + signedContract.id + '.png'));
-    var audit = payload.audit || {};
+    var legacySignatureFile = folder.createFile(base64Blob(payload.signatureDataUrl, 'image/png', 'Firma-cliente-' + signedContract.id + '.png'));
     signedContract.clientSignedFileId = signedFile.getId();
-    signedContract.signatureFileId = signatureFile.getId();
+    signedContract.signatureFileId = legacySignatureFile.getId();
     signedContract.tokenStatus = 'CONSUMIDO';
     signedContract.status = 'Firmado por cliente';
     signedContract.acceptedAt = cleanBusinessText(audit.acceptedAt || businessNow(), 50);
@@ -2796,10 +2945,9 @@ function handleBusinessAction(ss, action, payload) {
     signedContract.consentText = cleanBusinessText(audit.consentText, 600);
     signedContract.updatedAt = signedContract.clientSignedAt;
     upsertBusinessRecord(ss, 'Contratos', BUSINESS_HEADERS.contracts, signedContract);
-    logAudit(ss, 'CONTRATO_FIRMADO_CLIENTE', signedContract.folio + ' | hash ' + signedContract.signedDocumentHash, signedContract.id, signedContract.clientName);
+    logAudit(ss, 'CONTRATO_HISTORICO_FIRMADO_CLIENTE', signedContract.folio + ' | hash ' + signedContract.signedDocumentHash, signedContract.id, signedContract.clientName);
     return { status: 'success', contract: publicContractRecord(signedContract) };
   }
-
   if (action === 'ownerSignatureSave') {
     var ownerFile = getContractsFolder().createFile(base64Blob(payload.signatureDataUrl, 'image/png', 'Firma-Javier-' + Date.now() + '.png'));
     var signatureRecord = { id: 'xavi-owner-signature', fileId: ownerFile.getId(), updatedAt: businessNow() };
@@ -2823,10 +2971,36 @@ function handleBusinessAction(ss, action, payload) {
 
   if (action === 'contractFinalizeData') {
     var finalSource = findBusinessRecord(ss, 'Contratos', BUSINESS_HEADERS.contracts, payload.contractId);
-    if (!finalSource || String(finalSource.status || '') !== 'Firmado por cliente' || !finalSource.clientSignedFileId) throw new Error('El cliente todavía no ha firmado este contrato.');
+    if (!finalSource || String(finalSource.status || '') !== 'Firmado por cliente') throw new Error('El cliente todavía no ha firmado este contrato.');
     var ownerRows = readBusinessRecords(ss, 'Firma_Administrador', BUSINESS_HEADERS.ownerSignature);
     if (!ownerRows.length || !ownerRows[0].fileId) throw new Error('Guarda primero la firma privada de Javier.');
-    return { status: 'success', pdfBase64: fileBase64(finalSource.clientSignedFileId), ownerSignatureDataUrl: 'data:image/png;base64,' + fileBase64(ownerRows[0].fileId) };
+
+    // Contratos HTML nuevos: hasta este punto se crea por primera vez el PDF.
+    if (finalSource.documentJson) {
+      if (!finalSource.signatureFileId) throw new Error('No se localizó la firma del cliente.');
+      return {
+        status: 'success',
+        contract: publicContractRecord(finalSource),
+        clientSignatureDataUrl: 'data:image/png;base64,' + fileBase64(finalSource.signatureFileId),
+        ownerSignatureDataUrl: 'data:image/png;base64,' + fileBase64(ownerRows[0].fileId),
+        audit: {
+          acceptedAt: finalSource.acceptedAt || '',
+          signedAt: finalSource.clientSignedAt || '',
+          ip: finalSource.signerIp || '',
+          userAgent: finalSource.signerUserAgent || '',
+          consentText: finalSource.consentText || ''
+        }
+      };
+    }
+
+    // Compatibilidad únicamente con contratos históricos que ya tenían PDF intermedio.
+    if (!finalSource.clientSignedFileId) throw new Error('El contrato histórico firmado no está disponible.');
+    return {
+      status: 'success',
+      pdfBase64: fileBase64(finalSource.clientSignedFileId),
+      ownerSignatureDataUrl: 'data:image/png;base64,' + fileBase64(ownerRows[0].fileId),
+      legacyPdfFlow: true
+    };
   }
 
   if (action === 'contractFinalize') {
@@ -2970,12 +3144,12 @@ function doPost(e) {
     var ss = getDatabaseSpreadsheet();
 
     var businessActions = [
-      'businessClients', 'businessSnapshot', 'whatsappMessageRecord', 'whatsappWebhookIngest', 'uploadInit', 'uploadFinalize', 'driveFolderImport', 'driveManagedMediaDelete', 'contractUploadInit', 'contractUploadFinalize', 'gmailLogoUploadInit', 'gmailLogoUploadFinalize', 'galleryUploadInit', 'galleryUploadFinalize', 'galleryCreate', 'galleryStatusUpdate', 'internalEventUpsert', 'crmUpsert', 'followUpCreate', 'prospectConvert', 'calendarSync', 'calendarSyncAll', 'expenseUpsert', 'paymentUpsert', 'adjustmentUpsert', 'clientPackageAssign', 'serviceUpsert', 'addonUpsert', 'teamFunctionUpsert', 'teamUserUpsert', 'teamInviteCreate', 'teamInviteResolve', 'teamGoogleConnect', 'teamAssignmentUpsert', 'gmailConfigUpsert', 'gmailTest', 'emailTemplateUpsert', 'emailSend', 'notificationRead', 'remindersRun', 'remindersInstall', 'contractUpload', 'contractGenerate', 'contractDocument', 'contractCreateLink',
+      'businessClients', 'businessSnapshot', 'whatsappMessageRecord', 'whatsappWebhookIngest', 'uploadInit', 'uploadFinalize', 'driveFolderImport', 'driveManagedMediaDelete', 'contractUploadInit', 'contractUploadFinalize', 'gmailLogoUploadInit', 'gmailLogoUploadFinalize', 'galleryUploadInit', 'galleryUploadFinalize', 'galleryCreate', 'galleryStatusUpdate', 'clientDocumentUploadInit', 'clientDocumentUploadFinalize', 'clientDocumentDelete', 'clientDocumentFileData', 'internalEventUpsert', 'crmUpsert', 'followUpCreate', 'prospectConvert', 'calendarSync', 'calendarSyncAll', 'expenseUpsert', 'paymentUpsert', 'adjustmentUpsert', 'clientPackageAssign', 'serviceUpsert', 'addonUpsert', 'teamFunctionUpsert', 'teamUserUpsert', 'teamInviteCreate', 'teamInviteResolve', 'teamGoogleConnect', 'teamAssignmentUpsert', 'gmailConfigUpsert', 'gmailTest', 'emailTemplateUpsert', 'emailSend', 'notificationRead', 'remindersRun', 'remindersInstall', 'contractUpload', 'contractGenerate', 'contractDocument', 'contractCreateLink',
       'contractInvalidate', 'contractResolve', 'contractCompleteSignature', 'ownerSignatureSave',
       'contractAdminPdfData', 'contractFinalizeData', 'contractFinalize'
     ];
     if (businessActions.indexOf(action) >= 0) {
-      if (action === 'businessClients' || action === 'businessSnapshot' || action === 'uploadInit' || action === 'contractUploadInit' || action === 'gmailLogoUploadInit' || action === 'galleryUploadInit' || action === 'contractAdminPdfData' || action === 'teamInviteResolve') {
+      if (action === 'businessClients' || action === 'businessSnapshot' || action === 'uploadInit' || action === 'contractUploadInit' || action === 'gmailLogoUploadInit' || action === 'galleryUploadInit' || action === 'clientDocumentUploadInit' || action === 'clientDocumentFileData' || action === 'contractAdminPdfData' || action === 'teamInviteResolve') {
         return jsonOutput(handleBusinessAction(ss, action, payload));
       }
       var businessLock = LockService.getScriptLock();
