@@ -64,14 +64,10 @@ No publiques credenciales, claves de Drive, IDs privados ni archivos `.vercel/pr
 # Google Fotos en galerías privadas
 
 En el administrador: **Galerías privadas → seleccionar galería → Agregar desde Google Fotos**.
-Conecta la cuenta, elige fotografías en el selector de Google, pulsa **Listo** y vuelve a **Importar selección**.
-Se importan fotografías, no videos. Se guardan copias administradas mediante la carga existente de Drive; no se almacenan las URLs temporales ni los tokens de Google Fotos. Cada foto se guarda antes de continuar con la siguiente. Un reintento en la misma sesión reutiliza las copias ya cargadas.
+Pega una liga compartida `https://photos.app.goo.gl/…` o `https://photos.google.com/share/…`, pulsa **Leer álbum desde la liga** y después **Importar fotografías**. No necesita conectar una cuenta ni configurar Google Photos Picker API.
 
-Configuración de Google Cloud para el cliente OAuth indicado en `XPH_GOOGLE_CLIENT_ID`:
+La liga debe abrir sin iniciar sesión. Se leen todos los bloques antes de habilitar la importación y se informa el número de fotografías encontradas. Se guardan copias administradas mediante la carga existente de Drive. Un reintento en la misma sesión reutiliza las copias ya cargadas. La galería conserva su liga privada y las opciones de descarga existentes.
 
-- Habilitar **Google Photos Picker API**.
-- Registrar `https://www.xaviph.com` como origen JavaScript autorizado (y cada origen adicional donde se use el administrador).
-- Configurar el consentimiento para `https://www.googleapis.com/auth/photospicker.mediaitems.readonly`; si la aplicación está en pruebas, incluir las cuentas que importarán fotos como usuarios de prueba.
-- La autorización es interactiva y temporal. No requiere modificar el secreto del cliente ni los permisos actuales de Drive.
+La lectura utiliza la representación web del álbum compartido. Google puede cambiar su formato o retirar el acceso al enlace. Los fallos se muestran al administrador; no se presenta una lectura incompleta como un álbum completo. Las copias guardadas ya no dependen del enlace original.
 
-Verificación: `npm run test:google-photos` y `npm run typecheck`. La prueba de importación real requiere una cuenta de Google y consentimiento en el navegador.
+Verificación: `npm run test:google-photos`, `npm run typecheck` y `npm run build`.

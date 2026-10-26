@@ -600,6 +600,12 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
     setBusy(true); setDriveImportLoading(true);
     let next = galleryImages;
     let savedCount = 0;
+    let pendingCount = 0;
+    const savePending = async () => {
+      if (!pendingCount) return;
+      next = await persistGallery(next, 'ADMIN_GALERIA_PRIVADA', `${pendingCount} fotografías importadas desde Google Fotos a ${selectedGallery.title}`);
+      savedCount += pendingCount; pendingCount = 0;
+    };
     try {
       for (const [index, item] of items.entries()) {
         const key = `${selectedGallery.galleryId}:${item.id}`;
@@ -613,11 +619,14 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
           record = { id: uploaded.fileId, title, category: 'private', url: uploaded.url, location: selectedGallery.clientName, visibility: 'private', mediaType: 'image', galleryId: selectedGallery.galleryId, gallerySlug: selectedGallery.slug, galleryTitle: selectedGallery.title, galleryClient: selectedGallery.clientName, storageSource: 'managed-upload', downloadUrl: driveDownloadUrl(uploaded.fileId), previewUrl: uploaded.url, createdAt: new Date().toISOString() };
           googlePhotosCopies.current.set(key, record);
         }
-        next = await persistGallery([record, ...next.filter((entry) => !(entry.galleryId === record!.galleryId && entry.id === record!.id))], 'ADMIN_GALERIA_PRIVADA', `Fotografía importada desde Google Fotos a ${selectedGallery.title}`);
-        savedCount++;
+        next = [record, ...next.filter((entry) => !(entry.galleryId === record!.galleryId && entry.id === record!.id))];
+        pendingCount++;
+        if (pendingCount >= 10) await savePending();
       }
+      await savePending();
       notify(`${savedCount} fotografías de Google Fotos guardadas en la galería privada.`);
     } catch (error: any) {
+      try { await savePending(); } catch { /* Retain uploaded records in memory for a retry. */ }
       throw new Error(`${savedCount} de ${items.length} fotografías guardadas. ${error?.message || 'No se pudo completar la importación.'} Puedes reintentar la selección; las copias guardadas en esta sesión se conservarán.`);
     } finally { setBusy(false); setDriveImportLoading(false); setDriveImportStatus('Preparando importación…'); }
   };
