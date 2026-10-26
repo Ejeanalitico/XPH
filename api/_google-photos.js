@@ -1,6 +1,6 @@
 import { once } from 'node:events';
+import { readSharedAlbum } from './_google-photos-shared.js';
 
-const API = 'https://photospicker.googleapis.com/v1/';
 const MAX_PHOTO_BYTES = 100_000_000;
 
 export function googlePhotoDownloadUrl(value) {
@@ -14,31 +14,12 @@ export function googlePhotoDownloadUrl(value) {
 
 export async function handleGooglePhotos(req, res, body, clientId) {
   res.setHeader('Cache-Control', 'no-store');
-  if (body.operation === 'config') {
-    return res.status(200).json({ status: 'success', clientId });
+  if (body.operation === 'sharedAlbum') {
+    return res.status(200).json({ status: 'success', data: await readSharedAlbum(body.albumUrl, body.pageToken) });
   }
-  const token = String(body.accessToken || '');
-  if (!token || token.length > 4096 || /[\r\n]/.test(token)) {
-    return res.status(400).json({ status: 'error', message: 'Conecta tu cuenta de Google Fotos nuevamente.' });
-  }
-  const headers = { Authorization: `Bearer ${token}` };
-  const sessionId = encodeURIComponent(String(body.sessionId || ''));
-  let path;
-  let method = 'GET';
-  if (body.operation === 'create') { path = 'sessions'; method = 'POST'; }
-  else if (body.operation === 'session' && sessionId) path = `sessions/${sessionId}`;
-  else if (body.operation === 'list' && sessionId) {
-    const params = new URLSearchParams({ sessionId: String(body.sessionId), pageSize: '100' });
-    if (body.pageToken) params.set('pageToken', String(body.pageToken));
-    path = `mediaItems?${params}`;
-  } else if (body.operation === 'delete' && sessionId) { path = `sessions/${sessionId}`; method = 'DELETE'; }
-  else if (body.operation !== 'download') {
-    return res.status(400).json({ status: 'error', message: 'Operación de Google Fotos no válida.' });
-  }
-
-  if (body.operation === 'download') {
+  if (body.operation === 'downloadShared') {
     const response = await fetch(googlePhotoDownloadUrl(body.baseUrl), {
-      headers, redirect: 'error', signal: AbortSignal.timeout(120_000),
+      redirect: 'error', signal: AbortSignal.timeout(120_000),
     });
     if (!response.ok) throw new Error('No se pudo descargar la foto. Vuelve a seleccionarla en Google Fotos.');
     const mimeType = String(response.headers.get('content-type') || '').split(';')[0];
@@ -48,7 +29,7 @@ export async function handleGooglePhotos(req, res, body, clientId) {
       throw new Error('La fotografía supera el límite de 100 MB.');
     }
     res.setHeader('Content-Type', mimeType);
-    // Stream originals; never store expiring Photos URLs or OAuth tokens in gallery records.
+    // Store a managed copy instead of persisting a temporary Google Photos URL.
     let size = 0;
     try {
       for await (const chunk of response.body) {
@@ -63,16 +44,5 @@ export async function handleGooglePhotos(req, res, body, clientId) {
     }
   }
 
-  const response = await fetch(`${API}${path}`, {
-    method, headers: { ...headers, 'Content-Type': 'application/json' },
-    ...(method === 'POST' ? { body: '{}' } : {}), signal: AbortSignal.timeout(30_000),
-  });
-  const data = response.status === 204 ? {} : await response.json();
-  if (!response.ok) {
-    const message = response.status === 401 ? 'La autorización de Google Fotos venció. Conecta tu cuenta de nuevo.'
-      : response.status === 403 ? 'Google Fotos no autorizó el acceso. Revisa los permisos y que Google Photos Picker API esté habilitada en el proyecto de Google Cloud.'
-      : 'No se pudo consultar Google Fotos. La selección puede haber caducado; vuelve a elegir tus fotos.';
-    return res.status(response.status).json({ status: 'error', message });
-  }
-  return res.status(200).json({ status: 'success', data });
+  return res.status(400).json({ status: 'error', message: 'Operación de Google Fotos no válida.' });
 }
