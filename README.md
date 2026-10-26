@@ -61,3 +61,17 @@ Después crea una nueva implementación de la aplicación web. El despliegue deb
 6. Comprueba la página pública, el inicio de sesión administrativo, la carga privada de un PDF y una liga móvil de firma.
 
 No publiques credenciales, claves de Drive, IDs privados ni archivos `.vercel/project.json` en el repositorio.
+# Google Fotos en galerías privadas
+
+En el administrador: **Galerías privadas → seleccionar galería → Agregar desde Google Fotos**.
+Conecta la cuenta, elige fotografías en el selector de Google, pulsa **Listo** y vuelve a **Importar selección**.
+Se importan fotografías, no videos. Se guardan copias administradas mediante la carga existente de Drive; no se almacenan las URLs temporales ni los tokens de Google Fotos. Cada foto se guarda antes de continuar con la siguiente. Un reintento en la misma sesión reutiliza las copias ya cargadas.
+
+Configuración de Google Cloud para el cliente OAuth indicado en `XPH_GOOGLE_CLIENT_ID`:
+
+- Habilitar **Google Photos Picker API**.
+- Registrar `https://www.xaviph.com` como origen JavaScript autorizado (y cada origen adicional donde se use el administrador).
+- Configurar el consentimiento para `https://www.googleapis.com/auth/photospicker.mediaitems.readonly`; si la aplicación está en pruebas, incluir las cuentas que importarán fotos como usuarios de prueba.
+- La autorización es interactiva y temporal. No requiere modificar el secreto del cliente ni los permisos actuales de Drive.
+
+Verificación: `npm run test:google-photos` y `npm run typecheck`. La prueba de importación real requiere una cuenta de Google y consentimiento en el navegador.

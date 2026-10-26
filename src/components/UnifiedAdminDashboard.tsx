@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BarChart3,
   BriefcaseBusiness,
@@ -44,6 +44,7 @@ import {
 import { DEFAULT_FOOTER_CONTACT, normalizeFooterContact } from '../footerConfig';
 import { PromotionAdminSettings } from './PromotionAdminSettings';
 import { SafeImage } from './SafeImage';
+import { GooglePhotosImport, downloadGooglePhoto, type PhotosItem } from './GooglePhotosImport';
 import { AnalyticsAdminPanel } from './AnalyticsAdminPanel';
 import { BusinessAdminPanel, BusinessTab } from './BusinessAdminPanel';
 import { setAnalyticsExcluded } from '../utils/analyticsPrivacy';
@@ -228,6 +229,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
   const [galleryClient, setGalleryClient] = useState('');
   const [galleryTitle, setGalleryTitle] = useState('');
   const [selectedGalleryId, setSelectedGalleryId] = useState('');
+  const googlePhotosCopies = useRef(new Map<string, GalleryImage>());
   const [privateFiles, setPrivateFiles] = useState<File[]>([]);
   const [driveMediaUrl, setDriveMediaUrl] = useState('');
   const [driveMediaTitle, setDriveMediaTitle] = useState('');
@@ -593,6 +595,33 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
     }
   };
 
+  const importGooglePhotos = async (items: PhotosItem[], accessToken: string) => {
+    if (!session || !selectedGallery) throw new Error('Selecciona una galería privada.');
+    setBusy(true); setDriveImportLoading(true);
+    let next = galleryImages;
+    let savedCount = 0;
+    try {
+      for (const [index, item] of items.entries()) {
+        const key = `${selectedGallery.galleryId}:${item.id}`;
+        let record = googlePhotosCopies.current.get(key);
+        if (record && next.some((entry) => entry.galleryId === record!.galleryId && entry.id === record!.id)) { savedCount++; continue; }
+        setDriveImportStatus(`Importando foto ${index + 1} de ${items.length} desde Google Fotos…`);
+        if (!record) {
+          const file = await downloadGooglePhoto(item, accessToken);
+          const title = titleFromFilename(file.name);
+          const uploaded = await adminUploadMedia(session, file, { title, category: 'private', location: selectedGallery.clientName, visibility: 'private' });
+          record = { id: uploaded.fileId, title, category: 'private', url: uploaded.url, location: selectedGallery.clientName, visibility: 'private', mediaType: 'image', galleryId: selectedGallery.galleryId, gallerySlug: selectedGallery.slug, galleryTitle: selectedGallery.title, galleryClient: selectedGallery.clientName, storageSource: 'managed-upload', downloadUrl: driveDownloadUrl(uploaded.fileId), previewUrl: uploaded.url, createdAt: new Date().toISOString() };
+          googlePhotosCopies.current.set(key, record);
+        }
+        next = await persistGallery([record, ...next.filter((entry) => !(entry.galleryId === record!.galleryId && entry.id === record!.id))], 'ADMIN_GALERIA_PRIVADA', `Fotografía importada desde Google Fotos a ${selectedGallery.title}`);
+        savedCount++;
+      }
+      notify(`${savedCount} fotografías de Google Fotos guardadas en la galería privada.`);
+    } catch (error: any) {
+      throw new Error(`${savedCount} de ${items.length} fotografías guardadas. ${error?.message || 'No se pudo completar la importación.'} Puedes reintentar la selección; las copias guardadas en esta sesión se conservarán.`);
+    } finally { setBusy(false); setDriveImportLoading(false); setDriveImportStatus('Preparando importación…'); }
+  };
+
   const createPrivateGallery = async () => {
     if (!session || !galleryClient.trim() || !galleryTitle.trim()) return;
     setBusy(true);
@@ -917,6 +946,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
                   <div className="space-y-3"><h3 className="font-semibold">Subir fotografías</h3><input type="file" accept="image/*" multiple onChange={(e) => setPrivateFiles(Array.from(e.target.files || []))} /><button onClick={uploadPrivateImages} disabled={!privateFiles.length || busy} className="px-4 py-2.5 rounded-xl bg-[#D4AF37] text-black font-bold text-sm disabled:opacity-40"><Upload className="inline w-4 h-4 mr-2" />Agregar {privateFiles.length || ''} fotos</button></div>
                   <div className="space-y-3"><h3 className="font-semibold">Agregar desde Google Drive</h3><p className="text-xs leading-5 text-gray-400">Acepta la liga de una carpeta completa o de un archivo individual. La carpeta debe ser accesible por la cuenta de XPH.</p><select value={driveMediaType} onChange={(e) => setDriveMediaType(e.target.value as 'image' | 'video')} className="w-full px-3 py-2.5 rounded-xl bg-[#0B0F17] border border-white/10"><option value="video">Video individual</option><option value="image">Fotografía individual</option></select><input value={driveMediaUrl} onChange={(e) => setDriveMediaUrl(e.target.value)} placeholder="Liga de carpeta, fotografía o video de Google Drive" className="w-full px-3 py-2.5 rounded-xl bg-[#0B0F17] border border-white/10" /><input value={driveMediaTitle} onChange={(e) => setDriveMediaTitle(e.target.value)} placeholder="Título (solo para archivo individual)" className="w-full px-3 py-2.5 rounded-xl bg-[#0B0F17] border border-white/10" /><button onClick={registerPrivateDriveFile} disabled={!driveMediaUrl || busy} className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm"><FileVideo2 className="inline w-4 h-4 mr-2" />Importar desde Drive</button></div>
                 </div>
+                <GooglePhotosImport key={selectedGallery.galleryId} disabled={busy} onImport={importGooglePhotos} />
                 <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
                   {selectedGalleryMedia.map((item) => (
                     <div key={`${item.id}-${item.mediaType}`} className="relative rounded-xl overflow-hidden border border-white/10 bg-[#0B0F17]">

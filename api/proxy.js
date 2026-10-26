@@ -1,5 +1,6 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { handleGooglePhotos } from './_google-photos.js';
 
 const APPS_SCRIPT_URL = process.env.XPH_APPS_SCRIPT_URL || '';
 const APPS_SCRIPT_SHARED_SECRET = process.env.XPH_APPS_SCRIPT_SHARED_SECRET || '';
@@ -1990,6 +1991,12 @@ export default async function handler(req, res) {
 
   try {
     const action = requestedAction;
+
+    if (req.method === 'POST' && action === 'adminGooglePhotos') {
+      if (!requirePermission(res, verifySession(req), 'GALLERIES')) return;
+      const body = JSON.parse(await readBody(req) || '{}');
+      return await handleGooglePhotos(req, res, body, GOOGLE_CLIENT_ID);
+    }
 
     if (req.method === 'GET' && action === 'adminSession') {
       const session = verifySession(req);

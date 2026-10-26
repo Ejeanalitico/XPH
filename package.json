@@ -13,6 +13,7 @@
     "test:business": "node scripts/verify-financial-rules.mjs",
     "test:crm": "node scripts/verify-crm-invariants.mjs",
     "test:routes": "node scripts/verify-dynamic-category-pages.mjs",
+    "test:google-photos": "node scripts/test-google-photos.mjs",
     "check": "npm run test:business && npm run test:crm && npm run test:routes && npm run typecheck && npm run build"
   },
   "dependencies": {
