@@ -690,13 +690,31 @@ export function extractDriveFolderId(value: string): string {
   return '';
 }
 
-export async function importPrivateDriveFolder(folderId: string): Promise<Array<{ id: string; name: string; mimeType: string }>> {
+export interface PrivateDriveFolderPage {
+  files: Array<{ id: string; name: string; mimeType: string }>;
+  nextPageToken: string;
+  scanned: number;
+  shareFailures: number;
+}
+
+// Cada petición solicita una página pequeña. Apps Script retoma el FileIterator
+// con nextPageToken, sin volver a empezar ni rebasar el tiempo de ejecución.
+export async function importPrivateDriveFolder(
+  folderId: string,
+  pageToken = '',
+  pageSize = 100,
+): Promise<PrivateDriveFolderPage> {
   const res = await fetch('/api/proxy?action=adminDriveFolderImport', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-    body: JSON.stringify({ folderId }),
+    body: JSON.stringify({ folderId, pageToken, pageSize }),
   });
   const data = await parseResponse(res);
-  return Array.isArray(data.files) ? data.files : [];
+  return {
+    files: Array.isArray(data.files) ? data.files : [],
+    nextPageToken: typeof data.nextPageToken === 'string' ? data.nextPageToken : '',
+    scanned: Number(data.scanned) || 0,
+    shareFailures: Number(data.shareFailures) || 0,
+  };
 }
 
 export async function deleteManagedDriveMedia(fileIds: string[]): Promise<{ deleted: string[]; retained: string[] }> {
