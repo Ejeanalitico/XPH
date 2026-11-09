@@ -6,11 +6,16 @@ on:
     paths:
       - 'google-apps-script.js'
       - 'api/_drive-public.js'
+      - 'api/client-gallery.js'
+      - 'src/components/ClientGalleryPage.tsx'
+      - 'src/types.ts'
+      - 'src/vite-env.d.ts'
       - 'api/proxy.js'
       - 'src/utils/adminApi.ts'
       - 'src/components/UnifiedAdminDashboard.tsx'
       - 'scripts/test-drive-folder-import.mjs'
       - 'scripts/test-public-drive-pagination.mjs'
+      - 'scripts/test-linked-drive-gallery.mjs'
       - '.github/workflows/validate-drive-gallery.yml'
   workflow_dispatch:
 
@@ -29,5 +34,6 @@ jobs:
       - run: npm ci
       - run: node scripts/test-drive-folder-import.mjs
       - run: node scripts/test-public-drive-pagination.mjs
+      - run: node scripts/test-linked-drive-gallery.mjs
       - run: npm run typecheck
       - run: npm run build
