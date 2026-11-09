@@ -44,3 +44,20 @@ export async function listPublicDriveFolderPage({
     shareFailures: 0,
   };
 }
+
+export async function listAllPublicDriveFolder({ folderId, apiKey, fetchImpl = fetch }) {
+  const items = new Map();
+  const tokens = new Set();
+  let pageToken = '';
+  for (let page = 0; page < 100; page++) {
+    const result = await listPublicDriveFolderPage({
+      folderId, pageToken, pageSize: 500, apiKey, fetchImpl,
+    });
+    for (const file of result.files) items.set(file.id, file);
+    if (!result.nextPageToken) return [...items.values()];
+    if (tokens.has(result.nextPageToken)) throw new Error('Drive devolvió una página repetida.');
+    tokens.add(result.nextPageToken);
+    pageToken = result.nextPageToken;
+  }
+  throw new Error('La carpeta superó las 100 páginas admitidas.');
+}
