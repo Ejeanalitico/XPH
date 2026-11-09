@@ -1,3 +1,4 @@
+import { listAllPublicDriveFolder } from './_drive-public.js';
 const APPS_SCRIPT_URL = process.env.XPH_APPS_SCRIPT_URL || '';
 const APPS_SCRIPT_SHARED_SECRET = process.env.XPH_APPS_SCRIPT_SHARED_SECRET || '';
 
@@ -124,9 +125,33 @@ export default async function handler(req, res) {
       galleryId: meta.galleryId,
     }));
 
+    // Los archivos enlazados se consultan al abrir la galería: el JSON de
+    // Google Sheets solo conserva la carpeta, nunca miles de IDs.
+    const linkedFolderId = String(meta.driveFolderId || '').trim();
+    let folderListed = false;
+    let linkedMedia = [];
+    if (linkedFolderId && process.env.VITE_GOOGLE_DRIVE_API_KEY) {
+      try {
+        const remote = await listAllPublicDriveFolder({
+          folderId: linkedFolderId,
+          apiKey: process.env.VITE_GOOGLE_DRIVE_API_KEY,
+        });
+        linkedMedia = remote.map((file) => ({
+          id: file.id, title: file.name,
+          mediaType: file.mimeType.startsWith('video/') ? 'video' : 'image',
+          galleryId: meta.galleryId,
+        }));
+        folderListed = true;
+      } catch (error) {
+        // Si la clave solo permite peticiones con Referer del sitio, la web
+        // completa la galería desde el propio navegador del cliente.
+        console.warn('[XPH Gallery] Drive API server-side unavailable:', String(error?.message || error));
+      }
+    }
+
     const deduped = [];
     const seen = new Set();
-    [...explicitMedia, ...indexedImages, ...indexedVideos].forEach((item) => {
+    [...explicitMedia, ...indexedImages, ...indexedVideos, ...linkedMedia].forEach((item) => {
       const key = `${String(item?.id || '')}:${item?.mediaType === 'video' ? 'video' : 'image'}`;
       if (!item?.id || seen.has(key)) return;
       seen.add(key);
@@ -145,6 +170,9 @@ export default async function handler(req, res) {
       clientName: meta.galleryClient || 'Cliente XPH',
       allowDownloads,
       media,
+      linkedFolderId,
+      folderListed,
+      linkedFolderMediaCount: Number(meta.driveFolderMediaCount) || 0,
     });
   } catch (error) {
     console.error('[XPH Client Gallery] Error:', error);

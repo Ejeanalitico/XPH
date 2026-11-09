@@ -690,23 +690,59 @@ export function extractDriveFolderId(value: string): string {
   return '';
 }
 
+// Respaldo para claves de Google restringidas al dominio web: la llamada
+// sucede desde el navegador administrador y solo permite carpetas públicas.
+export async function importPublicDriveFolderFromBrowser(
+  folderId: string, pageToken = '', pageSize = 150,
+): Promise<PrivateDriveFolderPage> {
+  const key = String(import.meta.env.VITE_GOOGLE_DRIVE_API_KEY || '');
+  if (!key) throw new Error('La clave de Drive para el navegador no está configurada.');
+  const url = new URL('https://www.googleapis.com/drive/v3/files');
+  url.searchParams.set('q', `'${folderId}' in parents and trashed = false`);
+  url.searchParams.set('fields', 'nextPageToken,incompleteSearch,files(id,name,mimeType)');
+  url.searchParams.set('pageSize', String(Math.min(200, Math.max(1, Math.floor(pageSize)))));
+  url.searchParams.set('supportsAllDrives', 'true');
+  url.searchParams.set('includeItemsFromAllDrives', 'true');
+  url.searchParams.set('key', key);
+  if (pageToken) url.searchParams.set('pageToken', pageToken);
+  const response = await fetch(url.toString(), { method: 'GET', cache: 'no-store' });
+  if (!response.ok) throw new Error(`Google Drive no permitió leer la carpeta pública (HTTP ${response.status}).`);
+  const data = await response.json();
+  if (data.incompleteSearch) throw new Error('Drive devolvió resultados incompletos.');
+  const entries: Array<{ id: string; name: string; mimeType: string }> = Array.isArray(data.files) ? data.files : [];
+  return {
+    files: entries.filter((file) => /^(image|video)\//.test(file.mimeType || '')),
+    nextPageToken: typeof data.nextPageToken === 'string' ? data.nextPageToken : '',
+    scanned: entries.length,
+    shareFailures: 0,
+    provider: 'browser-drive-api',
+  };
+}
+
+export type DriveImportProvider = '' | 'drive-api' | 'apps-script' | 'browser-drive-api';
+
 export interface PrivateDriveFolderPage {
   files: Array<{ id: string; name: string; mimeType: string }>;
   nextPageToken: string;
   scanned: number;
   shareFailures: number;
+  provider: Exclude<DriveImportProvider, ''>;
 }
 
-// Cada petición solicita una página pequeña. Apps Script retoma el FileIterator
-// con nextPageToken, sin volver a empezar ni rebasar el tiempo de ejecución.
+// El proveedor de la primera página se fija para todo el recorrido porque
+// Drive API y Apps Script usan formatos de continuación distintos.
 export async function importPrivateDriveFolder(
   folderId: string,
   pageToken = '',
-  pageSize = 100,
+  pageSize = 150,
+  provider: DriveImportProvider = '',
 ): Promise<PrivateDriveFolderPage> {
+  if (provider === 'browser-drive-api') {
+    return importPublicDriveFolderFromBrowser(folderId, pageToken, pageSize);
+  }
   const res = await fetch('/api/proxy?action=adminDriveFolderImport', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-    body: JSON.stringify({ folderId, pageToken, pageSize }),
+    body: JSON.stringify({ folderId, pageToken, pageSize, provider }),
   });
   const data = await parseResponse(res);
   return {
@@ -714,6 +750,7 @@ export async function importPrivateDriveFolder(
     nextPageToken: typeof data.nextPageToken === 'string' ? data.nextPageToken : '',
     scanned: Number(data.scanned) || 0,
     shareFailures: Number(data.shareFailures) || 0,
+    provider: data.provider === 'drive-api' ? 'drive-api' : 'apps-script',
   };
 }
 

@@ -64,6 +64,7 @@ import {
   extractDriveFolderId,
   extractDriveFileId,
   importPrivateDriveFolder,
+  importPublicDriveFolderFromBrowser,
   registerExistingDriveImage,
   loadAdminConfig,
   loadDriveImages,
@@ -170,7 +171,7 @@ const privateGallerySummaries = (items: GalleryImage[]): PrivateGallerySummary[]
     clientName: meta.galleryClient || 'Cliente XPH',
     token: meta.galleryToken || '',
     createdAt: meta.createdAt || '',
-    mediaCount: items.filter((item) => item.galleryId === meta.galleryId && item.mediaType !== 'gallery-meta').length,
+    mediaCount: Math.max(Number(meta.driveFolderMediaCount) || 0, items.filter((item) => item.galleryId === meta.galleryId && item.mediaType !== 'gallery-meta').length),
     allowDownloads: meta.galleryAllowDownloads !== false,
   }));
 
@@ -236,6 +237,15 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
   const [driveMediaType, setDriveMediaType] = useState<'image' | 'video'>('video');
   const [driveImportLoading, setDriveImportLoading] = useState(false);
   const [driveImportStatus, setDriveImportStatus] = useState('Preparando importación...');
+  const [driveImportProgress, setDriveImportProgress] = useState<{
+    phase: 'reading' | 'saving';
+    discovered: number;
+    scanned: number;
+    total: number | null;
+    already: number;
+    saved: number;
+    percent: number | null;
+  } | null>(null);
 
   const privateGalleries = useMemo(() => privateGallerySummaries(galleryImages), [galleryImages]);
   const adminNavItems = ADMIN_NAV_ITEMS.filter((item) => session?.role === 'SUPER_ADMIN' || item.id === 'business');
@@ -668,96 +678,151 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
     if (folderId) {
       setBusy(true);
       setDriveImportLoading(true);
-      setDriveImportStatus('Conectando con Google Drive y leyendo la carpeta...');
+      setDriveImportStatus('Preparando lectura de Google Drive...');
+      setDriveImportProgress({ phase: 'reading', discovered: 0, scanned: 0, total: null, already: 0, saved: 0, percent: null });
       let savedCount = 0;
-      let compatibleCount = 0;
-      let scannedCount = 0;
+      let totalCount = 0;
+      let alreadyCount = 0;
       let shareFailures = 0;
       try {
-        // La importación puede reintentarse. Nunca se duplica un archivo
-        // registrado previamente en esta galería, aunque se interrumpa.
-        const existingIds = new Set(
-          galleryImages.filter((item) => item.galleryId === selectedGallery.galleryId && item.mediaType !== 'gallery-meta')
-            .map((item) => item.id),
-        );
-        let savedGallery = galleryImages;
-        let pending: GalleryImage[] = [];
+        const targetGalleryId = selectedGallery.galleryId;
+        const originalIds = new Set(galleryImages
+          .filter((item) => item.galleryId === targetGalleryId && item.mediaType !== 'gallery-meta')
+          .map((item) => item.id));
+        const discovered = new Map<string, { id: string; name: string; mimeType: string }>();
+        const visitedTokens = new Set<string>();
         let cursor = '';
         let pageNumber = 0;
-        const visitedTokens = new Set<string>();
+        let scannedCount = 0;
+        let provider: Parameters<typeof importPrivateDriveFolder>[3] = '';
 
-        const savePending = async () => {
-          if (!pending.length) return;
-          const batch = pending;
-          pending = [];
-          setDriveImportStatus(`Guardando lote de ${batch.length} fotos. ${savedCount} nuevas guardadas hasta ahora...`);
-          const ids = new Set(batch.map((item) => item.id));
-          // Evitar borrar fotos con el mismo ID que pertenezcan a otra galería.
-          const next = [...batch, ...savedGallery.filter((item) =>
-            !(item.galleryId === selectedGallery.galleryId && ids.has(item.id)))];
-          savedGallery = await persistGallery(next, 'ADMIN_GALERIA_PRIVADA',
-            `${batch.length} archivos agregados desde Drive a ${selectedGallery.title}`);
-          savedCount += batch.length;
-        };
-
+        // 1) Primero se enumeran todos los archivos para conocer un total
+        // exacto. No se presenta un 100% engañoso al llegar a 1,000.
         do {
           pageNumber++;
-          if (pageNumber > 1000) throw new Error('La carpeta excedió las 1,000 páginas previstas. Contacta al administrador.');
-          setDriveImportStatus(`Leyendo bloque ${pageNumber} de Drive. ${scannedCount} archivos revisados, ${savedCount} nuevos guardados...`);
+          if (pageNumber > 1000) throw new Error('Drive superó las 1,000 páginas de lectura. Contacta al administrador.');
+          setDriveImportStatus(`Leyendo bloque ${pageNumber}. Encontradas ${discovered.size} fotos; contando el total...`);
           let page: Awaited<ReturnType<typeof importPrivateDriveFolder>> | null = null;
           for (let attempt = 1; attempt <= 3; attempt++) {
             try {
-              page = await importPrivateDriveFolder(folderId, cursor, 100);
+              page = await importPrivateDriveFolder(folderId, cursor, 150, provider);
               break;
             } catch (error) {
               if (attempt === 3) throw error;
-              setDriveImportStatus(`Reintentando bloque ${pageNumber} (intento ${attempt + 1} de 3)...`);
-              await new Promise((resolve) => setTimeout(resolve, attempt * 700));
+              setDriveImportStatus(`Reconectando con Drive (intento ${attempt + 1} de 3)...`);
+              await new Promise((resolve) => setTimeout(resolve, 700 * attempt));
             }
           }
-          if (!page) throw new Error('Google Drive no devolvió el bloque solicitado.');
-          // Una versión antigua de Apps Script devuelve 1,000 sin token.
-          if (page.scanned === 0 && page.files.length >= 1000 && !page.nextPageToken) {
-            throw new Error('Apps Script todavía tiene el límite de 1,000 archivos. Actualiza y publica su implementación antes de importar.');
+          if (!page) throw new Error('No se recibió la respuesta de Google Drive.');
+
+          // La implementación anterior de Apps Script regresa solo 1,000
+          // archivos. La alternativa del navegador funciona si la clave de
+          // Drive está restringida a la URL de XPH, no al servidor Vercel.
+          if (!cursor && page.provider === 'apps-script' && page.scanned === 0 &&
+              page.files.length >= 1000 && !page.nextPageToken) {
+            try {
+              page = await importPublicDriveFolderFromBrowser(folderId, '', 150);
+              setDriveImportStatus('Conectado a Google Drive directamente. Continuando más allá de 1,000...');
+            } catch (_) {
+              throw new Error('Google Apps Script sigue publicado con el límite de 1,000 y la clave web no pudo leer la carpeta. Debes actualizar la implementación de Apps Script antes de continuar.');
+            }
           }
+          if (!provider || page.provider !== 'apps-script' && !cursor) provider = page.provider;
           scannedCount += page.scanned || page.files.length;
-          compatibleCount += page.files.length;
           shareFailures += page.shareFailures;
-          for (const file of page.files) {
-            if (!file.id || existingIds.has(file.id)) continue;
-            existingIds.add(file.id);
-            const mediaType: 'image' | 'video' = file.mimeType.startsWith('video/') ? 'video' : 'image';
-            const preview = mediaType === 'video' ? drivePreviewUrl(file.id) : `https://lh3.googleusercontent.com/d/${file.id}`;
-            pending.push({
-              id: file.id, title: file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '),
-              category: 'private', url: preview, location: selectedGallery.clientName,
-              visibility: 'private', mediaType, galleryId: selectedGallery.galleryId,
-              gallerySlug: selectedGallery.slug, galleryTitle: selectedGallery.title,
-              galleryClient: selectedGallery.clientName, storageSource: 'drive-link',
-              downloadUrl: driveDownloadUrl(file.id), previewUrl: preview,
-              driveFolderId: folderId, createdAt: new Date().toISOString(),
-            });
+          for (const item of page.files) {
+            if (item.id && !discovered.has(item.id)) discovered.set(item.id, item);
           }
-          if (pending.length >= 250) await savePending();
+          setDriveImportProgress({
+            phase: 'reading', discovered: discovered.size, scanned: scannedCount,
+            total: null, already: 0, saved: 0, percent: null,
+          });
+          setDriveImportStatus(`Se encontraron ${discovered.size.toLocaleString('es-MX')} fotos y videos en ${pageNumber} bloques. Buscando más...`);
           if (page.nextPageToken && visitedTokens.has(page.nextPageToken)) {
-            throw new Error('Drive devolvió un bloque repetido. La importación se detuvo para evitar duplicados.');
+            throw new Error('Drive devolvió un token repetido. Se detuvo la lectura para evitar duplicados.');
           }
           if (page.nextPageToken) visitedTokens.add(page.nextPageToken);
           cursor = page.nextPageToken;
         } while (cursor);
 
-        await savePending();
-        if (!compatibleCount) throw new Error('La carpeta no contiene fotografías o videos compatibles en su nivel principal.');
-        setDriveImportStatus(`Importación completa: ${compatibleCount} archivos detectados, ${savedCount} nuevos guardados.`);
+        const files = [...discovered.values()];
+        totalCount = files.length;
+        if (!totalCount) throw new Error('Esta carpeta no contiene fotografías o videos compatibles.');
+        const remaining = files.filter((file) => !originalIds.has(file.id));
+        alreadyCount = totalCount - remaining.length;
+
+        const publishProgress = () => {
+          const completed = alreadyCount + savedCount;
+          const percent = Math.min(100, Math.round(completed * 1000 / totalCount) / 10);
+          setDriveImportProgress({
+            phase: 'saving', discovered: totalCount, scanned: scannedCount,
+            total: totalCount, already: alreadyCount, saved: savedCount, percent,
+          });
+          setDriveImportStatus(`Disponibles ${completed.toLocaleString('es-MX')} de ${totalCount.toLocaleString('es-MX')} fotos (${percent.toFixed(1)}%).`);
+        };
+        publishProgress();
+
+        // Carpetas públicas grandes: guardar únicamente el enlace a la carpeta
+        // en la metadata de la galería. La vista privada lee todas las imágenes
+        // directamente de Drive. Esto evita superar 50,000 caracteres por celda
+        // incluso si el Apps Script publicado conserva el escritor antiguo.
+        if (provider === 'drive-api' || provider === 'browser-drive-api') {
+          const next = galleryImages.map((item) =>
+            item.visibility === 'private' && item.mediaType === 'gallery-meta' &&
+            item.galleryId === targetGalleryId
+              ? { ...item, driveFolderId: folderId, driveFolderMediaCount: totalCount }
+              : item,
+          );
+          setDriveImportStatus(`Enlazando la carpeta completa (${totalCount.toLocaleString('es-MX')} archivos)...`);
+          await persistGallery(next, 'ADMIN_GALERIA_PRIVADA',
+            `Carpeta Drive enlazada a ${selectedGallery.title}: ${totalCount} archivos disponibles`);
+          savedCount = remaining.length;
+          publishProgress();
+          setDriveMediaUrl('');
+          setDriveMediaTitle('');
+          notify(`Carpeta enlazada: ${totalCount} fotos disponibles en la galería, ${alreadyCount} ya registradas y ${savedCount} nuevas accesibles por Drive. No se copiaron archivos.`);
+          return;
+        }
+
+        // 2) Guardar solo fotografías nuevas. Cada bloque confirmado cuenta
+        // en el porcentaje y queda persistido si se cierra el navegador.
+        let savedGallery = galleryImages;
+        for (let index = 0; index < remaining.length; index += 200) {
+          const batch = remaining.slice(index, index + 200).map((file): GalleryImage => {
+            const mediaType: 'image' | 'video' = file.mimeType.startsWith('video/') ? 'video' : 'image';
+            const preview = mediaType === 'video' ? drivePreviewUrl(file.id) : `https://lh3.googleusercontent.com/d/${file.id}`;
+            return {
+              id: file.id, title: file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '),
+              category: 'private', url: preview, location: selectedGallery.clientName,
+              visibility: 'private', mediaType, galleryId: targetGalleryId,
+              gallerySlug: selectedGallery.slug, galleryTitle: selectedGallery.title,
+              galleryClient: selectedGallery.clientName, storageSource: 'drive-link',
+              downloadUrl: driveDownloadUrl(file.id), previewUrl: preview,
+              driveFolderId: folderId, createdAt: new Date().toISOString(),
+            };
+          });
+          const batchIds = new Set(batch.map((item) => item.id));
+          const next = [
+            ...batch,
+            ...savedGallery.filter((item) => !(item.galleryId === targetGalleryId && batchIds.has(item.id))),
+          ];
+          setDriveImportStatus(`Guardando bloque ${Math.floor(index / 200) + 1} de ${Math.ceil(remaining.length / 200)}...`);
+          savedGallery = await persistGallery(next, 'ADMIN_GALERIA_PRIVADA',
+            `${batch.length} fotografías nuevas importadas desde Drive a ${selectedGallery.title}`);
+          savedCount += batch.length;
+          publishProgress();
+        }
+        setDriveImportStatus(`Importación completa: ${totalCount} archivos verificados.`);
         setDriveMediaUrl('');
         setDriveMediaTitle('');
-        notify(`Importación completada: ${compatibleCount} archivos encontrados, ${savedCount} agregados, ${compatibleCount - savedCount} ya existentes.${shareFailures ? ` Revisa ${shareFailures} archivos cuyos permisos de Drive no se pudieron actualizar.` : ''}`);
+        notify(`Drive: ${totalCount} fotos encontradas, ${alreadyCount} previamente registradas, ${savedCount} nuevas guardadas (100%).${shareFailures ? ` Advertencia: ${shareFailures} archivos no permitieron actualizar su acceso.` : ''}`);
       } catch (error: any) {
-        notify(`${error?.message || 'No se pudo completar la importación desde Drive.'}${savedCount ? ` Se guardaron ${savedCount} archivos nuevos antes del error. Puedes volver a importar sin duplicarlos.` : ''}`);
+        notify(`${error?.message || 'No se pudo completar la importación.'} ${savedCount} nuevas guardadas hasta el momento. Puedes repetir la importación sin duplicarlas.`);
       } finally {
         setBusy(false);
         setDriveImportLoading(false);
         setDriveImportStatus('Preparando importación...');
+        setDriveImportProgress(null);
       }
       return;
     }
@@ -854,10 +919,30 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
             <p className="mt-5 text-[11px] uppercase tracking-[0.28em] text-[#D4AF37] font-mono">Google Drive</p>
             <h2 className="mt-2 text-2xl font-bold">Importando archivos</h2>
             <p className="mt-3 text-sm leading-6 text-gray-300">{driveImportStatus}</p>
-            <div className="mt-5 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-              <div className="h-full w-1/2 rounded-full bg-[#D4AF37] animate-pulse" />
-            </div>
-            <p className="mt-4 text-xs leading-5 text-gray-500">Mantén esta pantalla abierta. Se cerrará automáticamente cuando termine la importación.</p>
+            {driveImportProgress && (
+              <div className="mt-5 space-y-3 text-left" aria-live="polite">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-gray-300">{driveImportProgress.phase === 'reading' ? 'Contando archivos en Drive' : 'Progreso del guardado'}</span>
+                  <span className="text-lg font-bold text-[#D4AF37] tabular-nums">
+                    {driveImportProgress.percent === null ? 'Contando…' : `${driveImportProgress.percent.toFixed(1)}%`}
+                  </span>
+                </div>
+                <div className="h-2.5 w-full overflow-hidden rounded-full bg-white/10"
+                  role="progressbar" aria-label="Progreso de importación"
+                  aria-valuemin={0} aria-valuemax={100}
+                  aria-valuenow={driveImportProgress.percent === null ? undefined : driveImportProgress.percent}>
+                  <div className={`h-full rounded-full bg-[#D4AF37] transition-all duration-300 ${driveImportProgress.percent === null ? 'w-1/3 animate-pulse' : ''}`}
+                    style={driveImportProgress.percent !== null ? { width: `${driveImportProgress.percent}%` } : undefined} />
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs text-gray-300">
+                  <span>Encontradas: <strong className="text-white tabular-nums">{driveImportProgress.discovered.toLocaleString('es-MX')}</strong></span>
+                  <span>Total: <strong className="text-white tabular-nums">{driveImportProgress.total === null ? 'calculando' : driveImportProgress.total.toLocaleString('es-MX')}</strong></span>
+                  <span>Ya existentes: <strong className="text-white tabular-nums">{driveImportProgress.already.toLocaleString('es-MX')}</strong></span>
+                  <span>Nuevas incorporadas: <strong className="text-white tabular-nums">{driveImportProgress.saved.toLocaleString('es-MX')}</strong></span>
+                </div>
+              </div>
+            )}
+            <p className="mt-4 text-xs leading-5 text-gray-500">Mantén esta pantalla abierta hasta que termine la importación. Los bloques ya guardados permanecen registrados.</p>
           </div>
         </div>
       )}

@@ -62,3 +62,37 @@ npm run build
 La prueba crea 1,417 fotos simuladas, verifica que se devuelvan todas mediante
 continuaciones y que la configuración se recupere de Sheets con más de 50,000
 caracteres; no modifica datos de producción.
+
+## Actualización: importación de carpetas públicas y progreso visible
+
+Para carpetas con acceso **Cualquier persona con el enlace**, XPH intenta
+primero la **Google Drive API** con la clave configurada en Vercel. Si la clave
+requiere peticiones desde el dominio, el navegador del administrador tiene un
+respaldo directo. Apps Script permanece como respaldo cuando la carpeta requiere
+permisos del propietario.
+
+El proceso actual:
+
+1. Enumera todas las páginas de Drive y muestra **archivos encontrados**
+   mientras termina el recuento.
+2. Cuando conoce el total, muestra **total**, **fotos ya existentes**,
+   **nuevas incorporadas** y **porcentaje exacto**.
+3. En carpetas públicas, registra el ID y el recuento de la carpeta en los
+   metadatos de la galería, sin almacenar miles de IDs en una celda.
+4. La galería del cliente carga automáticamente los archivos de esa carpeta
+   y elimina los duplicados de fotos que ya estuvieran registradas.
+5. Si la carpeta pública no se puede leer mediante una clave de API, se utiliza
+   la importación paginada de Apps Script. **Si Apps Script aún tiene su límite
+   antiguo de 1,000 y el acceso público falla, hay que publicar la versión
+   nueva de Apps Script:** ninguna solución puede solicitar el resto mediante
+   una implementación que carece de paginación.
+
+**Importante:** la vinculación mantiene los originales en Drive. No es una
+copia de las fotos al servidor ni concede permisos privados por sí misma.
+
+### Comprobación de Speed Fest
+
+Con una carpeta de 1,417 imágenes, se esperan **1,417 disponibles en la
+galería del cliente**, aunque anteriormente se hubieran registrado solo 1,000.
+El porcentaje del panel se refiere al proceso de lectura y registro de la
+carpeta, no a copiar físicamente los archivos.

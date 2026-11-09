@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { handleGooglePhotos } from './_google-photos.js';
+import { listPublicDriveFolderPage } from './_drive-public.js';
 
 const APPS_SCRIPT_URL = process.env.XPH_APPS_SCRIPT_URL || '';
 const APPS_SCRIPT_SHARED_SECRET = process.env.XPH_APPS_SCRIPT_SHARED_SECRET || '';
@@ -424,7 +425,7 @@ function compactGalleryImagesForConfig(items) {
     if (item.visibility === 'private' && item.mediaType === 'gallery-meta') {
       const meta = pick(item, [
         'id', 'visibility', 'mediaType', 'galleryId', 'gallerySlug', 'galleryTitle',
-        'galleryClient', 'galleryToken', 'galleryAllowDownloads', 'driveFolderId', 'createdAt',
+        'galleryClient', 'galleryToken', 'galleryAllowDownloads', 'driveFolderId', 'driveFolderMediaCount', 'createdAt',
         'imageIds', 'videoIds',
       ]);
       const galleryId = String(meta.galleryId || '');
@@ -2290,13 +2291,40 @@ export default async function handler(req, res) {
         const folderId = String(submitted.folderId || '').trim().slice(0, 200);
         if (!/^[a-zA-Z0-9_-]{10,}$/.test(folderId)) return res.status(400).json({ status: 'error', message: 'La carpeta de Google Drive no es válida.' });
         const pageToken = typeof submitted.pageToken === 'string' ? submitted.pageToken : '';
-        if (pageToken.length > 4096) return res.status(400).json({ status: 'error', message: 'Token de Drive inválido.' });
+        if (pageToken.length > 8192) return res.status(400).json({ status: 'error', message: 'Token de Drive inválido.' });
         const pageSizeValue = Number(submitted.pageSize);
         const pageSize = Number.isFinite(pageSizeValue) && pageSizeValue > 0
-          ? Math.max(1, Math.min(150, Math.floor(pageSizeValue))) : 100;
-        const result = await forwardBusinessAction('driveFolderImport', { folderId, pageToken, pageSize });
+          ? Math.max(1, Math.min(200, Math.floor(pageSizeValue))) : 150;
+        const requestedProvider = String(submitted.provider || '');
+        if (requestedProvider && !['drive-api', 'apps-script'].includes(requestedProvider)) {
+          return res.status(400).json({ status: 'error', message: 'Proveedor de Drive no válido.' });
+        }
+        let result;
+        // Sin esperar a que se actualice Apps Script. Drive API soporta
+        // nextPageToken para carpetas públicas; preservamos Apps Script como
+        // respaldo de carpetas privadas.
+        if (requestedProvider !== 'apps-script' && process.env.VITE_GOOGLE_DRIVE_API_KEY) {
+          try {
+            result = await listPublicDriveFolderPage({
+              folderId, pageToken, pageSize, apiKey: process.env.VITE_GOOGLE_DRIVE_API_KEY,
+            });
+            if (!pageToken && result.scanned === 0 && !result.nextPageToken) {
+              // Clave válida pero carpeta no visible desde acceso público:
+              // intentar el Apps Script que sí tiene permisos del propietario.
+              result = null;
+            }
+          } catch (error) {
+            if (requestedProvider === 'drive-api') throw error;
+            console.warn('[XPH Drive] Lectura pública no disponible, usando Apps Script:', String(error?.message || error));
+          }
+        }
+        if (!result) {
+          result = await forwardBusinessAction('driveFolderImport', { folderId, pageToken, pageSize });
+          result.provider = 'apps-script';
+        }
         return res.status(200).json({
           status: 'success',
+          provider: result.provider,
           files: Array.isArray(result.files) ? result.files : [],
           scanned: Number(result.scanned) || 0,
           shareFailures: Number(result.shareFailures) || 0,

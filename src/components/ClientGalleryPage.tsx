@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Camera, ChevronLeft, ChevronRight, Download, FileVideo2, House, Loader2, LockKeyhole, X } from 'lucide-react';
 import { GalleryImage } from '../types';
 import { SafeImage } from './SafeImage';
+import { importPublicDriveFolderFromBrowser } from '../utils/adminApi';
 
 type ClientGalleryMedia = GalleryImage & { streamUrl?: string };
 
@@ -16,6 +17,9 @@ interface ClientGalleryResponse {
   clientName: string;
   allowDownloads: boolean;
   media: ClientGalleryMedia[];
+  linkedFolderId?: string;
+  folderListed?: boolean;
+  linkedFolderMediaCount?: number;
   message?: string;
 }
 
@@ -76,6 +80,7 @@ export const ClientGalleryPage: React.FC<ClientGalleryPageProps> = ({ slug, toke
   const [downloadsEnabled, setDownloadsEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [galleryWarning, setGalleryWarning] = useState('');
   const [activePhotoIndex, setActivePhotoIndex] = useState<number | null>(null);
 
   useEffect(() => {
@@ -92,12 +97,47 @@ export const ClientGalleryPage: React.FC<ClientGalleryPageProps> = ({ slug, toke
 
   useEffect(() => {
     setLoading(true);
+    setGalleryWarning('');
     fetchPrivateGallery(slug, token)
-      .then((data) => {
+      .then(async (data) => {
         setTitle(data.title);
         setClientName(data.clientName);
         setDownloadsEnabled(data.allowDownloads !== false);
-        setMedia(data.media || []);
+        const byId = new Map<string, ClientGalleryMedia>();
+        for (const item of data.media || []) byId.set(item.id, item);
+
+        if (data.linkedFolderId && !data.folderListed) {
+          try {
+            let pageToken = '';
+            const visited = new Set<string>();
+            for (let index = 0; index < 100; index++) {
+              const page = await importPublicDriveFolderFromBrowser(data.linkedFolderId, pageToken, 200);
+              for (const file of page.files) {
+                if (byId.has(file.id)) continue;
+                const isVideo = file.mimeType.startsWith('video/');
+                const encoded = encodeURIComponent(file.id);
+                const url = isVideo
+                  ? `https://drive.google.com/file/d/${encoded}/preview`
+                  : `https://lh3.googleusercontent.com/d/${encoded}`;
+                const downloadUrl = `https://drive.usercontent.google.com/download?id=${encoded}&export=download&confirm=t`;
+                byId.set(file.id, {
+                  id: file.id, title: file.name, category: 'private', url, location: '',
+                  visibility: 'private', mediaType: isVideo ? 'video' : 'image',
+                  downloadUrl: data.allowDownloads ? downloadUrl : undefined,
+                  previewUrl: url,
+                  streamUrl: data.allowDownloads && isVideo ? downloadUrl : undefined,
+                });
+              }
+              if (!page.nextPageToken) break;
+              if (visited.has(page.nextPageToken) || index === 99) throw new Error('Respuesta incompleta de Drive.');
+              visited.add(page.nextPageToken);
+              pageToken = page.nextPageToken;
+            }
+          } catch (readError) {
+            setGalleryWarning('No se pudo verificar toda la carpeta de Drive. Podrían faltar fotografías; contacta a XPH para actualizar el acceso.');
+          }
+        }
+        setMedia([...byId.values()]);
       })
       .catch((err) => setError(err?.message || 'No se pudo abrir la galería.'))
       .finally(() => setLoading(false));
@@ -202,6 +242,8 @@ export const ClientGalleryPage: React.FC<ClientGalleryPageProps> = ({ slug, toke
               : 'Esta galería está habilitada únicamente para visualización.'}
           </p>
         </div>
+
+        {galleryWarning && <div role="alert" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-100">{galleryWarning}</div>}
 
         {videos.length > 0 && (
           <section className="space-y-4">
