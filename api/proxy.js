@@ -2308,6 +2308,11 @@ export default async function handler(req, res) {
             result = await listPublicDriveFolderPage({
               folderId, pageToken, pageSize, apiKey: process.env.VITE_GOOGLE_DRIVE_API_KEY,
             });
+            if (!pageToken && result.scanned === 0 && !result.nextPageToken) {
+              // Clave válida pero carpeta no visible desde acceso público:
+              // intentar el Apps Script que sí tiene permisos del propietario.
+              result = null;
+            }
           } catch (error) {
             if (requestedProvider === 'drive-api') throw error;
             console.warn('[XPH Drive] Lectura pública no disponible, usando Apps Script:', String(error?.message || error));
