@@ -729,7 +729,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
             const mediaType: 'image' | 'video' = file.mimeType.startsWith('video/') ? 'video' : 'image';
             const preview = mediaType === 'video' ? drivePreviewUrl(file.id) : `https://lh3.googleusercontent.com/d/${file.id}`;
             pending.push({
-              id: file.id, title: file.name.replace(/\\.[^/.]+$/, '').replace(/[-_]/g, ' '),
+              id: file.id, title: file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '),
               category: 'private', url: preview, location: selectedGallery.clientName,
               visibility: 'private', mediaType, galleryId: selectedGallery.galleryId,
               gallerySlug: selectedGallery.slug, galleryTitle: selectedGallery.title,
