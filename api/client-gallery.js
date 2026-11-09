@@ -70,6 +70,19 @@ export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, max-age=0');
   res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
 
+  // Sonda temporal solo de previsualización: no expone claves ni fotos.
+  if (process.env.VERCEL_ENV === 'preview' && req.query?.connectionProbe === 'drive') {
+    try {
+      const result = await listAllPublicDriveFolder({
+        folderId: '1ZLda1eMixKiIe2rN0r60-OaPU0NRKVYt',
+        apiKey: process.env.VITE_GOOGLE_DRIVE_API_KEY || '',
+      });
+      return res.status(200).json({ status: 'ok', count: result.length });
+    } catch (error) {
+      return res.status(200).json({ status: 'unavailable', message: String(error?.message || error) });
+    }
+  }
+
   if (req.method !== 'GET') {
     return res.status(405).json({ status: 'error', message: 'Método no permitido.' });
   }
