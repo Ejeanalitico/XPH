@@ -2,6 +2,13 @@ import { listAllPublicDriveFolder } from './_drive-public.js';
 const APPS_SCRIPT_URL = process.env.XPH_APPS_SCRIPT_URL || '';
 const APPS_SCRIPT_SHARED_SECRET = process.env.XPH_APPS_SCRIPT_SHARED_SECRET || '';
 
+// Compatibilidad para galerías ya creadas antes de admitir enlaces a carpetas
+// grandes. Esta asociación se aplica SOLO después de validar el token privado
+// contra la metadata guardada en Apps Script. No almacena ni expone el token.
+const LEGACY_PRIVATE_DRIVE_FOLDERS = Object.freeze({
+  'live-a-life-nria7': '1ZLda1eMixKiIe2rN0r60-OaPU0NRKVYt',
+});
+
 function appsScriptUrl(action) {
   if (!APPS_SCRIPT_URL || !APPS_SCRIPT_SHARED_SECRET) {
     throw new Error('La integración segura con Apps Script no está configurada.');
@@ -127,7 +134,11 @@ export default async function handler(req, res) {
 
     // Los archivos enlazados se consultan al abrir la galería: el JSON de
     // Google Sheets solo conserva la carpeta, nunca miles de IDs.
-    const linkedFolderId = String(meta.driveFolderId || '').trim();
+    const linkedFolderId = String(
+      meta.driveFolderId ||
+      LEGACY_PRIVATE_DRIVE_FOLDERS[String(meta.gallerySlug || '')] ||
+      ''
+    ).trim();
     let folderListed = false;
     let linkedMedia = [];
     if (linkedFolderId && process.env.VITE_GOOGLE_DRIVE_API_KEY) {
