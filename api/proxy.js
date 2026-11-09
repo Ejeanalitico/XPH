@@ -2289,8 +2289,19 @@ export default async function handler(req, res) {
       if (action === 'adminDriveFolderImport') {
         const folderId = String(submitted.folderId || '').trim().slice(0, 200);
         if (!/^[a-zA-Z0-9_-]{10,}$/.test(folderId)) return res.status(400).json({ status: 'error', message: 'La carpeta de Google Drive no es válida.' });
-        const result = await forwardBusinessAction('driveFolderImport', { folderId });
-        return res.status(200).json({ status: 'success', files: Array.isArray(result.files) ? result.files : [] });
+        const pageToken = typeof submitted.pageToken === 'string' ? submitted.pageToken : '';
+        if (pageToken.length > 4096) return res.status(400).json({ status: 'error', message: 'Token de Drive inválido.' });
+        const pageSizeValue = Number(submitted.pageSize);
+        const pageSize = Number.isFinite(pageSizeValue) && pageSizeValue > 0
+          ? Math.max(1, Math.min(150, Math.floor(pageSizeValue))) : 100;
+        const result = await forwardBusinessAction('driveFolderImport', { folderId, pageToken, pageSize });
+        return res.status(200).json({
+          status: 'success',
+          files: Array.isArray(result.files) ? result.files : [],
+          scanned: Number(result.scanned) || 0,
+          shareFailures: Number(result.shareFailures) || 0,
+          nextPageToken: typeof result.nextPageToken === 'string' ? result.nextPageToken : '',
+        });
       }
       if (action === 'adminManagedMediaDelete') {
         const fileIds = Array.from(new Set((Array.isArray(submitted.fileIds) ? submitted.fileIds : [])

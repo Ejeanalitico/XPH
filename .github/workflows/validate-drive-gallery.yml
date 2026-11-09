@@ -1,0 +1,30 @@
+name: Validate Drive gallery pagination
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'google-apps-script.js'
+      - 'api/proxy.js'
+      - 'src/utils/adminApi.ts'
+      - 'src/components/UnifiedAdminDashboard.tsx'
+      - 'scripts/test-drive-folder-import.mjs'
+      - '.github/workflows/validate-drive-gallery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drive-gallery:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: node scripts/test-drive-folder-import.mjs
+      - run: npm run typecheck
+      - run: npm run build

@@ -669,23 +669,92 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
       setBusy(true);
       setDriveImportLoading(true);
       setDriveImportStatus('Conectando con Google Drive y leyendo la carpeta...');
+      let savedCount = 0;
+      let compatibleCount = 0;
+      let scannedCount = 0;
+      let shareFailures = 0;
       try {
-        const files = await importPrivateDriveFolder(folderId);
-        setDriveImportStatus(files.length
-          ? `Se encontraron ${files.length} archivos. Preparando la galería...`
-          : 'La carpeta se leyó correctamente. No se encontraron archivos compatibles.');
-        const added: GalleryImage[] = files.map((file) => {
-          const mediaType: 'image' | 'video' = file.mimeType.startsWith('video/') ? 'video' : 'image';
-          const preview = mediaType === 'video' ? drivePreviewUrl(file.id) : `https://lh3.googleusercontent.com/d/${file.id}`;
-          return { id: file.id, title: file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '), category: 'private', url: preview, location: selectedGallery.clientName, visibility: 'private', mediaType, galleryId: selectedGallery.galleryId, gallerySlug: selectedGallery.slug, galleryTitle: selectedGallery.title, galleryClient: selectedGallery.clientName, storageSource: 'drive-link', downloadUrl: driveDownloadUrl(file.id), previewUrl: preview, driveFolderId: folderId, createdAt: new Date().toISOString() };
-        });
-        const ids = new Set(added.map((item) => item.id));
-        setDriveImportStatus(`Guardando ${added.length} archivos en “${selectedGallery.title}”...`);
-        await persistGallery([...added, ...galleryImages.filter((item) => !ids.has(item.id))], 'ADMIN_GALERIA_PRIVADA', `${added.length} archivos importados desde carpeta de Drive a ${selectedGallery.title}`);
-        setDriveImportStatus('Importación terminada. Actualizando la galería...');
-        setDriveMediaUrl(''); setDriveMediaTitle(''); notify(`${added.length} archivos importados desde la carpeta de Drive.`);
-      } catch (error: any) { notify(error?.message || 'No se pudo leer la carpeta. Verifica que pertenezca o esté compartida con la cuenta de XPH.'); }
-      finally {
+        // La importación puede reintentarse. Nunca se duplica un archivo
+        // registrado previamente en esta galería, aunque se interrumpa.
+        const existingIds = new Set(
+          galleryImages.filter((item) => item.galleryId === selectedGallery.galleryId && item.mediaType !== 'gallery-meta')
+            .map((item) => item.id),
+        );
+        let savedGallery = galleryImages;
+        let pending: GalleryImage[] = [];
+        let cursor = '';
+        let pageNumber = 0;
+        const visitedTokens = new Set<string>();
+
+        const savePending = async () => {
+          if (!pending.length) return;
+          const batch = pending;
+          pending = [];
+          setDriveImportStatus(`Guardando lote de ${batch.length} fotos. ${savedCount} nuevas guardadas hasta ahora...`);
+          const ids = new Set(batch.map((item) => item.id));
+          // Evitar borrar fotos con el mismo ID que pertenezcan a otra galería.
+          const next = [...batch, ...savedGallery.filter((item) =>
+            !(item.galleryId === selectedGallery.galleryId && ids.has(item.id)))];
+          savedGallery = await persistGallery(next, 'ADMIN_GALERIA_PRIVADA',
+            `${batch.length} archivos agregados desde Drive a ${selectedGallery.title}`);
+          savedCount += batch.length;
+        };
+
+        do {
+          pageNumber++;
+          if (pageNumber > 1000) throw new Error('La carpeta excedió las 1,000 páginas previstas. Contacta al administrador.');
+          setDriveImportStatus(`Leyendo bloque ${pageNumber} de Drive. ${scannedCount} archivos revisados, ${savedCount} nuevos guardados...`);
+          let page: Awaited<ReturnType<typeof importPrivateDriveFolder>> | null = null;
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+              page = await importPrivateDriveFolder(folderId, cursor, 100);
+              break;
+            } catch (error) {
+              if (attempt === 3) throw error;
+              setDriveImportStatus(`Reintentando bloque ${pageNumber} (intento ${attempt + 1} de 3)...`);
+              await new Promise((resolve) => setTimeout(resolve, attempt * 700));
+            }
+          }
+          if (!page) throw new Error('Google Drive no devolvió el bloque solicitado.');
+          // Una versión antigua de Apps Script devuelve 1,000 sin token.
+          if (page.scanned === 0 && page.files.length >= 1000 && !page.nextPageToken) {
+            throw new Error('Apps Script todavía tiene el límite de 1,000 archivos. Actualiza y publica su implementación antes de importar.');
+          }
+          scannedCount += page.scanned || page.files.length;
+          compatibleCount += page.files.length;
+          shareFailures += page.shareFailures;
+          for (const file of page.files) {
+            if (!file.id || existingIds.has(file.id)) continue;
+            existingIds.add(file.id);
+            const mediaType: 'image' | 'video' = file.mimeType.startsWith('video/') ? 'video' : 'image';
+            const preview = mediaType === 'video' ? drivePreviewUrl(file.id) : `https://lh3.googleusercontent.com/d/${file.id}`;
+            pending.push({
+              id: file.id, title: file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '),
+              category: 'private', url: preview, location: selectedGallery.clientName,
+              visibility: 'private', mediaType, galleryId: selectedGallery.galleryId,
+              gallerySlug: selectedGallery.slug, galleryTitle: selectedGallery.title,
+              galleryClient: selectedGallery.clientName, storageSource: 'drive-link',
+              downloadUrl: driveDownloadUrl(file.id), previewUrl: preview,
+              driveFolderId: folderId, createdAt: new Date().toISOString(),
+            });
+          }
+          if (pending.length >= 250) await savePending();
+          if (page.nextPageToken && visitedTokens.has(page.nextPageToken)) {
+            throw new Error('Drive devolvió un bloque repetido. La importación se detuvo para evitar duplicados.');
+          }
+          if (page.nextPageToken) visitedTokens.add(page.nextPageToken);
+          cursor = page.nextPageToken;
+        } while (cursor);
+
+        await savePending();
+        if (!compatibleCount) throw new Error('La carpeta no contiene fotografías o videos compatibles en su nivel principal.');
+        setDriveImportStatus(`Importación completa: ${compatibleCount} archivos detectados, ${savedCount} nuevos guardados.`);
+        setDriveMediaUrl('');
+        setDriveMediaTitle('');
+        notify(`Importación completada: ${compatibleCount} archivos encontrados, ${savedCount} agregados, ${compatibleCount - savedCount} ya existentes.${shareFailures ? ` Revisa ${shareFailures} archivos cuyos permisos de Drive no se pudieron actualizar.` : ''}`);
+      } catch (error: any) {
+        notify(`${error?.message || 'No se pudo completar la importación desde Drive.'}${savedCount ? ` Se guardaron ${savedCount} archivos nuevos antes del error. Puedes volver a importar sin duplicarlos.` : ''}`);
+      } finally {
         setBusy(false);
         setDriveImportLoading(false);
         setDriveImportStatus('Preparando importación...');

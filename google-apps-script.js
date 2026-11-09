@@ -410,31 +410,93 @@ function cleanupLegacyActiveConfigChunks_(props) {
  * La hoja es la fuente de verdad; PropertiesService conserva solo metadatos
  * pequeños para evitar volver a exceder la cuota de almacenamiento.
  */
+// Sheets acepta hasta 50,000 caracteres por celda. Guardamos cada versión
+// en fragmentos base64 de 24,000 caracteres para admitir álbumes grandes.
+var XPH_ACTIVE_CONFIG_CHUNK_SIZE = 24000;
+
+function readActiveConfigFromSheet_(sheet) {
+  if (!sheet || sheet.getLastRow() < 2) return '';
+  var rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues();
+
+  // Solo una versión con marcador de finalización es visible. Si falla una
+  // escritura parcial, recuperamos la versión anterior intacta.
+  for (var end = rows.length - 1; end >= 0; end--) {
+    var complete = /^config_complete_b64:([^:]+):(\d+):(\d+)$/.exec(String(rows[end][0] || ''));
+    if (!complete) continue;
+    var version = complete[1];
+    var count = Number(complete[2]);
+    var encodedLength = Number(complete[3]);
+    if (!count || count > 10000 || end < count) continue;
+
+    var segments = [];
+    var valid = true;
+    for (var index = 0; index < count; index++) {
+      var expected = 'config_chunk_b64:' + version + ':' + (index + 1) + '/' + count;
+      var row = rows[end - count + index];
+      if (String(row[0]) !== expected) { valid = false; break; }
+      segments.push(String(row[1] || ''));
+    }
+    if (!valid) continue;
+    var encoded = segments.join('');
+    if (encoded.length !== encodedLength) continue;
+    try {
+      var text = Utilities.newBlob(Utilities.base64DecodeWebSafe(encoded)).getDataAsString('UTF-8');
+      JSON.parse(text);
+      return text;
+    } catch (_) {}
+  }
+
+  // Compatibilidad con la versión anterior de una sola celda.
+  for (var legacyIndex = rows.length - 1; legacyIndex >= 0; legacyIndex--) {
+    if (String(rows[legacyIndex][0]) === 'database_json_payload') {
+      return String(rows[legacyIndex][1] || '');
+    }
+  }
+  return '';
+}
+
 function saveActiveConfig(ss, configJsonString) {
   if (!ss) throw new Error('No se pudo abrir la hoja de configuración activa.');
 
   try {
     var sheet = ss.getSheetByName('Config_Activa');
     if (!sheet) throw new Error('No existe la pestaña Config_Activa.');
-    var lastRow = sheet.getLastRow();
-    if (lastRow > 1) {
-      sheet.deleteRows(2, lastRow - 1);
+    var json = String(configJsonString || '');
+    JSON.parse(json);
+    var encoded = Utilities.base64EncodeWebSafe(json, Utilities.Charset.UTF_8);
+    var version = new Date().getTime().toString(36) + '_' + Utilities.getUuid().slice(0, 8);
+    var count = Math.max(1, Math.ceil(encoded.length / XPH_ACTIVE_CONFIG_CHUNK_SIZE));
+    var now = new Date().toISOString();
+    var records = [];
+
+    for (var i = 0; i < count; i++) {
+      records.push([
+        'config_chunk_b64:' + version + ':' + (i + 1) + '/' + count,
+        encoded.slice(i * XPH_ACTIVE_CONFIG_CHUNK_SIZE, (i + 1) * XPH_ACTIVE_CONFIG_CHUNK_SIZE),
+        now
+      ]);
     }
-    sheet.appendRow(['database_json_payload', configJsonString, new Date().toISOString()]);
+    records.push(['config_complete_b64:' + version + ':' + count + ':' + encoded.length, '', now]);
+
+    // Escribir la nueva versión ANTES de retirar la anterior evita pérdida
+    // de datos si Sheets rechaza algún fragmento o falla la conexión.
+    var previousLastRow = sheet.getLastRow();
+    var startRow = Math.max(2, previousLastRow + 1);
+    var missingRows = startRow + records.length - 1 - sheet.getMaxRows();
+    if (missingRows > 0) sheet.insertRowsAfter(sheet.getMaxRows(), missingRows);
+    sheet.getRange(startRow, 1, records.length, 3).setValues(records);
+    if (readActiveConfigFromSheet_(sheet) !== json) {
+      throw new Error('No se pudo verificar la configuración completa en Google Sheets.');
+    }
+    if (previousLastRow > 1) sheet.deleteRows(2, previousLastRow - 1);
   } catch (e) {
     Logger.log('Error save active config: ' + e);
     throw e;
   }
 
   var props = PropertiesService.getScriptProperties();
-
-  // Primero libera los fragmentos grandes heredados. De esta forma la propia
-  // operación de limpieza no intenta escribir sobre un almacén ya saturado.
   cleanupLegacyActiveConfigChunks_(props);
-
-  var metadata = {
-    'xph_updated_at': new Date().toISOString()
-  };
+  var metadata = { 'xph_updated_at': new Date().toISOString() };
   try {
     metadata['xph_spreadsheet_id'] = ss.getId();
     metadata['xph_spreadsheet_url'] = ss.getUrl();
@@ -443,19 +505,15 @@ function saveActiveConfig(ss, configJsonString) {
 }
 
 /**
- * Lee la última versión activa. Config_Activa es la fuente de verdad.
- * Los fragmentos en PropertiesService se conservan solo como fallback de
- * migración para instalaciones que todavía no hayan sido compactadas.
+ * Lee configuraciones grandes, sin truncarlas. Compatible con el antiguo
+ * registro database_json_payload y con fragmentos legacy en PropertiesService.
  */
 function loadActiveConfig() {
   try {
     var ss = getDatabaseSpreadsheet();
     if (ss) {
-      var sheet = ss.getSheetByName('Config_Activa');
-      if (sheet && sheet.getLastRow() >= 2) {
-        var sheetValue = sheet.getRange(2, 2).getValue() || '';
-        if (sheetValue) return sheetValue;
-      }
+      var config = readActiveConfigFromSheet_(ss.getSheetByName('Config_Activa'));
+      if (config) return config;
     }
   } catch (_) {}
 
@@ -2021,17 +2079,38 @@ function handleBusinessAction(ss, action, payload) {
     var importedFolder;
     try { importedFolder = DriveApp.getFolderById(cleanBusinessText(payload.folderId, 200)); }
     catch (_) { throw new Error('No se pudo abrir la carpeta. Compártela con la cuenta propietaria del CRM o verifica la liga.'); }
+
+    // FileIterator se continúa con el token de DriveApp, sin cortar a 1,000
+    // ni recorrer toda la carpeta en una sola ejecución de Apps Script.
+    var token = String(payload.pageToken || '');
+    if (token.length > 4096) throw new Error('Token de continuación de Drive inválido.');
+    var pageSize = Math.max(1, Math.min(150, Math.floor(Number(payload.pageSize) || 100)));
+    var folderFiles;
+    try {
+      folderFiles = token ? DriveApp.continueFileIterator(token) : importedFolder.getFiles();
+    } catch (_) {
+      throw new Error('La sesión de lectura de Drive expiró. Vuelve a importar la carpeta; las fotos registradas no se duplicarán.');
+    }
     var importedFiles = [];
-    var folderFiles = importedFolder.getFiles();
-    while (folderFiles.hasNext() && importedFiles.length < 1000) {
+    var scanned = 0;
+    var shareFailures = 0;
+    while (folderFiles.hasNext() && scanned < pageSize) {
       var importedFile = folderFiles.next();
+      scanned++;
       var importedMime = String(importedFile.getMimeType() || '').toLowerCase();
       if (importedMime.indexOf('image/') !== 0 && importedMime.indexOf('video/') !== 0) continue;
-      try { importedFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (_) {}
+      try {
+        importedFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      } catch (_) { shareFailures++; }
       importedFiles.push({ id: importedFile.getId(), name: importedFile.getName(), mimeType: importedMime });
     }
-    if (!importedFiles.length) throw new Error('La carpeta no contiene fotografías o videos compatibles en su nivel principal.');
-    return { status: 'success', files: importedFiles };
+    return {
+      status: 'success',
+      files: importedFiles,
+      scanned: scanned,
+      shareFailures: shareFailures,
+      nextPageToken: folderFiles.hasNext() ? folderFiles.getContinuationToken() : ''
+    };
   }
   if (action === 'driveManagedMediaDelete') {
     var managedFolderId = driveUploadFolder().getId();
