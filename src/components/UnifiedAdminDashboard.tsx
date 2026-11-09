@@ -758,9 +758,31 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
             phase: 'saving', discovered: totalCount, scanned: scannedCount,
             total: totalCount, already: alreadyCount, saved: savedCount, percent,
           });
-          setDriveImportStatus(`Guardadas ${completed.toLocaleString('es-MX')} de ${totalCount.toLocaleString('es-MX')} fotos (${percent.toFixed(1)}%).`);
+          setDriveImportStatus(`Disponibles ${completed.toLocaleString('es-MX')} de ${totalCount.toLocaleString('es-MX')} fotos (${percent.toFixed(1)}%).`);
         };
         publishProgress();
+
+        // Carpetas públicas grandes: guardar únicamente el enlace a la carpeta
+        // en la metadata de la galería. La vista privada lee todas las imágenes
+        // directamente de Drive. Esto evita superar 50,000 caracteres por celda
+        // incluso si el Apps Script publicado conserva el escritor antiguo.
+        if (provider === 'drive-api' || provider === 'browser-drive-api') {
+          const next = galleryImages.map((item) =>
+            item.visibility === 'private' && item.mediaType === 'gallery-meta' &&
+            item.galleryId === targetGalleryId
+              ? { ...item, driveFolderId: folderId, driveFolderMediaCount: totalCount }
+              : item,
+          );
+          setDriveImportStatus(`Enlazando la carpeta completa (${totalCount.toLocaleString('es-MX')} archivos)...`);
+          await persistGallery(next, 'ADMIN_GALERIA_PRIVADA',
+            `Carpeta Drive enlazada a ${selectedGallery.title}: ${totalCount} archivos disponibles`);
+          savedCount = remaining.length;
+          publishProgress();
+          setDriveMediaUrl('');
+          setDriveMediaTitle('');
+          notify(`Carpeta enlazada: ${totalCount} fotos disponibles en la galería, ${alreadyCount} ya registradas y ${savedCount} nuevas accesibles por Drive. No se copiaron archivos.`);
+          return;
+        }
 
         // 2) Guardar solo fotografías nuevas. Cada bloque confirmado cuenta
         // en el porcentaje y queda persistido si se cierra el navegador.
@@ -916,7 +938,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
                   <span>Encontradas: <strong className="text-white tabular-nums">{driveImportProgress.discovered.toLocaleString('es-MX')}</strong></span>
                   <span>Total: <strong className="text-white tabular-nums">{driveImportProgress.total === null ? 'calculando' : driveImportProgress.total.toLocaleString('es-MX')}</strong></span>
                   <span>Ya existentes: <strong className="text-white tabular-nums">{driveImportProgress.already.toLocaleString('es-MX')}</strong></span>
-                  <span>Nuevas guardadas: <strong className="text-white tabular-nums">{driveImportProgress.saved.toLocaleString('es-MX')}</strong></span>
+                  <span>Nuevas incorporadas: <strong className="text-white tabular-nums">{driveImportProgress.saved.toLocaleString('es-MX')}</strong></span>
                 </div>
               </div>
             )}
