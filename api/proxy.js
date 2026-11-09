@@ -425,7 +425,7 @@ function compactGalleryImagesForConfig(items) {
     if (item.visibility === 'private' && item.mediaType === 'gallery-meta') {
       const meta = pick(item, [
         'id', 'visibility', 'mediaType', 'galleryId', 'gallerySlug', 'galleryTitle',
-        'galleryClient', 'galleryToken', 'galleryAllowDownloads', 'driveFolderId', 'createdAt',
+        'galleryClient', 'galleryToken', 'galleryAllowDownloads', 'driveFolderId', 'driveFolderMediaCount', 'createdAt',
         'imageIds', 'videoIds',
       ]);
       const galleryId = String(meta.galleryId || '');
