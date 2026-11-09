@@ -171,7 +171,7 @@ const privateGallerySummaries = (items: GalleryImage[]): PrivateGallerySummary[]
     clientName: meta.galleryClient || 'Cliente XPH',
     token: meta.galleryToken || '',
     createdAt: meta.createdAt || '',
-    mediaCount: items.filter((item) => item.galleryId === meta.galleryId && item.mediaType !== 'gallery-meta').length,
+    mediaCount: Math.max(Number(meta.driveFolderMediaCount) || 0, items.filter((item) => item.galleryId === meta.galleryId && item.mediaType !== 'gallery-meta').length),
     allowDownloads: meta.galleryAllowDownloads !== false,
   }));
 
