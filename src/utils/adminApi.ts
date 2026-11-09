@@ -690,23 +690,27 @@ export function extractDriveFolderId(value: string): string {
   return '';
 }
 
+export type DriveImportProvider = '' | 'drive-api' | 'apps-script';
+
 export interface PrivateDriveFolderPage {
   files: Array<{ id: string; name: string; mimeType: string }>;
   nextPageToken: string;
   scanned: number;
   shareFailures: number;
+  provider: Exclude<DriveImportProvider, ''>;
 }
 
-// Cada petición solicita una página pequeña. Apps Script retoma el FileIterator
-// con nextPageToken, sin volver a empezar ni rebasar el tiempo de ejecución.
+// El proveedor de la primera página se fija para todo el recorrido porque
+// Drive API y Apps Script usan formatos de continuación distintos.
 export async function importPrivateDriveFolder(
   folderId: string,
   pageToken = '',
-  pageSize = 100,
+  pageSize = 150,
+  provider: DriveImportProvider = '',
 ): Promise<PrivateDriveFolderPage> {
   const res = await fetch('/api/proxy?action=adminDriveFolderImport', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-    body: JSON.stringify({ folderId, pageToken, pageSize }),
+    body: JSON.stringify({ folderId, pageToken, pageSize, provider }),
   });
   const data = await parseResponse(res);
   return {
@@ -714,6 +718,7 @@ export async function importPrivateDriveFolder(
     nextPageToken: typeof data.nextPageToken === 'string' ? data.nextPageToken : '',
     scanned: Number(data.scanned) || 0,
     shareFailures: Number(data.shareFailures) || 0,
+    provider: data.provider === 'drive-api' ? 'drive-api' : 'apps-script',
   };
 }
 
