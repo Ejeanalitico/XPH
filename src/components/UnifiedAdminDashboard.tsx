@@ -238,7 +238,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
   const [driveImportLoading, setDriveImportLoading] = useState(false);
   const [driveImportStatus, setDriveImportStatus] = useState('Preparando importación...');
   const [driveImportProgress, setDriveImportProgress] = useState<{
-    phase: 'reading' | 'saving';
+    phase: 'reading' | 'verifying' | 'saving';
     discovered: number;
     scanned: number;
     total: number | null;
@@ -760,13 +760,36 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
           });
           setDriveImportStatus(`Disponibles ${completed.toLocaleString('es-MX')} de ${totalCount.toLocaleString('es-MX')} fotos (${percent.toFixed(1)}%).`);
         };
-        publishProgress();
 
         // Carpetas públicas grandes: guardar únicamente el enlace a la carpeta
         // en la metadata de la galería. La vista privada lee todas las imágenes
         // directamente de Drive. Esto evita superar 50,000 caracteres por celda
         // incluso si el Apps Script publicado conserva el escritor antiguo.
         if (provider === 'drive-api' || provider === 'browser-drive-api') {
+          // La primera lectura descubre el total exacto. La segunda verifica
+          // que las fotos aún estén disponibles y da un porcentaje REAL
+          // (archivos verificados / total) en lugar de una barra animada ficticia.
+          const verified = new Set<string>();
+          const verifyTokens = new Set<string>();
+          let verificationCursor = '';
+          do {
+            const page = await importPrivateDriveFolder(folderId, verificationCursor, 150, provider);
+            for (const file of page.files) verified.add(file.id);
+            const percent = Math.min(100, Math.round(verified.size * 1000 / totalCount) / 10);
+            setDriveImportProgress({
+              phase: 'verifying', discovered: totalCount, scanned: verified.size,
+              total: totalCount, already: alreadyCount, saved: 0, percent,
+            });
+            setDriveImportStatus(`Verificadas ${verified.size.toLocaleString('es-MX')} de ${totalCount.toLocaleString('es-MX')} fotos (${percent.toFixed(1)}%).`);
+            if (page.nextPageToken && verifyTokens.has(page.nextPageToken)) {
+              throw new Error('Google Drive devolvió un bloque repetido durante la verificación.');
+            }
+            if (page.nextPageToken) verifyTokens.add(page.nextPageToken);
+            verificationCursor = page.nextPageToken;
+          } while (verificationCursor);
+          if (verified.size !== totalCount || files.some((file) => !verified.has(file.id))) {
+            throw new Error('El contenido de la carpeta cambió durante la lectura. Repite la importación para registrar el total correcto.');
+          }
           const next = galleryImages.map((item) =>
             item.visibility === 'private' && item.mediaType === 'gallery-meta' &&
             item.galleryId === targetGalleryId
@@ -786,6 +809,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
 
         // 2) Guardar solo fotografías nuevas. Cada bloque confirmado cuenta
         // en el porcentaje y queda persistido si se cierra el navegador.
+        publishProgress();
         let savedGallery = galleryImages;
         for (let index = 0; index < remaining.length; index += 200) {
           const batch = remaining.slice(index, index + 200).map((file): GalleryImage => {
@@ -922,7 +946,7 @@ export const UnifiedAdminDashboard: React.FC<Props> = ({ initialTab = 'packages'
             {driveImportProgress && (
               <div className="mt-5 space-y-3 text-left" aria-live="polite">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs text-gray-300">{driveImportProgress.phase === 'reading' ? 'Contando archivos en Drive' : 'Progreso del guardado'}</span>
+                  <span className="text-xs text-gray-300">{driveImportProgress.phase === 'reading' ? 'Contando archivos en Drive' : driveImportProgress.phase === 'verifying' ? 'Verificando archivos en Drive' : 'Progreso del guardado'}</span>
                   <span className="text-lg font-bold text-[#D4AF37] tabular-nums">
                     {driveImportProgress.percent === null ? 'Contando…' : `${driveImportProgress.percent.toFixed(1)}%`}
                   </span>
